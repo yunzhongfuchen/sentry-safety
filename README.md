@@ -1,1 +1,1 @@
-# sentry
+# sentry-safety
