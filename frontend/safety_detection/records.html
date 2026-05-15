@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentry 检测记录</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f1f5f9;
+            --surface: #ffffff;
+            --surface-hover: #f8fafc;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --accent: #0ea5e9;
+            --accent-light: #e0f2fe;
+            --danger: #ef4444;
+            --danger-light: #fee2e2;
+            --warning: #f97316;
+            --warning-light: #ffedd5;
+            --success: #22c55e;
+            --success-light: #dcfce7;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --radius: 12px;
+            --radius-sm: 8px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', 'Noto Sans SC', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            height: 56px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .header-brand .logo {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--accent), #38bdf8);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 16px;
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 4px;
+        }
+
+        .header-nav a {
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all .2s;
+        }
+
+        .header-nav a:hover { color: var(--text); background: var(--bg); }
+        .header-nav a.active { color: var(--accent); background: var(--accent-light); }
+
+        /* Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px 24px;
+        }
+
+        /* Stats */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 16px 20px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Filters */
+        .filters {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .filter-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 14px;
+            min-width: 140px;
+            font-family: inherit;
+        }
+
+        .filter-group select:focus,
+        .filter-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .btn {
+            padding: 8px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            transition: all .2s;
+            font-family: inherit;
+        }
+
+        .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+        .btn.primary:hover { background: #0284c7; }
+
+        /* Table */
+        .table-wrap {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            background: var(--surface-hover);
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        tr:hover td { background: var(--surface-hover); }
+        tr { cursor: pointer; }
+        tr:last-child td { border-bottom: none; }
+
+        .col-id { color: var(--text-muted); font-size: 12px; font-family: monospace; }
+        .col-time { white-space: nowrap; }
+        .col-camera { color: var(--text-secondary); }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .badge-p0 { background: var(--danger-light); color: var(--danger); }
+        .badge-p1 { background: var(--warning-light); color: var(--warning); }
+        .badge-alerted { background: var(--danger-light); color: var(--danger); }
+        .badge-pending { background: var(--warning-light); color: var(--warning); }
+        .badge-false_positive { background: var(--success-light); color: var(--success); }
+        .badge-confirmed { background: var(--accent-light); color: var(--accent); }
+
+        .type-dot {
+            display: inline-block;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .confidence { color: var(--text-secondary); font-size: 13px; }
+        .reason { color: var(--text-muted); font-size: 13px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .pagination button {
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all .2s;
+        }
+
+        .pagination button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+        .pagination button:disabled { opacity: .5; cursor: not-allowed; }
+
+        .page-info { color: var(--text-secondary); font-size: 14px; }
+
+        /* Empty / Loading */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: .5; }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, .6);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-overlay.active { display: flex; align-items: flex-start; justify-content: center; }
+
+        .modal-box {
+            background: var(--surface);
+            border-radius: var(--radius);
+            width: 100%;
+            max-width: 900px;
+            max-height: calc(100vh - 40px);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: var(--shadow-lg);
+            margin-top: 20px;
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+            flex-shrink: 0;
+        }
+
+        .modal-header h2 { font-size: 18px; font-weight: 700; }
+        .modal-close { background: none; border: none; font-size: 24px; color: var(--text-muted); cursor: pointer; }
+        .modal-close:hover { color: var(--text); }
+
+        .modal-body { padding: 24px; flex: 1; overflow-y: auto; }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 640px) {
+            .info-grid { grid-template-columns: 1fr; }
+        }
+
+        .info-card {
+            background: var(--surface-hover);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            border: 1px solid var(--border);
+        }
+
+        .info-card h3 {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 12px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: var(--text-secondary); }
+        .info-value { font-weight: 500; }
+
+        .image-section { margin-bottom: 24px; }
+        .image-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-secondary); }
+
+        .snapshot-img {
+            width: 100%;
+            max-height: 400px;
+            object-fit: contain;
+            border-radius: var(--radius-sm);
+            background: #0f172a;
+            display: block;
+        }
+
+        /* Frame Player */
+        .frame-player {
+            background: #0f172a;
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+        }
+
+        .frame-display {
+            position: relative;
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0f172a;
+        }
+
+        .frame-display img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .frame-overlay {
+            position: absolute;
+            top: 10px; left: 10px;
+            background: rgba(0,0,0,.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .frame-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+        }
+
+        .frame-slider {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--border);
+            outline: none;
+        }
+
+        .frame-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+        }
+
+        .thumbnails {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 8px;
+            padding: 12px 16px;
+            max-height: 160px;
+            overflow-y: auto;
+            background: var(--surface);
+        }
+
+        .thumbnail {
+            aspect-ratio: 16/10;
+            background: #0f172a;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 2px solid transparent;
+            position: relative;
+        }
+
+        .thumbnail.active { border-color: var(--accent); }
+        .thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+        .thumb-idx {
+            position: absolute;
+            bottom: 2px; left: 2px;
+            font-size: 10px; color: white;
+            background: rgba(0,0,0,.5);
+            padding: 1px 4px;
+            border-radius: 2px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-brand">
+            <div class="logo">S</div>
+            <span>Sentry 检测记录</span>
+        </div>
+        <nav class="header-nav">
+            <a href="/multi">监控</a>
+            <a href="/records.html" class="active">记录</a>
+            <a href="/settings.html">设置</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <!-- Stats -->
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-value" id="statTotal">-</div>
+                <div class="stat-label">总记录</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statP0" style="color: var(--danger);">-</div>
+                <div class="stat-label">P0 告警</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statP1" style="color: var(--warning);">-</div>
+                <div class="stat-label">P1 告警</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statFP" style="color: var(--success);">-</div>
+                <div class="stat-label">已忽略</div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <div class="filter-group">
+                <label>摄像头</label>
+                <select id="filterCamera" onchange="applyFilters()">
+                    <option value="">全部</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>检测类型</label>
+                <select id="filterType" onchange="applyFilters()">
+                    <option value="">全部</option>
+                    <option value="fire">明火</option>
+                    <option value="smoke">烟雾</option>
+                    <option value="uniform">工服</option>
+                    <option value="mask">口罩</option>
+                    <option value="cigarette">吸烟</option>
+                    <option value="sleep">睡岗</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>告警级别</label>
+                <select id="filterLevel" onchange="applyFilters()">
+                    <option value="">全部</option>
+                    <option value="P0">P0</option>
+                    <option value="P1">P1</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>状态</label>
+                <select id="filterStatus" onchange="applyFilters()">
+                    <option value="">全部</option>
+                    <option value="alerted">已告警</option>
+                    <option value="pending">待确认</option>
+                    <option value="false_positive">已忽略</option>
+                    <option value="confirmed">已确认</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>每页</label>
+                <select id="pageSize" onchange="changePageSize()">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                </select>
+            </div>
+            <button class="btn primary" onclick="loadRecords()">刷新</button>
+        </div>
+
+        <!-- Table -->
+        <div class="table-wrap">
+            <div id="tableContainer">
+                <div class="empty-state">
+                    <div class="icon">📋</div>
+                    <div>加载中...</div>
+                </div>
+            </div>
+            <div class="pagination" id="pagination" style="display: none;">
+                <button onclick="prevPage()" id="btnPrev">上一页</button>
+                <span class="page-info" id="pageInfo">第 1 页 / 共 1 页</span>
+                <button onclick="nextPage()" id="btnNext">下一页</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="modal-overlay" id="detailModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h2>记录详情</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="info-grid">
+                    <div class="info-card">
+                        <h3>基本信息</h3>
+                        <div class="info-row"><span class="info-label">记录ID</span><span class="info-value" id="detailId">-</span></div>
+                        <div class="info-row"><span class="info-label">检测时间</span><span class="info-value" id="detailTime">-</span></div>
+                        <div class="info-row"><span class="info-label">摄像头</span><span class="info-value" id="detailCamera">-</span></div>
+                        <div class="info-row"><span class="info-label">检测类型</span><span class="info-value" id="detailType">-</span></div>
+                        <div class="info-row"><span class="info-label">告警级别</span><span class="info-value" id="detailLevel">-</span></div>
+                        <div class="info-row"><span class="info-label">状态</span><span class="info-value" id="detailStatus">-</span></div>
+                    </div>
+                    <div class="info-card">
+                        <h3>检测详情</h3>
+                        <div class="info-row"><span class="info-label">置信度</span><span class="info-value" id="detailConfidence">-</span></div>
+                        <div class="info-row"><span class="info-label">来源</span><span class="info-value" id="detailSource">-</span></div>
+                        <div class="info-row"><span class="info-label">帧数</span><span class="info-value" id="detailFrames">-</span></div>
+                        <div class="info-row"><span class="info-label">小模型结果</span><span class="info-value" id="detailSmall">-</span></div>
+                        <div class="info-row"><span class="info-label">VLM复核</span><span class="info-value" id="detailVlm">-</span></div>
+                        <div class="info-row" style="align-items: flex-start;">
+                            <span class="info-label">说明</span>
+                            <span class="info-value" id="detailReason" style="text-align: right; max-width: 200px; word-break: break-word;">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="image-section">
+                    <h3>触发快照</h3>
+                    <div id="snapshotContainer">
+                        <div class="empty-state" style="padding: 30px;"><div class="icon" style="font-size: 32px;">🖼️</div><div>无快照</div></div>
+                    </div>
+                </div>
+
+                <div class="image-section">
+                    <h3>视频帧序列</h3>
+                    <div class="frame-player">
+                        <div class="frame-display" id="frameDisplay">
+                            <span style="color: var(--text-muted);">无视频帧</span>
+                        </div>
+                        <div class="frame-controls">
+                            <button class="btn primary" id="playBtn" onclick="togglePlay()">播放</button>
+                            <button class="btn" id="reverseBtn" onclick="toggleReverse()">倒序</button>
+                            <input type="range" class="frame-slider" id="frameSlider" min="0" max="0" value="0" oninput="onSliderChange()">
+                            <span style="font-size: 13px; color: var(--text-secondary); min-width: 70px; text-align: center;" id="frameInfo">0 / 0</span>
+                        </div>
+                        <div class="thumbnails" id="thumbnails"></div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
+                    <button class="btn" id="ignoreBtn" onclick="ignoreCurrent()">标记为误报</button>
+                    <button class="btn" onclick="closeModal()">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            records: [], page: 1, pageSize: 20, total: 0, totalPages: 1,
+            filterCamera: '', filterType: '', filterLevel: '', filterStatus: ''
+        };
+        let currentDetail = null;
+        let isPlaying = false, playInterval = null, currentFrameIndex = 0, isReverse = false;
+
+        async function init() {
+            await loadSummary();
+            await loadCameraList();
+            await loadRecords();
+        }
+
+        async function loadSummary() {
+            try {
+                const res = await fetch('/alerts/stats');
+                const data = await res.json();
+                document.getElementById('statTotal').textContent = data.total || 0;
+                document.getElementById('statP0').textContent = data.p0 || 0;
+                document.getElementById('statP1').textContent = data.p1 || 0;
+                document.getElementById('statFP').textContent = data.false_positive || 0;
+            } catch (e) { console.error('加载统计失败:', e); }
+        }
+
+        async function loadCameraList() {
+            try {
+                const res = await fetch('/cameras');
+                const data = await res.json();
+                const select = document.getElementById('filterCamera');
+                data.cameras?.forEach(cam => {
+                    const opt = document.createElement('option');
+                    opt.value = cam.camera_id;
+                    opt.textContent = cam.name || cam.camera_id;
+                    select.appendChild(opt);
+                });
+            } catch (e) { console.error('加载摄像头列表失败:', e); }
+        }
+
+        async function loadRecords() {
+            const container = document.getElementById('tableContainer');
+            container.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><div>加载中...</div></div>';
+
+            try {
+                const params = new URLSearchParams({
+                    page: state.page, page_size: state.pageSize
+                });
+                if (state.filterCamera) params.append('camera_id', state.filterCamera);
+                if (state.filterType) params.append('type', state.filterType);
+                if (state.filterLevel) params.append('level', state.filterLevel);
+                if (state.filterStatus) params.append('status', state.filterStatus);
+
+                const res = await fetch(`/alerts?${params}`);
+                const data = await res.json();
+                state.records = data.records || [];
+                state.total = data.total || 0;
+                state.totalPages = Math.ceil(state.total / state.pageSize) || 1;
+
+                renderTable();
+                renderPagination();
+            } catch (e) {
+                console.error('加载记录失败:', e);
+                container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><div>加载失败，请重试</div></div>';
+            }
+        }
+
+        function renderTable() {
+            const container = document.getElementById('tableContainer');
+            if (state.records.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="icon">📋</div><div>暂无检测记录</div></div>';
+                document.getElementById('pagination').style.display = 'none';
+                return;
+            }
+
+            const typeLabels = { fire: '明火', smoke: '烟雾', uniform: '工服', mask: '口罩', cigarette: '吸烟', sleep: '睡岗' };
+            const typeColors = { fire: '#ef4444', smoke: '#f97316', uniform: '#22c55e', mask: '#0ea5e9', cigarette: '#a855f7', sleep: '#eab308' };
+            const statusLabels = { alerted: '已告警', pending: '待确认', false_positive: '已忽略', confirmed: '已确认', rejected: '已驳回' };
+
+            let html = `<table><thead><tr>
+                <th>ID</th><th>时间</th><th>摄像头</th><th>类型</th><th>级别</th><th>状态</th><th>置信度</th><th>说明</th>
+            </tr></thead><tbody>`;
+
+            html += state.records.map(r => {
+                const typeLabel = typeLabels[r.detection_type] || r.detection_type;
+                const typeColor = typeColors[r.detection_type] || '#94a3b8';
+                const statusLabel = statusLabels[r.status] || r.status;
+                const statusClass = r.status === 'false_positive' ? 'badge-false_positive' : r.status === 'confirmed' ? 'badge-confirmed' : r.status === 'alerted' ? 'badge-alerted' : 'badge-pending';
+                const conf = r.confidence != null ? (r.confidence * 100).toFixed(0) + '%' : '-';
+                return `<tr onclick="showDetail('${encodeURIComponent(r.id)}')">
+                    <td class="col-id">${r.id.slice(-8)}</td>
+                    <td class="col-time">${formatTime(r.time)}</td>
+                    <td class="col-camera">${r.camera_id}</td>
+                    <td><span class="type-dot" style="background:${typeColor}"></span>${typeLabel}</td>
+                    <td><span class="badge badge-${r.level?.toLowerCase() || 'p1'}">${r.level || '-'}</span></td>
+                    <td><span class="badge ${statusClass}">${statusLabel}</span></td>
+                    <td class="confidence">${conf}</td>
+                    <td class="reason" title="${r.reason || ''}">${r.reason || '-'}</td>
+                </tr>`;
+            }).join('');
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+            document.getElementById('pagination').style.display = 'flex';
+        }
+
+        function renderPagination() {
+            document.getElementById('pageInfo').textContent = `第 ${state.page} 页 / 共 ${state.totalPages} 页 (共 ${state.total} 条)`;
+            document.getElementById('btnPrev').disabled = state.page <= 1;
+            document.getElementById('btnNext').disabled = state.page >= state.totalPages;
+        }
+
+        function formatTime(ts) {
+            if (!ts) return '-';
+            const d = new Date(ts);
+            if (isNaN(d)) return ts;
+            return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        }
+
+        function prevPage() { if (state.page > 1) { state.page--; loadRecords(); } }
+        function nextPage() { if (state.page < state.totalPages) { state.page++; loadRecords(); } }
+        function changePageSize() { state.pageSize = parseInt(document.getElementById('pageSize').value); state.page = 1; loadRecords(); }
+        function applyFilters() {
+            state.filterCamera = document.getElementById('filterCamera').value;
+            state.filterType = document.getElementById('filterType').value;
+            state.filterLevel = document.getElementById('filterLevel').value;
+            state.filterStatus = document.getElementById('filterStatus').value;
+            state.page = 1; loadRecords();
+        }
+
+        async function showDetail(recordId) {
+            stopPlay();
+            document.getElementById('playBtn').textContent = '播放';
+            document.getElementById('reverseBtn').textContent = '倒序';
+            isReverse = false;
+            currentFrameIndex = 0;
+            currentDetail = null;
+            document.getElementById('detailModal').classList.add('active');
+            document.getElementById('ignoreBtn').style.display = 'inline-block';
+
+            try {
+                const res = await fetch(`/record/${recordId}?include_frames=false`);
+                const data = await res.json();
+                if (data.error) { alert(data.error); closeModal(); return; }
+                currentDetail = data;
+                currentDetail.encodedId = recordId;
+
+                const typeLabels = { fire: '明火', smoke: '烟雾', uniform: '工服', mask: '口罩', cigarette: '吸烟', sleep: '睡岗' };
+                const statusLabels = { alerted: '已告警', pending: '待确认', false_positive: '已忽略', confirmed: '已确认' };
+
+                document.getElementById('detailId').textContent = data.id;
+                document.getElementById('detailTime').textContent = data.time;
+                document.getElementById('detailCamera').textContent = data.camera_id;
+                document.getElementById('detailType').textContent = typeLabels[data.detection_type] || data.detection_type;
+                document.getElementById('detailLevel').innerHTML = `<span class="badge badge-${data.level?.toLowerCase() || 'p1'}">${data.level || '-'}</span>`;
+                document.getElementById('detailStatus').innerHTML = `<span class="badge badge-${data.status === 'false_positive' ? 'false_positive' : data.status === 'confirmed' ? 'confirmed' : data.status === 'alerted' ? 'alerted' : 'pending'}">${statusLabels[data.status] || data.status}</span>`;
+                document.getElementById('detailConfidence').textContent = data.confidence != null ? (data.confidence * 100).toFixed(1) + '%' : '-';
+                document.getElementById('detailSource').textContent = data.source === 'vlm' ? 'VLM复核' : '小模型';
+                document.getElementById('detailFrames').textContent = data.frame_count || 0;
+                document.getElementById('detailSmall').textContent = data.small_model?.detected ? `检出异常 (置信度 ${(data.small_model.confidence * 100).toFixed(0)}%)` : '未检出异常';
+                document.getElementById('detailVlm').textContent = data.vlm_review ? (data.vlm_review.confirmed ? '确认告警' : '已排除') : '未复核';
+                document.getElementById('detailReason').textContent = data.reason || '无说明';
+
+                if (data.status === 'false_positive') document.getElementById('ignoreBtn').style.display = 'none';
+
+                // Snapshot
+                const snapContainer = document.getElementById('snapshotContainer');
+                if (data.has_snapshot || data.snapshot) {
+                    if (data.snapshot) {
+                        snapContainer.innerHTML = `<img class="snapshot-img" src="data:image/jpeg;base64,${data.snapshot}" alt="snapshot">`;
+                    } else {
+                        snapContainer.innerHTML = '<div class="empty-state" style="padding:30px;"><div class="icon" style="font-size:32px;">⏳</div><div>加载快照...</div></div>';
+                        fetch(`/record/${recordId}/snapshot`).then(r => r.json()).then(d => {
+                            if (d.snapshot) snapContainer.innerHTML = `<img class="snapshot-img" src="data:image/jpeg;base64,${d.snapshot}" alt="snapshot">`;
+                            else snapContainer.innerHTML = '<div class="empty-state" style="padding:30px;"><div class="icon" style="font-size:32px;">🖼️</div><div>无快照</div></div>';
+                        });
+                    }
+                } else {
+                    snapContainer.innerHTML = '<div class="empty-state" style="padding:30px;"><div class="icon" style="font-size:32px;">🖼️</div><div>无快照</div></div>';
+                }
+
+                initFramePlayer(data.frame_count || 0);
+            } catch (e) {
+                console.error('加载详情失败:', e);
+                alert('加载详情失败');
+            }
+        }
+
+        function initFramePlayer(frameCount) {
+            const display = document.getElementById('frameDisplay');
+            const slider = document.getElementById('frameSlider');
+            const info = document.getElementById('frameInfo');
+            const thumbs = document.getElementById('thumbnails');
+            stopPlay();
+
+            if (frameCount === 0) {
+                display.innerHTML = '<span style="color: var(--text-muted);">无视频帧</span>';
+                slider.max = 0; slider.value = 0;
+                info.textContent = '0 / 0';
+                thumbs.innerHTML = '';
+                return;
+            }
+
+            slider.max = frameCount - 1;
+            const startIdx = isReverse ? frameCount - 1 : 0;
+            currentFrameIndex = startIdx;
+            slider.value = startIdx;
+            info.textContent = `${startIdx + 1} / ${frameCount}`;
+            display.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-muted);gap:8px;"><div style="font-size:32px;opacity:.5;">🎬</div><div>点击播放加载帧</div><div style="font-size:12px;">共 ${frameCount} 帧</div></div>`;
+            thumbs.innerHTML = '';
+        }
+
+        async function togglePlay() {
+            if (!currentDetail) return;
+            if (isPlaying) { stopPlay(); document.getElementById('playBtn').textContent = '播放'; return; }
+
+            isPlaying = true;
+            document.getElementById('playBtn').textContent = '暂停';
+
+            if (!currentDetail.frames || currentDetail.frames.length === 0) {
+                await loadFrames();
+            }
+            if (!currentDetail.frames || currentDetail.frames.length === 0) { stopPlay(); return; }
+
+            const lastIdx = currentDetail.frames.length - 1;
+            if (!isReverse && currentFrameIndex >= lastIdx) {
+                currentFrameIndex = 0;
+            }
+            if (isReverse && currentFrameIndex <= 0) {
+                currentFrameIndex = lastIdx;
+            }
+            playNextFrame();
+        }
+
+        function playNextFrame() {
+            if (!isPlaying || !currentDetail?.frames) return;
+            const frames = currentDetail.frames;
+
+            updateFrameDisplay(currentFrameIndex);
+
+            if (isReverse) {
+                currentFrameIndex--;
+                if (currentFrameIndex < 0) { stopPlay(); document.getElementById('playBtn').textContent = '播放'; return; }
+            } else {
+                currentFrameIndex++;
+                if (currentFrameIndex >= frames.length) { stopPlay(); document.getElementById('playBtn').textContent = '播放'; return; }
+            }
+            playInterval = setTimeout(playNextFrame, 300);
+        }
+
+        function toggleReverse() {
+            isReverse = !isReverse;
+            const btn = document.getElementById('reverseBtn');
+            btn.textContent = isReverse ? '正序' : '倒序';
+            btn.style.background = isReverse ? 'var(--accent)' : '';
+            btn.style.color = isReverse ? 'white' : '';
+            btn.style.borderColor = isReverse ? 'var(--accent)' : '';
+        }
+
+        function updateFrameDisplay(index) {
+            if (!currentDetail?.frames) return;
+            const frame = currentDetail.frames[index];
+            if (!frame) return;
+            const display = document.getElementById('frameDisplay');
+            const slider = document.getElementById('frameSlider');
+            const info = document.getElementById('frameInfo');
+            display.innerHTML = `<img src="data:image/jpeg;base64,${frame}" alt="Frame ${index}"><div class="frame-overlay">帧 ${index + 1} / ${currentDetail.frames.length}</div>`;
+            slider.value = index;
+            info.textContent = `${index + 1} / ${currentDetail.frames.length}`;
+            document.querySelectorAll('.thumbnail').forEach((t, i) => t.classList.toggle('active', i === index));
+        }
+
+        function onSliderChange() {
+            stopPlay(); document.getElementById('playBtn').textContent = '播放';
+            const idx = parseInt(document.getElementById('frameSlider').value);
+            currentFrameIndex = idx;
+            if (currentDetail?.frames) updateFrameDisplay(idx);
+            else loadFrames().then(() => updateFrameDisplay(idx));
+        }
+
+        function stopPlay() {
+            isPlaying = false;
+            if (playInterval) { clearTimeout(playInterval); playInterval = null; }
+        }
+
+        async function loadFrames() {
+            if (!currentDetail) return;
+            if (currentDetail.frames && currentDetail.frames.length > 0) return;
+            const display = document.getElementById('frameDisplay');
+            display.innerHTML = '<span style="color:var(--text-muted);">加载帧...</span>';
+            try {
+                const res = await fetch(`/record/${currentDetail.encodedId}/frames?start=0&count=30`);
+                const data = await res.json();
+                currentDetail.frames = data.frames || [];
+                const thumbs = document.getElementById('thumbnails');
+                thumbs.innerHTML = currentDetail.frames.map((f, i) => `<div class="thumbnail ${i === 0 ? 'active' : ''}" onclick="selectFrame(${i})"><img src="data:image/jpeg;base64,${f}" alt="${i}"><span class="thumb-idx">${i + 1}</span></div>`).join('');
+                if (currentDetail.frames.length > 0) {
+                    const startIdx = isReverse ? currentDetail.frames.length - 1 : 0;
+                    currentFrameIndex = startIdx;
+                    updateFrameDisplay(startIdx);
+                }
+            } catch (e) {
+                console.error('加载帧失败:', e);
+                display.innerHTML = '<span style="color:var(--danger);">加载失败</span>';
+            }
+        }
+
+        function selectFrame(index) {
+            stopPlay(); document.getElementById('playBtn').textContent = '播放';
+            currentFrameIndex = index;
+            document.getElementById('frameSlider').value = index;
+            updateFrameDisplay(index);
+        }
+
+        async function ignoreCurrent() {
+            if (!currentDetail) return;
+            try {
+                const res = await fetch(`/alerts/${currentDetail.encodedId}/ignore`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('ignoreBtn').style.display = 'none';
+                    loadRecords();
+                    loadSummary();
+                } else alert('操作失败: ' + (data.error || '未知错误'));
+            } catch (e) { alert('操作失败'); }
+        }
+
+        function closeModal() {
+            stopPlay();
+            document.getElementById('playBtn').textContent = '播放';
+            document.getElementById('detailModal').classList.remove('active');
+            currentFrameIndex = 0;
+            currentDetail = null;
+        }
+
+        document.getElementById('detailModal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+
+        init();
+        setInterval(loadSummary, 30000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,546 @@
+import logging
+import json
+import base64
+import re
+from typing import Any, Dict, List, Optional
+import numpy as np
+import cv2
+import requests
+import config
+
+logger = logging.getLogger(__name__)
+
+
+# 动态加载提示词（支持运行时修改）
+def _get_prompt_and_question():
+    return config.load_prompt()
+
+
+# ==================== 多类型安全检测 Prompt 模板 ====================
+
+PROMPT_TEMPLATES = {
+    "fire_review": """你正在复核一个工业安全监控系统的火焰检测结果。
+请仔细查看图片，判断画面中是否真的有明火。
+注意排除以下误判情况：
+- 红色灯光、红色物体反光
+- 夕阳、晚霞
+- 橙色安全帽或衣服
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "smoke_review": """你正在复核一个工业安全监控系统的烟雾检测结果。
+请仔细查看图片，判断画面中是否真的有烟雾。
+注意排除以下误判情况：
+- 水蒸气、雾气
+- 灰尘扬起
+- 白色墙壁反光
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "mask_confirm": """你正在确认一个工业安全监控画面的口罩佩戴情况。
+请判断画面中是否有未戴口罩的人员。
+注意排除以下情况：
+- 人员正在喝水或用餐（暂时摘下）
+- 人员手持物品遮挡面部
+- 距离太远看不清
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "cigarette_confirm": """你正在确认一个工业安全监控画面是否存在吸烟行为。
+请判断画面中是否有人正在吸烟。
+注意排除以下情况：
+- 手持笔、筷子等细长物体
+- 手持电子烟（也视为吸烟）
+- 人员只是在摸嘴
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "uniform_confirm": """你正在确认一个工业安全监控画面的工服佩戴情况。
+请判断画面中是否有未穿工服/反光背心的人员。
+注意：
+- 不同岗位工服颜色可能不同
+- 只需判断是否有"未穿"的情况
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "sleep_identity": """你正在查看同一摄像头的 {consecutive_required} 张监控截图，拍摄时间间隔约 {interval} 秒。
+
+请仔细判断：这 {consecutive_required} 张图中，睡岗/打盹的是否是同一个特定的人？
+注意排除以下情况：
+- 不同的人轮流打盹
+- 同一个人只是短暂低头后恢复正常
+- 画面中有多人，但睡岗的人换了
+
+请以 JSON 格式返回：
+{"same_person": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "confined_count_review": """你正在复核一个有限空间（如污水井、储罐、地下室）监控画面中的人数统计。
+请仔细数一下画面中有多少人位于这个有限空间内部（入口以内）。
+注意排除以下误判情况：
+- 只露出部分身体但在空间外部的人
+- 在入口处徘徊但未真正进入的人
+- 画面中的倒影、海报等
+
+请以 JSON 格式返回：
+{"count": 整数, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "confined_window_review": """你正在分析一段有限空间入口监控，共 {N} 张按时间顺序排列的连续截图。
+
+绿色框表示有限空间入口边界。
+
+空间方向定义：
+- 摄像头位于有限空间外部
+- 靠近摄像头的一侧是外部区域
+- 远离摄像头的一侧是有限空间内部区域
+
+因此：
+- 人物从“靠近摄像头”穿过入口移动到“远离摄像头”，属于 entered
+- 人物从“远离摄像头”穿过入口移动到移动到“靠近摄像头”，属于 left
+
+任务：
+判断是否有人进入（entered）或离开（left）有限空间。
+
+注意：
+输入是低帧率抽帧图像，可以基于前后帧的位置变化进行推断，但不要脑补不存在的轨迹。
+
+判定规则：
+
+【entered】
+只有当某个人明确发生：
+“外部区域 -> 内部区域”
+且人物主体真正进入内部时，才统计 entered。
+
+【left】
+只有当某个人明确发生：
+“内部区域 -> 外部区域”
+且人物主体真正离开内部时，才统计 left。
+
+【other】
+以下情况都属于 other：
+- 人一直在内部工作、停留、移动
+- 人一直在外部活动
+- 人在入口附近徘徊
+- 人从内部移动到入口附近工作
+- 人从入口附近返回内部
+- 人突然出现或消失
+- 遮挡严重、方向不明确
+- 无法确认是否真正跨越入口边界
+- 人物仅部分身体越过边界
+
+重要：
+- “无人 -> 内部有人” 不能直接判定 entered
+- “有人 -> 无人” 不能直接判定 left
+- 人物首次出现在内部时，默认来源未知
+- 不要根据人数增减直接判断 entered 或 left
+- 不要仅根据人物出现位置判断 inside/outside，必须结合相对摄像头的移动方向判断
+- 已经在内部的人，后续靠近入口工作，不算 entered
+- 绿色框只是入口边界，不代表进入框内就算 entered
+- 多人场景下必须分别判断每个人
+- 必须根据人物主体位置判断，而不是局部身体位置
+- 仅有手臂、腿、头部、半个身体越过边界，不算 entered 或 left
+- 人物探头、伸手、探身、短暂跨出部分身体后返回原位置，都属于 other
+- 只有人物主体位置真正完成“外部 ↔ 内部”状态变化，才算 entered 或 left
+
+计数规则：
+- 同一个人每完成一次“外部 -> 内部”，entered_count +1
+- 同一个人每完成一次“内部 -> 外部”，left_count +1
+
+请严格返回 JSON：
+
+{
+  "entered": true/false,
+  "left": true/false,
+  "other": true/false,
+  "entered_count": 整数,
+  "left_count": 整数,
+  "confidence": 0.0-1.0,
+  "reason": "判断理由"
+}""",
+
+    "inspection": """你正在执行工业安全监控巡检。请仔细检查监控画面，判断是否存在以下安全隐患：
+{enabled_types_desc}
+
+请以 JSON 格式返回，不要其他内容：
+{{
+  "detections": {{
+{detections_json}
+  }}
+}}
+
+注意：
+- 只检查上述列出的类型，不要自行扩展
+- confidence 范围 0.0-1.0
+- 如果没有发现任何异常，所有 detected 都返回 false""",
+}
+
+
+class VideoUnderstander:
+    """VLM 分析器（支持火山引擎 Ark / 阿里云百炼 等多提供商 OpenAI 兼容 API）"""
+
+    def __init__(self):
+        # 自动判断提供商：百炼 key 有值则优先用百炼，否则回退到 Ark
+        if config.BAILIAN_API_KEY:
+            self.provider = "bailian"
+            self.api_key = config.BAILIAN_API_KEY
+            self.model = config.BAILIAN_MODEL
+            self.endpoint = config.BAILIAN_ENDPOINT
+        else:
+            self.provider = "ark"
+            self.api_key = config.ARK_API_KEY
+            self.model = config.VLM_ENDPOINT
+            self.endpoint = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+        self._initialized = False
+
+    def _ensure_initialized(self):
+        """确保模型已初始化"""
+        if self._initialized:
+            return True
+        if not self.api_key or not self.model:
+            logger.warning(f"[{self.provider}] No API key or model configured, VLM will run in mock mode")
+            return False
+        self._initialized = True
+        return True
+
+    def _encode_frame(self, frame: np.ndarray) -> str:
+        """将帧编码为base64"""
+        _, buffer = cv2.imencode('.jpg', frame)
+        return base64.b64encode(buffer.tobytes()).decode('utf-8')
+
+    def _call_api(self, messages: List[dict]) -> Optional[str]:
+        """调用 OpenAI 兼容 API（百炼启用流式避免网关超时）"""
+        try:
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": 0.1,
+                "max_tokens": 1000,
+            }
+            is_stream = self.provider == "bailian"
+            if is_stream:
+                payload["stream"] = True
+                payload["stream_options"] = {"include_usage": True}
+            if self.provider == "bailian":
+                payload["enable_thinking"] = False
+
+            resp = requests.post(
+                self.endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=60,
+                stream=is_stream,
+            )
+            resp.raise_for_status()
+
+            if not is_stream:
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+                usage = data.get("usage", {})
+                print(f"[VLM_RESPONSE] provider={self.provider} model={self.model} content={content[:200]}... usage={usage}")
+                return content
+
+            # 流式读取 SSE
+            content_parts = []
+            usage = {}
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                line_str = line.decode("utf-8")
+                if not line_str.startswith("data: "):
+                    continue
+                data_str = line_str[len("data: "):]
+                if data_str.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                choices = chunk.get("choices", [])
+                if choices:
+                    delta = choices[0].get("delta", {})
+                    if delta.get("content"):
+                        content_parts.append(delta["content"])
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
+
+            full_content = "".join(content_parts)
+            print(f"[VLM_RESPONSE] provider={self.provider} model={self.model} content={full_content[:200]}... usage={usage}")
+            return full_content
+        except Exception as e:
+            logger.error(f"[{self.provider}] API error: {e}")
+            return None
+
+    # ------------------------------------------------------------------
+    # 旧接口（兼容原有电梯检测逻辑）
+    # ------------------------------------------------------------------
+
+    def _build_messages(self, frames: List[np.ndarray]):
+        """构建发送给模型的messages"""
+        prompt, question = _get_prompt_and_question()
+
+        content = []
+        for frame in frames:
+            b64_img = self._encode_frame(frame)
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+            })
+        content.append({"type": "text", "text": question})
+
+        return [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": content},
+        ]
+
+    def analyze(self, frames: List[np.ndarray]) -> Optional[dict]:
+        """分析视频帧（旧接口，兼容电梯检测）"""
+        if not frames:
+            logger.error("No frames to analyze")
+            return None
+
+        if not self._ensure_initialized():
+            return self._mock_analyze(frames)
+
+        messages = self._build_messages(frames)
+        content = self._call_api(messages)
+        if content is None:
+            return self._mock_analyze(frames)
+
+        logger.info(f"Model response: {content}")
+        return self._parse_response(content)
+
+    # ------------------------------------------------------------------
+    # 新接口（多类型安全检测）
+    # ------------------------------------------------------------------
+
+    def analyze_multi(
+        self,
+        frames: List[np.ndarray],
+        prompt_type: str = "review",
+        extra_context: Optional[Dict[str, Any]] = None,
+    ) -> dict:
+        """
+        多图分析接口（安全检测专用）
+
+        Args:
+            frames: 图片帧列表
+            prompt_type: prompt 模板名称（fire_review / mask_confirm / sleep_identity / inspection 等）
+            extra_context: 额外上下文，用于填充模板变量
+
+        Returns:
+            解析后的 JSON dict
+        """
+        if not frames:
+            return {"error": "No frames provided"}
+
+        # 构建 prompt
+        if prompt_type == "confined_window_review":
+            template = config.load_confined_prompt()
+            if extra_context:
+                template = template.replace("{N}", str(extra_context.get("N", len(frames))))
+        elif prompt_type in PROMPT_TEMPLATES:
+            template = PROMPT_TEMPLATES[prompt_type]
+        else:
+            template = PROMPT_TEMPLATES["fire_review"]
+
+        if extra_context:
+            if prompt_type == "inspection":
+                template = self._build_inspection_prompt(extra_context)
+            elif prompt_type == "sleep_identity":
+                template = template.format(
+                    consecutive_required=extra_context.get("consecutive_required", 3),
+                    interval=extra_context.get("interval", 60),
+                )
+
+        if not self._ensure_initialized():
+            return self._mock_analyze_multi(frames, prompt_type)
+
+        messages = self._build_multi_messages(frames, template)
+        content = self._call_api(messages)
+        if content is None:
+            return self._mock_analyze_multi(frames, prompt_type)
+
+        logger.info(f"VLM [{prompt_type}] response: {content[:200]}...")
+        return self._parse_safety_response(content, prompt_type)
+
+    def _build_multi_messages(self, frames: List[np.ndarray], prompt: str):
+        """构建多图分析的 messages"""
+        content = []
+        for frame in frames:
+            b64_img = self._encode_frame(frame)
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+            })
+        content.append({"type": "text", "text": prompt})
+
+        return [
+            {"role": "system", "content": "你是一个工业安全监控专家。请根据用户提供的图片和问题进行判断。"},
+            {"role": "user", "content": content},
+        ]
+
+    def _build_inspection_prompt(self, extra_context: dict) -> str:
+        """动态构建巡检 prompt"""
+        types = extra_context.get("enabled_types", [])
+        type_desc = {
+            "fire": "明火",
+            "smoke": "烟雾",
+            "uniform": "未穿工服",
+            "mask": "未戴口罩",
+            "cigarette": "吸烟",
+            "sleep": "睡岗/打盹",
+        }
+        checks = [f"- {type_desc.get(t, t)}" for t in types]
+        checks_str = "\n".join(checks)
+        detections_json = "\n".join(
+            [f'    "{t}": {{"detected": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}}' for t in types]
+        )
+
+        template = PROMPT_TEMPLATES["inspection"]
+        return template.format(
+            enabled_types_desc=checks_str,
+            detections_json=detections_json,
+        )
+
+    # ------------------------------------------------------------------
+    # 响应解析
+    # ------------------------------------------------------------------
+
+    def _parse_response(self, response: str) -> dict:
+        """旧接口解析（enter/leave/none）"""
+        try:
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                result = json.loads(json_match.group())
+                action = result.get('action', 'none')
+                if 'entry' in result and 'action' not in result:
+                    action = 'enter' if result.get('entry') else 'none'
+                confidence = result.get('confidence', 0.0)
+                confidence = min(max(confidence, 0.0), 1.0)
+                return {
+                    'action': action,
+                    'confidence': confidence,
+                    'reason': result.get('reason', '')
+                }
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse JSON: {e}")
+
+        return {
+            'action': 'none',
+            'confidence': 0.0,
+            'reason': f'解析失败: {response[:100]}'
+        }
+
+    def _parse_safety_response(self, response: str, prompt_type: str) -> dict:
+        """
+        安全检测响应解析（四层 fallback）
+        1. 直接 JSON 解析
+        2. 从 markdown 代码块中提取
+        3. 提取第一个 {...} 块
+        4. 按字段正则提取
+        """
+        # Level 1: 直接解析
+        try:
+            result = json.loads(response)
+            return result
+        except json.JSONDecodeError:
+            pass
+
+        # Level 2: 从 markdown 代码块提取
+        code_block = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response)
+        if code_block:
+            try:
+                result = json.loads(code_block.group(1))
+                return result
+            except json.JSONDecodeError:
+                pass
+
+        # Level 3: 提取第一个 { ... } 块
+        brace_block = re.search(r'\{[\s\S]*?\}', response)
+        if brace_block:
+            try:
+                result = json.loads(brace_block.group())
+                return result
+            except json.JSONDecodeError:
+                pass
+
+        # Level 4: 按 prompt_type 正则提取关键字段
+        result = {}
+        if "confirmed" in response.lower() or prompt_type.endswith("_confirm") or prompt_type.endswith("_review"):
+            confirmed_match = re.search(r'"confirmed"\s*[:=]\s*(true|false)', response, re.IGNORECASE)
+            if confirmed_match:
+                result["confirmed"] = confirmed_match.group(1).lower() == "true"
+        if "same_person" in response.lower() or prompt_type == "sleep_identity":
+            sp_match = re.search(r'"same_person"\s*[:=]\s*(true|false)', response, re.IGNORECASE)
+            if sp_match:
+                result["same_person"] = sp_match.group(1).lower() == "true"
+        conf_match = re.search(r'"confidence"\s*[:=]\s*(\d+\.?\d*)', response)
+        if conf_match:
+            result["confidence"] = float(conf_match.group(1))
+        reason_match = re.search(r'"reason"\s*[:=]\s*"([^"]*)"', response)
+        if reason_match:
+            result["reason"] = reason_match.group(1)
+
+        if result:
+            result["_parse_fallback"] = True
+            return result
+
+        return {
+            "error": "Failed to parse VLM response",
+            "raw": response[:200],
+        }
+
+    # ------------------------------------------------------------------
+    # Mock 模式
+    # ------------------------------------------------------------------
+
+    def _mock_analyze(self, frames: List[np.ndarray]) -> dict:
+        """Mock分析结果（旧接口）"""
+        import random
+        actions = ['enter', 'leave', 'none']
+        result = {
+            'action': random.choice(actions),
+            'confidence': round(random.uniform(0.7, 0.99), 2),
+            'reason': 'Mock分析结果 - 实际使用需配置火山引擎API'
+        }
+        logger.info(f"Mock result: {result}")
+        return result
+
+    def _mock_analyze_multi(self, frames: List[np.ndarray], prompt_type: str) -> dict:
+        """Mock分析结果（新接口）"""
+        import random
+        if prompt_type == "sleep_identity":
+            result = {
+                "same_person": random.choice([True, False]),
+                "confidence": round(random.uniform(0.6, 0.95), 2),
+                "reason": "Mock: 同一人判定",
+            }
+        elif prompt_type == "inspection":
+            result = {
+                "detections": {},
+            }
+        elif prompt_type == "confined_window_review":
+            result = {
+                "entered": random.choice([True, False]),
+                "left": random.choice([True, False]),
+                "other": random.choice([True, False]),
+                "entered_count": random.randint(0, 2),
+                "left_count": random.randint(0, 2),
+                "confidence": round(random.uniform(0.6, 0.95), 2),
+                "reason": "Mock: 有限空间窗口复核结果",
+            }
+        else:
+            result = {
+                "confirmed": random.choice([True, False]),
+                "confidence": round(random.uniform(0.6, 0.95), 2),
+                "reason": f"Mock: {prompt_type} 复核结果",
+            }
+        logger.info(f"Mock multi result [{prompt_type}]: {result}")
+        return result

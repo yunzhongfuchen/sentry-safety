@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>有限空间监控</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        body { height: 100vh; overflow: hidden; }
+        #app { height: 100vh; display: flex; flex-direction: column; }
+
+        /* Header override */
+        .header { height: 56px; padding: 0 24px; }
+        .header-brand {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 18px; font-weight: 700; color: var(--text);
+        }
+        .header-brand .logo {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--accent), #38bdf8);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 16px;
+        }
+        .header-nav { display: flex; gap: 4px; }
+        .header-nav a {
+            padding: 8px 16px; border-radius: var(--radius-sm);
+            color: var(--text-secondary); text-decoration: none;
+            font-size: 14px; font-weight: 500; transition: all .2s;
+        }
+        .header-nav a:hover { color: var(--text); background: var(--bg); }
+        .header-nav a.active { color: var(--accent); background: var(--accent-light); }
+
+        /* Main Layout */
+        .main {
+            flex: 1; display: flex; overflow: hidden;
+            padding: 16px; gap: 16px;
+        }
+
+        /* Primary Area */
+        .primary-area {
+            flex: 1; display: flex; flex-direction: column; min-width: 0; gap: 16px;
+        }
+
+        .main-video {
+            flex: 1;
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .video-header {
+            padding: 12px 16px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .video-header h4 {
+            font-size: 14px; font-weight: 600;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+        }
+        .status-dot.online { background: var(--success); box-shadow: 0 0 0 3px var(--success-light); }
+        .status-dot.offline { background: var(--danger); }
+        .status-dot.unknown { background: var(--text-muted); }
+
+        .zone-meta {
+            display: flex; align-items: center; gap: 10px;
+        }
+        .zone-meta .badge { font-size: 11px; }
+
+        /* Toggle switch */
+        .toggle-switch {
+            display: inline-flex; align-items: center; gap: 8px;
+            font-size: 12px; color: var(--text-secondary); cursor: pointer;
+            user-select: none;
+        }
+        .toggle-switch input { display: none; }
+        .toggle-track {
+            width: 32px; height: 18px; border-radius: 9px;
+            background: var(--border); position: relative; transition: background .2s;
+            flex-shrink: 0;
+        }
+        .toggle-track::after {
+            content: ''; position: absolute; top: 2px; left: 2px;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: white; transition: transform .2s;
+            box-shadow: 0 1px 2px rgba(0,0,0,.15);
+        }
+        .toggle-switch input:checked + .toggle-track {
+            background: var(--accent);
+        }
+        .toggle-switch input:checked + .toggle-track::after {
+            transform: translateX(14px);
+        }
+
+        .video-actions {
+            display: flex; align-items: center; gap: 12px;
+        }
+        .icon-btn {
+            border: 1px solid var(--border); background: var(--surface);
+            color: var(--text-secondary); padding: 5px 10px;
+            border-radius: var(--radius-sm); cursor: pointer;
+            font-size: 12px; transition: all .2s; font-family: inherit;
+        }
+        .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .icon-btn:disabled { opacity: .5; cursor: not-allowed; }
+        .icon-btn.recording { border-color: var(--danger); color: var(--danger); }
+        .icon-btn.recording:hover { border-color: var(--danger); color: var(--danger); }
+        .rec-dot {
+            display: inline-block;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+            margin-right: 4px;
+            animation: rec-pulse 1.5s infinite;
+        }
+        @keyframes rec-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .3; }
+        }
+
+        .video-body {
+            position: relative; flex: 1; min-height: 0; background: #0f172a;
+        }
+        .video-body img {
+            position: absolute; inset: 0; width: 100%; height: 100%;
+            object-fit: contain; display: block;
+        }
+        .video-placeholder {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: var(--text-muted); gap: 8px;
+        }
+        .video-placeholder .icon { font-size: 32px; opacity: .5; }
+
+        /* Events panel as left sidebar */
+        .events-panel {
+            width: 280px;
+            flex-shrink: 0;
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            display: flex; flex-direction: column;
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+        .events-header {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+            flex-shrink: 0;
+        }
+        .events-header h4 { font-size: 13px; font-weight: 600; }
+        .events-list {
+            flex: 1; overflow-y: auto; padding: 8px;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .event-item {
+            background: var(--bg);
+            border-radius: var(--radius-sm);
+            padding: 8px 10px;
+            border-left: 3px solid transparent;
+            display: flex; flex-direction: column; gap: 4px;
+            transition: background .2s;
+        }
+        .event-item.alert { border-left-color: var(--danger); background: var(--danger-light); }
+        .event-item.enter { border-left-color: var(--success); }
+        .event-item.leave { border-left-color: var(--accent); }
+        .event-item-time {
+            font-size: 10px; color: var(--text-muted); font-family: monospace;
+        }
+        .event-item-row {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 12px; gap: 6px; min-width: 0;
+        }
+        .event-item-zone {
+            font-weight: 600; color: var(--text);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .event-item-detail {
+            font-size: 11px; color: var(--text-secondary);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .events-empty {
+            text-align: center; padding: 24px 12px;
+            color: var(--text-muted); font-size: 12px;
+        }
+
+        /* Sidebar */
+        .sidebar-right {
+            width: 380px; flex-shrink: 0;
+            display: flex; flex-direction: column; gap: 10px;
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 12px;
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+        .sub-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 4px; flex-shrink: 0;
+        }
+        .sub-header-title {
+            font-size: 13px; font-weight: 600;
+            color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .sub-pager { display: flex; align-items: center; gap: 8px; }
+        .pager-btn {
+            width: 28px; height: 28px;
+            border: 1px solid var(--border); background: var(--surface);
+            border-radius: 6px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 14px; color: var(--text-secondary); transition: all .2s;
+        }
+        .pager-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+        .pager-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .pager-info { font-size: 12px; color: var(--text-secondary); font-weight: 500; min-width: 48px; text-align: center; }
+
+        .sub-grid {
+            flex: 1; display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: repeat(3, 1fr);
+            gap: 8px; min-height: 0;
+        }
+
+        .zone-card {
+            background: var(--surface);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: flex; flex-direction: column;
+            box-shadow: var(--shadow-sm);
+            transition: all .2s;
+            cursor: pointer;
+        }
+        .zone-card:hover { box-shadow: var(--shadow); border-color: var(--accent); }
+        .zone-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+        .zone-card.alert { border-color: var(--danger); background: var(--danger-light); }
+
+        .zone-card-header {
+            padding: 8px 10px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .zone-card-header .name {
+            font-size: 12px; font-weight: 600;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .zone-card-header .mode {
+            font-size: 10px; padding: 2px 6px; border-radius: 10px;
+            background: var(--bg); color: var(--text-muted); font-weight: 500; flex-shrink: 0;
+        }
+
+        .zone-card-body {
+            flex: 1; min-height: 0;
+            display: flex; align-items: center; justify-content: center; gap: 12px;
+            padding: 8px;
+        }
+        .zone-card-body .count-circle {
+            width: 56px; height: 56px; border-width: 2px;
+        }
+        .zone-card-body .count-circle .count-number { font-size: 20px; }
+        .zone-card-body .count-circle .count-label { font-size: 9px; }
+
+        .zone-info { display: flex; flex-direction: column; gap: 4px; }
+        .zone-info-row { font-size: 11px; color: var(--text-secondary); }
+        .zone-info-row strong { color: var(--text); }
+
+        .zone-card-footer {
+            padding: 6px 10px;
+            border-top: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .zone-status { font-size: 11px; color: var(--text-muted); }
+
+        .sub-placeholder {
+            background: var(--bg); border-radius: var(--radius-sm);
+            border: 2px dashed var(--border);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: var(--text-muted); gap: 6px; font-size: 12px;
+        }
+        .sub-placeholder .icon { font-size: 24px; opacity: .4; }
+
+        /* Bottom Bar */
+        .bottom-bar {
+            flex-shrink: 0;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 10px 24px;
+            display: flex; align-items: center; gap: 16px;
+            min-height: 56px;
+        }
+        .stat-group { display: flex; gap: 10px; align-items: center; }
+        .stat-card {
+            background: var(--bg); border-radius: var(--radius-sm);
+            border: 1px solid var(--border); padding: 6px 12px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .stat-value { font-size: 18px; font-weight: 700; color: var(--accent); }
+        .stat-label { font-size: 11px; color: var(--text-secondary); }
+        .divider { width: 1px; height: 32px; background: var(--border); flex-shrink: 0; }
+
+        .actions { display: flex; gap: 8px; margin-left: auto; }
+
+        /* ROI Editor */
+        .roi-editor-modal { width: 760px; max-width: 95vw; }
+        .roi-canvas-wrap {
+            position: relative; background: #0f172a;
+            border-radius: var(--radius-sm); overflow: hidden;
+            display: block;
+            width: fit-content;
+            max-width: 100%;
+            margin: 0 auto 14px;
+        }
+        .roi-canvas-wrap img {
+            display: block;
+            max-width: 100%;
+            max-height: 55vh;
+            user-select: none; -webkit-user-drag: none;
+        }
+        .roi-canvas {
+            position: absolute; inset: 0;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        .roi-info {
+            display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px;
+            margin-bottom: 12px;
+        }
+        .roi-info .form-group { margin-bottom: 0; }
+        .roi-hint {
+            font-size: 12px; color: var(--text-muted); padding: 6px 0 12px;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 200; backdrop-filter: blur(4px);
+            overflow: auto; padding: 20px;
+        }
+        .modal {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); width: 400px; max-width: 90vw;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+        .modal-header {
+            padding: 16px 20px; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .modal-header h3 { font-size: 16px; font-weight: 600; }
+        .modal-close { background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; }
+        .modal-body { padding: 20px; flex: 1; overflow-y: auto; }
+        .modal-footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        @media (max-width: 768px) {
+            .sidebar-right { display: none; }
+            .events-panel { width: 100%; max-height: 200px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <header class="header">
+            <div class="header-brand">
+                <div class="logo">S</div>
+                <span>有限空间监控</span>
+            </div>
+            <nav class="header-nav">
+                <a href="/monitor" class="active">监控</a>
+                <a href="/records">记录</a>
+                <a href="/recordings">录屏</a>
+                <a href="/settings">设置</a>
+            </nav>
+        </header>
+
+        <div class="main">
+            <!-- Events Sidebar (Left) -->
+            <aside class="events-panel">
+                <div class="events-header">
+                    <h4>事件记录</h4>
+                    <span style="font-size:11px;color:var(--text-muted);">
+                        共 {{ recentEvents.length }} 条
+                    </span>
+                </div>
+                <div class="events-list" v-if="recentEvents.length">
+                    <div v-for="evt in recentEvents" :key="evt.id || evt.timestamp"
+                         :class="['event-item', evt.alert ? 'alert' : (evt.event_type || evt.type || '')]">
+                        <div class="event-item-time">{{ formatTime(evt.timestamp) }}</div>
+                        <div class="event-item-row">
+                            <span class="event-item-zone" :title="evt.zone_name || evt.camera_id">
+                                {{ evt.zone_name || evt.camera_id || '未知区域' }}
+                            </span>
+                            <span :class="['event-type', evtTypeClass(evt)]" style="font-size:10px;padding:2px 6px;">
+                                {{ eventTypeLabel(evt.event_type || evt.type) }}
+                            </span>
+                        </div>
+                        <div class="event-item-detail" v-if="evt.description || evt.detail">
+                            {{ evt.description || evt.detail }}
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="events-empty">暂无事件记录</div>
+            </aside>
+
+            <!-- Primary Area -->
+            <div class="primary-area">
+                <div class="main-video">
+                    <div class="video-header">
+                        <h4>
+                            <span :class="'status-dot ' + (selectedCamera ? 'online' : 'unknown')"></span>
+                            {{ selectedCamera ? selectedCamera.name : '未选择摄像头' }}
+                        </h4>
+                        <div class="video-actions">
+                            <label class="toggle-switch" v-if="selectedCamera">
+                                <input type="checkbox" v-model="showDetections" />
+                                <span class="toggle-track"></span>
+                                <span>显示检测框</span>
+                            </label>
+                            <button class="icon-btn" v-if="selectedCamera" @click="openRoiEditor">框选检测区域</button>
+                            <div class="zone-meta" v-if="selectedCamera">
+                                <span class="badge badge-normal" v-if="selectedCameraStatus">
+                                    在线
+                                </span>
+                                <span class="badge badge-warning" v-else>
+                                    离线
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="video-body">
+                        <img v-if="selectedCamera && selectedCamera.camera_id"
+                             :src="streamUrl"
+                             @error="onStreamError" />
+                        <div v-else class="video-placeholder">
+                            <div class="icon">📷</div>
+                            <div>请选择区域查看视频</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="sidebar-right">
+                <div class="sub-header">
+                    <span class="sub-header-title">摄像头列表</span>
+                    <div class="sub-pager" v-if="totalPages > 1">
+                        <button class="pager-btn" @click="page--" :disabled="page === 0">‹</button>
+                        <span class="pager-info">{{ page + 1 }} / {{ totalPages }}</span>
+                        <button class="pager-btn" @click="page++" :disabled="page >= totalPages - 1">›</button>
+                    </div>
+                </div>
+                <div class="sub-grid">
+                    <template v-for="i in 6" :key="i">
+                        <div v-if="displayedCameras[i-1]"
+                             :class="['zone-card', { active: selectedCameraId === displayedCameras[i-1].camera_id }]"
+                             @click="selectCamera(displayedCameras[i-1].camera_id)">
+                            <div class="zone-card-header">
+                                <span class="name" :title="displayedCameras[i-1].name">{{ displayedCameras[i-1].name }}</span>
+                            </div>
+                            <div class="zone-card-body">
+                                <div class="zone-info">
+                                    <div class="zone-info-row">摄像头 {{ displayedCameras[i-1].camera_id || '无' }}</div>
+                                </div>
+                            </div>
+                            <div class="zone-card-footer">
+                                <span class="zone-status" v-if="cameraStatusMap[displayedCameras[i-1].camera_id]">
+                                    更新于 {{ formatTimeShort(cameraStatusMap[displayedCameras[i-1].camera_id].updated_at) }}
+                                </span>
+                                <span class="zone-status" v-else>未连接</span>
+                            </div>
+                        </div>
+                        <div v-else class="sub-placeholder">
+                            <div class="icon">📷</div>
+                            <span>无区域</span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Bar -->
+        <div class="bottom-bar">
+            <div class="stat-group">
+                <div class="stat-card">
+                    <div>
+                        <div class="stat-value">{{ cameras.length }}</div>
+                        <div class="stat-label">区域总数</div>
+                    </div>
+                </div>
+<!-- 人数统计已移除 -->
+            </div>
+            <div class="divider"></div>
+            <div class="pulse-dot"></div>
+            <span style="font-size:12px;color:var(--text-muted);">实时更新中</span>
+            <div class="actions" v-if="selectedCamera">
+                <template v-if="playbackStatus.is_video_file">
+                    <button class="icon-btn" @click="controlPlayback(playbackStatus.playing ? 'pause' : 'play')">
+                        {{ playbackStatus.playing ? '⏸ 暂停' : '▶ 播放' }}
+                    </button>
+                    <button class="icon-btn" @click="controlPlayback('loop', { loop: !playbackStatus.loop })"
+                            :style="playbackStatus.loop ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}">
+                        {{ playbackStatus.loop ? '🔁 循环' : '➡️ 单次' }}
+                    </button>
+                </template>
+                <button class="icon-btn" :class="{ recording: recordingStatus.recording }"
+                        @click="recordingStatus.recording ? stopRecording() : startRecording()">
+                    <span v-if="recordingStatus.recording" class="rec-dot"></span>
+                    {{ recordingStatus.recording ? '⏹ 录制中' : '⏺ 录制' }}
+                </button>
+            </div>
+        </div>
+
+        <!-- ROI Editor Modal -->
+        <div v-if="roiEditor.visible" class="modal-overlay" @click.self="closeRoiEditor">
+            <div class="modal roi-editor-modal">
+                <div class="modal-header">
+                    <h3>框选检测区域 - {{ selectedCamera ? selectedCamera.name : '' }}</h3>
+                    <button class="modal-close" @click="closeRoiEditor">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="roi-hint">在画面中按住鼠标左键拖拽,框选需要监控的检测区域。</div>
+                    <div class="roi-canvas-wrap">
+                        <img :src="roiEditor.snapshotUrl" @load="onRoiImageLoad" />
+                        <canvas id="roiCanvas" class="roi-canvas"
+                                @mousedown="onCanvasMouseDown"
+                                @mousemove="onCanvasMouseMove"
+                                @mouseup="onCanvasMouseUp"
+                                @mouseleave="onCanvasMouseUp"></canvas>
+                    </div>
+                    <div class="roi-info">
+                        <div class="form-group"><label>X1</label><input type="number" class="form-input" v-model.number="roiEditor.x1" /></div>
+                        <div class="form-group"><label>Y1</label><input type="number" class="form-input" v-model.number="roiEditor.y1" /></div>
+                        <div class="form-group"><label>X2</label><input type="number" class="form-input" v-model.number="roiEditor.x2" /></div>
+                        <div class="form-group"><label>Y2</label><input type="number" class="form-input" v-model.number="roiEditor.y2" /></div>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-muted);">
+                        画面尺寸: {{ roiEditor.imgWidth }} × {{ roiEditor.imgHeight }}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="closeRoiEditor">取消</button>
+                    <button class="btn btn-primary" :disabled="roiEditor.saving" @click="saveRoi">
+                        {{ roiEditor.saving ? '保存中...' : '保存区域' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+
+        createApp({
+            setup() {
+                const cameras = ref([]);
+                const cameraStatusMap = ref({});
+                const cameraEventsMap = ref({});
+                const recentEvents = ref([]);
+                const selectedCameraId = ref(null);
+                const page = ref(0);
+                const showDetections = ref(true);
+                const playbackStatus = ref({});
+                const recordingStatus = ref({});
+                const roiEditor = ref({
+                    visible: false,
+                    snapshotUrl: '',
+                    imgWidth: 0,
+                    imgHeight: 0,
+                    displayWidth: 0,
+                    displayHeight: 0,
+                    drawing: false,
+                    startX: 0, startY: 0,
+                    x1: 0, y1: 0, x2: 0, y2: 0,
+                    saving: false,
+                });
+                let pollTimer = null;
+
+                const selectedCamera = computed(() => cameras.value.find(z => z.camera_id === selectedCameraId.value) || null);
+
+                const streamUrl = computed(() => {
+                    if (!selectedCamera.value || !selectedCamera.value.camera_id) return '';
+                    const base = `/cameras/${selectedCamera.value.camera_id}/stream`;
+                    return showDetections.value ? base : `${base}?raw=true`;
+                });
+                const selectedCameraStatus = computed(() => cameraStatusMap.value[selectedCameraId.value] || null);
+                const cameraEvents = computed(() => cameraEventsMap.value[selectedCameraId.value] || []);
+
+                const totalPages = computed(() => Math.max(1, Math.ceil(cameras.value.length / 6)));
+                const displayedCameras = computed(() => {
+                    const start = page.value * 6;
+                    return cameras.value.slice(start, start + 6);
+                });
+
+
+                function eventTypeLabel(type) {
+                    const map = { enter: '进入', leave: '离开', alert: '报警', other: '其他' };
+                    return map[type] || type || '未知';
+                }
+
+                function evtTypeClass(evt) {
+                    const t = evt.event_type || evt.type;
+                    if (evt.alert) return 'type-other';
+                    if (t === 'enter') return 'type-enter';
+                    if (t === 'leave') return 'type-leave';
+                    return 'type-other';
+                }
+
+                function formatTime(ts) {
+                    if (!ts) return '-';
+                    const d = new Date(ts);
+                    if (isNaN(d)) return ts;
+                    return d.toLocaleString('zh-CN');
+                }
+
+                function formatTimeShort(ts) {
+                    if (!ts) return '-';
+                    const d = new Date(ts);
+                    if (isNaN(d)) return ts;
+                    const h = String(d.getHours()).padStart(2, '0');
+                    const m = String(d.getMinutes()).padStart(2, '0');
+                    const s = String(d.getSeconds()).padStart(2, '0');
+                    return `${h}:${m}:${s}`;
+                }
+
+                function selectCamera(id) {
+                    selectedCameraId.value = id;
+                    fetchEvents(id);
+                    fetchPlaybackStatus();
+                    fetchRecordingStatus();
+                }
+
+                function onStreamError(e) {
+                    console.warn('视频流加载失败', e);
+                }
+
+                async function fetchCameras() {
+                    try {
+                        const res = await fetch('/api/cameras');
+                        const data = await res.json();
+                        if (data.cameras) {
+                            cameras.value = data.cameras;
+                            if (!selectedCameraId.value && data.cameras.length > 0) {
+                                selectedCameraId.value = data.cameras[0].camera_id;
+                                fetchEvents(data.cameras[0].camera_id);
+                            }
+                        }
+                    } catch (e) { console.error('获取摄像头列表失败:', e); }
+                }
+
+                async function fetchStatusForCamera(cameraId) {
+                    try {
+                        const res = await fetch(`/api/cameras/${cameraId}/status`);
+                        const data = await res.json();
+                        cameraStatusMap.value[cameraId] = data;
+                    } catch (e) { console.error(`获取摄像头 ${cameraId} 状态失败:`, e); }
+                }
+
+                async function fetchAllStatuses() {
+                    for (const z of cameras.value) {
+                        await fetchStatusForCamera(z.camera_id);
+                    }
+                }
+
+                async function fetchEvents(cameraId) {
+                    try {
+                        const res = await fetch(`/api/cameras/${cameraId}/events`);
+                        const data = await res.json();
+                        cameraEventsMap.value[cameraId] = data.events || [];
+                    } catch (e) { console.error(`获取摄像头 ${cameraId} 事件失败:`, e); }
+                }
+
+                async function fetchRecentEvents() {
+                    try {
+                        const res = await fetch('/api/records?page=1&size=50');
+                        const data = await res.json();
+                        recentEvents.value = data.records || data.items || [];
+                    } catch (e) { console.error('获取最近事件失败:', e); }
+                }
+
+                // -- ROI editor --
+                async function openRoiEditor() {
+                    if (!selectedCamera.value || !selectedCamera.value.camera_id) return;
+                    const cam = selectedCamera.value.camera_id;
+                    try {
+                        const res = await fetch(`/cameras/${cam}/snapshot`);
+                        if (!res.ok) {
+                            alert('获取摄像头快照失败,请确认摄像头在线');
+                            return;
+                        }
+                        const w = parseInt(res.headers.get('X-Frame-Width') || '0');
+                        const h = parseInt(res.headers.get('X-Frame-Height') || '0');
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+
+                        // 初始 ROI 用现有值,如果没有则置零
+                        const cur = selectedCamera.value.roi || [];
+                        roiEditor.value = {
+                            visible: true,
+                            snapshotUrl: url,
+                            imgWidth: w || 640,
+                            imgHeight: h || 480,
+                            displayWidth: 0,
+                            displayHeight: 0,
+                            drawing: false,
+                            startX: 0, startY: 0,
+                            x1: cur[0] || 0,
+                            y1: cur[1] || 0,
+                            x2: cur[2] || 0,
+                            y2: cur[3] || 0,
+                            saving: false,
+                        };
+                    } catch (e) {
+                        console.error('打开 ROI 编辑器失败:', e);
+                        alert('获取快照失败');
+                    }
+                }
+
+                function closeRoiEditor() {
+                    if (roiEditor.value.snapshotUrl) {
+                        try { URL.revokeObjectURL(roiEditor.value.snapshotUrl); } catch (_) {}
+                    }
+                    roiEditor.value.visible = false;
+                }
+
+                function onRoiImageLoad(e) {
+                    const img = e.target;
+                    // 用 rAF 等 CSS 应用后再读尺寸,避免 max-height/max-width 还没生效
+                    requestAnimationFrame(() => {
+                        const rect = img.getBoundingClientRect();
+                        roiEditor.value.displayWidth = rect.width || img.clientWidth;
+                        roiEditor.value.displayHeight = rect.height || img.clientHeight;
+                        drawRoi();
+                    });
+                }
+
+                function _displayToImage(displayX, displayY) {
+                    const e = roiEditor.value;
+                    const sx = e.imgWidth / Math.max(1, e.displayWidth);
+                    const sy = e.imgHeight / Math.max(1, e.displayHeight);
+                    return [Math.round(displayX * sx), Math.round(displayY * sy)];
+                }
+
+                function _imageToDisplay(imgX, imgY) {
+                    const e = roiEditor.value;
+                    const sx = e.displayWidth / Math.max(1, e.imgWidth);
+                    const sy = e.displayHeight / Math.max(1, e.imgHeight);
+                    return [imgX * sx, imgY * sy];
+                }
+
+                // 用事件触发时的 canvas 实时尺寸保证坐标与渲染一致
+                function _syncDisplaySize(ev) {
+                    const rect = ev.currentTarget.getBoundingClientRect();
+                    if (rect.width > 0) roiEditor.value.displayWidth = rect.width;
+                    if (rect.height > 0) roiEditor.value.displayHeight = rect.height;
+                    return rect;
+                }
+
+                function onCanvasMouseDown(ev) {
+                    const rect = _syncDisplaySize(ev);
+                    const x = ev.clientX - rect.left;
+                    const y = ev.clientY - rect.top;
+                    roiEditor.value.drawing = true;
+                    roiEditor.value.startX = x;
+                    roiEditor.value.startY = y;
+                    const [ix, iy] = _displayToImage(x, y);
+                    roiEditor.value.x1 = ix;
+                    roiEditor.value.y1 = iy;
+                    roiEditor.value.x2 = ix;
+                    roiEditor.value.y2 = iy;
+                    drawRoi();
+                }
+
+                function onCanvasMouseMove(ev) {
+                    if (!roiEditor.value.drawing) return;
+                    const rect = _syncDisplaySize(ev);
+                    const x = ev.clientX - rect.left;
+                    const y = ev.clientY - rect.top;
+                    const [ix, iy] = _displayToImage(x, y);
+                    const [six, siy] = _displayToImage(roiEditor.value.startX, roiEditor.value.startY);
+                    roiEditor.value.x1 = Math.min(six, ix);
+                    roiEditor.value.y1 = Math.min(siy, iy);
+                    roiEditor.value.x2 = Math.max(six, ix);
+                    roiEditor.value.y2 = Math.max(siy, iy);
+                    drawRoi();
+                }
+
+                function onCanvasMouseUp() {
+                    roiEditor.value.drawing = false;
+                }
+
+                function drawRoi() {
+                    const canvas = document.getElementById('roiCanvas');
+                    if (!canvas) return;
+                    const e = roiEditor.value;
+                    canvas.width = e.displayWidth;
+                    canvas.height = e.displayHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    if (e.x2 > e.x1 && e.y2 > e.y1) {
+                        const [dx1, dy1] = _imageToDisplay(e.x1, e.y1);
+                        const [dx2, dy2] = _imageToDisplay(e.x2, e.y2);
+                        ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+                        ctx.fillRect(dx1, dy1, dx2 - dx1, dy2 - dy1);
+                        ctx.strokeStyle = '#3b82f6';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(dx1, dy1, dx2 - dx1, dy2 - dy1);
+                    }
+                }
+
+                async function saveRoi() {
+                    if (!selectedCamera.value) return;
+                    const e = roiEditor.value;
+                    if (e.x2 <= e.x1 || e.y2 <= e.y1) {
+                        alert('请先在画面上拖拽框选检测区域');
+                        return;
+                    }
+                    e.saving = true;
+                    try {
+                        const z = selectedCamera.value;
+                        const cameraId = z.camera_id || z.id;
+                        const payload = {
+                            roi: [e.x1, e.y1, e.x2, e.y2],
+                            enable_vlm_review: z.enable_vlm_review !== false,
+                        };
+                        const res = await fetch(`/api/cameras/${cameraId}/zone-config`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                        });
+                        if (res.ok) {
+                            closeRoiEditor();
+                            await fetchCameras();
+                        } else {
+                            const err = await res.json().catch(() => ({}));
+                            alert('保存失败: ' + (err.error || res.status));
+                        }
+                    } catch (err) {
+                        console.error('保存 ROI 失败:', err);
+                        alert('保存失败');
+                    } finally {
+                        e.saving = false;
+                    }
+                }
+
+                async function fetchPlaybackStatus() {
+                    if (!selectedCamera.value || !selectedCamera.value.camera_id) return;
+                    const camId = selectedCamera.value.camera_id;
+                    try {
+                        const res = await fetch(`/cameras/${camId}/playback`);
+                        const data = await res.json();
+                        if (data.playback) playbackStatus.value = data.playback;
+                    } catch (e) { /* 静默失败，非关键接口 */ }
+                }
+
+                async function controlPlayback(action, extra = {}) {
+                    if (!selectedCamera.value || !selectedCamera.value.camera_id) return;
+                    const camId = selectedCamera.value.camera_id;
+                    try {
+                        const res = await fetch(`/cameras/${camId}/playback`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action, ...extra }),
+                        });
+                        const data = await res.json();
+                        if (data.playback) playbackStatus.value = data.playback;
+                    } catch (e) { console.error('播放控制失败:', e); }
+                }
+
+                async function fetchRecordingStatus() {
+                    if (!selectedCamera.value || !selectedCamera.value.camera_id) return;
+                    const camId = selectedCamera.value.camera_id;
+                    try {
+                        const res = await fetch(`/cameras/${camId}/record/status`);
+                        const data = await res.json();
+                        recordingStatus.value = data || {};
+                    } catch (e) { /* 静默失败 */ }
+                }
+
+                async function startRecording() {
+                    if (!selectedCamera.value || !selectedCamera.value.camera_id) return;
+                    const camId = selectedCamera.value.camera_id;
+                    try {
+                        const res = await fetch(`/cameras/${camId}/record/start`, { method: 'POST' });
+                        const data = await res.json();
+                        if (data.success) recordingStatus.value = { recording: true, record_path: data.record_path };
+                    } catch (e) { console.error('开始录制失败:', e); }
+                }
+
+                async function stopRecording() {
+                    if (!selectedCamera.value || !selectedCamera.value.camera_id) return;
+                    const camId = selectedCamera.value.camera_id;
+                    try {
+                        const res = await fetch(`/cameras/${camId}/record/stop`, { method: 'POST' });
+                        const data = await res.json();
+                        if (data.success) recordingStatus.value = { recording: false, record_path: data.record_path };
+                    } catch (e) { console.error('停止录制失败:', e); }
+                }
+
+                async function poll() {
+                    await fetchCameras();
+                    await fetchAllStatuses();
+                    await fetchRecentEvents();
+                    await fetchPlaybackStatus();
+                    await fetchRecordingStatus();
+                }
+
+                onMounted(() => {
+                    poll();
+                    pollTimer = setInterval(poll, 2000);
+                });
+
+                onUnmounted(() => {
+                    if (pollTimer) clearInterval(pollTimer);
+                });
+
+                return {
+                    cameras,
+                    cameraStatusMap,
+                    cameraEventsMap,
+                    recentEvents,
+                    selectedCameraId,
+                    selectedCamera,
+                    selectedCameraStatus,
+                    cameraEvents,
+                    page,
+                    totalPages,
+                    displayedCameras,
+                    showDetections,
+                    streamUrl,
+                    playbackStatus,
+                    recordingStatus,
+                    roiEditor,
+                    eventTypeLabel,
+                    evtTypeClass,
+                    formatTime,
+                    formatTimeShort,
+                    selectCamera,
+                    onStreamError,
+                    openRoiEditor,
+                    closeRoiEditor,
+                    onRoiImageLoad,
+                    onCanvasMouseDown,
+                    onCanvasMouseMove,
+                    onCanvasMouseUp,
+                    saveRoi,
+                    fetchPlaybackStatus,
+                    controlPlayback,
+                    fetchRecordingStatus,
+                    startRecording,
+                    stopRecording,
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+# macOS metadata
+._*
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+
+# Environment variables
+.env
+
+# Data & logs (runtime generated)
+data/*.json
+data/*.txt
+data/frames/*.jpg
+data/frames/*.png
+data/confined_frames/
+data/recordings/
+logs/
+*.log
+
+# Runtime configs (editable at runtime, not versioned)
+config/*.json
+
+# Uploaded videos (large binaries)
+uploads/videos/
+
+# Models (large binaries, can be downloaded)
+*.pt
+*.onnx
+*.rknn
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code
+.claude/

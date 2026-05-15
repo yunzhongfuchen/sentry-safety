@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentry 监控中心</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        :root {
+            --bg: #f1f5f9;
+            --surface: #ffffff;
+            --surface-hover: #f8fafc;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --accent: #0ea5e9;
+            --accent-light: #e0f2fe;
+            --danger: #ef4444;
+            --danger-light: #fee2e2;
+            --warning: #f97316;
+            --warning-light: #ffedd5;
+            --success: #22c55e;
+            --success-light: #dcfce7;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --radius: 12px;
+            --radius-sm: 8px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', 'Noto Sans SC', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #app { height: 100vh; display: flex; flex-direction: column; }
+
+        /* Header */
+        .header {
+            height: 56px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            flex-shrink: 0;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .header-brand .logo {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--accent), #38bdf8);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 16px;
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 4px;
+        }
+
+        .header-nav a {
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all .2s;
+        }
+
+        .header-nav a:hover { color: var(--text); background: var(--bg); }
+        .header-nav a.active { color: var(--accent); background: var(--accent-light); }
+
+        /* Main Layout */
+        .main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            padding: 16px;
+            gap: 16px;
+        }
+
+        /* Alert Sidebar */
+        .alert-sidebar {
+            width: 220px;
+            flex-shrink: 0;
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .alert-header {
+            padding: 14px 14px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            flex-shrink: 0;
+        }
+
+        .alert-list {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 0 10px 10px;
+            gap: 6px;
+        }
+
+        .alert-item {
+            flex: 1;
+            min-height: 0;
+            background: var(--bg);
+            border-radius: var(--radius-sm);
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
+            border-left: 3px solid transparent;
+            transition: background .2s;
+        }
+
+        .alert-item.p0 { border-left-color: var(--danger); background: var(--danger-light); }
+        .alert-item.p1 { border-left-color: var(--warning); background: var(--warning-light); }
+
+        .alert-time {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-family: monospace;
+        }
+
+        .alert-body {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .alert-cam {
+            font-weight: 600;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .alert-type {
+            font-weight: 500;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .alert-empty {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        /* Primary Area */
+        .primary-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            gap: 16px;
+        }
+
+        .main-video {
+            flex: 1;
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .video-header {
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .video-header h4 {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .status-dot.connected { background: var(--success); box-shadow: 0 0 0 3px var(--success-light); }
+        .status-dot.connecting { background: var(--warning); animation: pulse-dot 1.5s infinite; }
+        .status-dot.error { background: var(--danger); }
+        .status-dot.idle { background: var(--text-muted); }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .4; }
+        }
+
+        .detection-badge {
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .detection-badge.p0 { background: var(--danger-light); color: var(--danger); animation: alert-pulse 2s infinite; }
+        .detection-badge.p1 { background: var(--warning-light); color: var(--warning); }
+        .detection-badge.safe { background: var(--success-light); color: var(--success); }
+
+        @keyframes alert-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .7; }
+        }
+
+        .video-body {
+            position: relative;
+            flex: 1;
+            min-height: 0;
+            background: #0f172a;
+        }
+
+        .video-body img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .video-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            gap: 8px;
+        }
+
+        .video-placeholder .icon { font-size: 32px; opacity: .5; }
+
+        /* Sidebar Right */
+        .sidebar-right {
+            width: 360px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 10px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .sub-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 4px;
+            flex-shrink: 0;
+        }
+
+        .sub-header-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .sub-pager {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pager-btn {
+            width: 28px;
+            height: 28px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-secondary);
+            transition: all .2s;
+        }
+
+        .pager-btn:hover:not(:disabled) {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .pager-btn:disabled {
+            opacity: .4;
+            cursor: not-allowed;
+        }
+
+        .pager-info {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            min-width: 48px;
+            text-align: center;
+        }
+
+        .sub-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: repeat(3, 1fr);
+            gap: 8px;
+            min-height: 0;
+        }
+
+        .sub-card {
+            background: var(--surface);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: var(--shadow-sm);
+            transition: all .2s;
+            cursor: pointer;
+        }
+
+        .sub-card:hover {
+            box-shadow: var(--shadow);
+            border-color: var(--accent);
+        }
+
+        .sub-card .video-header {
+            padding: 5px 8px;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 3px;
+            min-height: 0;
+            height: 42px;
+            flex-shrink: 0;
+        }
+
+        .sub-card .video-header h4 {
+            font-size: 11px;
+            gap: 4px;
+            width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sub-card .type-tags {
+            width: 100%;
+            flex-wrap: nowrap;
+            overflow: hidden;
+        }
+
+        .sub-card .video-body {
+            flex: 1;
+            min-height: 0;
+        }
+
+        .sub-placeholder {
+            background: var(--bg);
+            border-radius: var(--radius-sm);
+            border: 2px dashed var(--border);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            gap: 6px;
+            font-size: 12px;
+        }
+
+        .sub-placeholder .icon { font-size: 24px; opacity: .4; }
+
+        .type-tags {
+            display: flex;
+            gap: 3px;
+            flex-wrap: wrap;
+        }
+
+        .type-tag {
+            font-size: 9px;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-weight: 500;
+            background: var(--bg);
+            color: var(--text-muted);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .type-tag.active { background: var(--accent-light); color: var(--accent); }
+
+        /* Bottom Bar */
+        .bottom-bar {
+            flex-shrink: 0;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            min-height: 60px;
+        }
+
+        .stat-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .stat-card {
+            background: var(--bg);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            padding: 6px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .divider {
+            width: 1px;
+            height: 32px;
+            background: var(--border);
+            flex-shrink: 0;
+        }
+
+        .overlay-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .overlay-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+        }
+        .icon-btn {
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-secondary);
+            padding: 5px 10px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all .2s;
+            font-family: inherit;
+        }
+        .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .icon-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+        .chip {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-secondary);
+            transition: all .2s;
+            user-select: none;
+            font-family: inherit;
+            white-space: nowrap;
+        }
+
+        .chip.on {
+            border-color: transparent;
+            color: white;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <header class="header">
+            <div class="header-brand">
+                <div class="logo">S</div>
+                <span>Sentry 监控中心</span>
+            </div>
+            <nav class="header-nav">
+                <a href="/multi" class="active">监控</a>
+                <a href="/records.html">记录</a>
+                <a href="/settings.html">设置</a>
+            </nav>
+        </header>
+
+        <div class="main">
+            <!-- Alert Sidebar -->
+            <aside class="alert-sidebar">
+                <div class="alert-header">最近报警</div>
+                <div class="alert-list">
+                    <template v-if="recentAlerts.length">
+                        <div v-for="alert in recentAlerts" :key="alert.id"
+                             :class="['alert-item', alert.level === 'P0' ? 'p0' : 'p1']">
+                            <div class="alert-time">{{ alert.time }}</div>
+                            <div class="alert-body">
+                                <span class="alert-cam" :title="alert.cameraName">{{ alert.cameraName }}</span>
+                                <span class="alert-type">{{ typeLabel(alert.detection_type) }}</span>
+                            </div>
+                        </div>
+                    </template>
+                    <div v-else class="alert-empty">暂无报警</div>
+                </div>
+            </aside>
+
+            <!-- Primary Area -->
+            <div class="primary-area">
+                <div class="main-video">
+                    <div class="video-header">
+                        <h4>
+                            <span :class="'status-dot ' + mainCameraStatus"></span>
+                            {{ mainCameraName }}
+                        </h4>
+                        <span :class="['detection-badge', getBadgeClass(mainCameraObj)]">
+                            {{ getBadgeText(mainCameraObj) }}
+                        </span>
+                    </div>
+                    <div class="video-body">
+                        <img v-if="mainCameraId && mainCameraStatus === 'connected'"
+                             :src="'/cameras/' + mainCameraId + '/stream'"
+                             @error="onVideoError(mainCameraId)" />
+                        <div v-else class="video-placeholder">
+                            <div class="icon">📷</div>
+                            <div>{{ mainCameraId ? getStatusText(mainCameraStatus) : '无可用摄像头' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar Right -->
+            <div class="sidebar-right">
+                <div class="sub-header">
+                    <span class="sub-header-title">监控列表</span>
+                    <div class="sub-pager" v-if="totalSubPages > 1">
+                        <button class="pager-btn" @click="subPage--" :disabled="subPage === 0">‹</button>
+                        <span class="pager-info">{{ subPage + 1 }} / {{ totalSubPages }}</span>
+                        <button class="pager-btn" @click="subPage++" :disabled="subPage >= totalSubPages - 1">›</button>
+                    </div>
+                </div>
+                <div class="sub-grid">
+                    <template v-for="i in 6" :key="i">
+                        <div v-if="displayedSubIds[i-1]" class="sub-card" @click="swapMain(i-1)">
+                            <div class="video-header">
+                                <h4>
+                                    <span :class="'status-dot ' + getCameraStatus(displayedSubIds[i-1])"></span>
+                                    {{ getCameraName(displayedSubIds[i-1]) }}
+                                </h4>
+                                <div class="type-tags">
+                                    <template v-for="(cfg, type) in getCameraTypes(displayedSubIds[i-1])" :key="type">
+                                        <span v-if="cfg.enabled" class="type-tag active">
+                                            {{ typeLabel(type) }}
+                                        </span>
+                                    </template>
+                                </div>
+                            </div>
+                            <div class="video-body">
+                                <img v-if="getCameraStatus(displayedSubIds[i-1]) === 'connected'"
+                                     :src="'/cameras/' + displayedSubIds[i-1] + '/stream?raw=true'"
+                                     @error="onVideoError(displayedSubIds[i-1])" />
+                                <div v-else class="video-placeholder">
+                                    <div class="icon">📷</div>
+                                    <div style="font-size:12px">{{ getStatusText(getCameraStatus(displayedSubIds[i-1])) }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="sub-placeholder">
+                            <div class="icon">📷</div>
+                            <span>无信号</span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Bar -->
+        <div class="bottom-bar">
+            <div class="stat-group">
+                <div class="stat-card">
+                    <div>
+                        <div class="stat-value">{{ onlineCount }}</div>
+                        <div class="stat-label">在线</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div>
+                        <div class="stat-value">{{ detectingCount }}</div>
+                        <div class="stat-label">检测中</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div>
+                        <div class="stat-value">{{ totalDetections }}</div>
+                        <div class="stat-label">总告警</div>
+                    </div>
+                </div>
+                <div class="stat-card" style="min-width: 80px;">
+                    <div>
+                        <div class="stat-value" style="font-size: 14px; color: var(--text-secondary);">{{ uptime }}</div>
+                        <div class="stat-label">运行时间</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="overlay-group">
+                <span class="overlay-label">画框:</span>
+                <button v-for="t in detectionTypes" :key="t.key"
+                        :class="['chip', { on: overlayTypes.includes(t.key) }]"
+                        :style="overlayTypes.includes(t.key) ? { background: t.color, borderColor: t.color } : {}"
+                        @click="toggleOverlay(t.key)">
+                    {{ t.label }}
+                </button>
+            </div>
+            <div class="actions" v-if="mainCameraId">
+                <template v-if="playbackStatus.is_video_file">
+                    <button class="icon-btn" @click="controlPlayback(playbackStatus.playing ? 'pause' : 'play')">
+                        {{ playbackStatus.playing ? '⏸ 暂停' : '▶ 播放' }}
+                    </button>
+                    <button class="icon-btn" @click="controlPlayback('loop', { loop: !playbackStatus.loop })"
+                            :style="playbackStatus.loop ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}">
+                        {{ playbackStatus.loop ? '🔁 循环' : '➡️ 单次' }}
+                    </button>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, watch, onMounted, onUnmounted } = Vue;
+
+        createApp({
+            setup() {
+                const cameras = ref([]);
+                const cameraOrder = ref([]);
+                const subPage = ref(0);
+                const totalDetections = ref(0);
+                const uptime = ref('-');
+                const overlayTypes = ref([]);
+                const recentAlerts = ref([]);
+                const streamVisible = ref({});
+                const playbackStatus = ref({});
+                let refreshTimer = null;
+
+                const detectionTypes = [
+                    { key: 'fire', label: '明火', color: '#ef4444' },
+                    { key: 'smoke', label: '烟雾', color: '#f97316' },
+                    { key: 'uniform', label: '工服', color: '#22c55e' },
+                    { key: 'mask', label: '口罩', color: '#0ea5e9' },
+                    { key: 'cigarette', label: '吸烟', color: '#a855f7' },
+                    { key: 'sleep', label: '睡岗', color: '#eab308' },
+                ];
+
+                const mainCameraId = computed(() => cameraOrder.value[0] || null);
+                const mainCameraObj = computed(() => cameras.value.find(c => c.camera_id === mainCameraId.value));
+                const mainCameraName = computed(() => mainCameraObj.value?.name || mainCameraId.value || '未选择');
+                const mainCameraStatus = computed(() => mainCameraObj.value?.status || 'idle');
+
+                const subCameraIds = computed(() => cameraOrder.value.slice(1));
+                const totalSubPages = computed(() => Math.max(1, Math.ceil(subCameraIds.value.length / 6)));
+                const displayedSubIds = computed(() => {
+                    const start = subPage.value * 6;
+                    return subCameraIds.value.slice(start, start + 6);
+                });
+
+                const onlineCount = computed(() => cameras.value.filter(c => c.status === 'connected').length);
+                const detectingCount = computed(() => cameras.value.filter(c => {
+                    const dt = c.detection_types || {};
+                    return Object.values(dt).some(cfg => cfg.enabled);
+                }).length);
+
+                function typeLabel(type) {
+                    const map = { fire: '明火', smoke: '烟雾', uniform: '工服', mask: '口罩', cigarette: '吸烟', sleep: '睡岗' };
+                    return map[type] || type || '未知';
+                }
+
+                function getStatusText(status) {
+                    const map = { idle: '空闲', connecting: '连接中', connected: '已连接', error: '错误', reconnecting: '重连中' };
+                    return map[status] || status;
+                }
+
+                function getCamera(cid) {
+                    return cameras.value.find(c => c.camera_id === cid);
+                }
+
+                function getCameraStatus(cid) {
+                    return getCamera(cid)?.status || 'idle';
+                }
+
+                function getCameraName(cid) {
+                    return getCamera(cid)?.name || cid;
+                }
+
+                function getCameraTypes(cid) {
+                    return getCamera(cid)?.detection_types || {};
+                }
+
+                function getBadgeClass(cam) {
+                    if (!cam) return 'safe';
+                    const det = cam.detection;
+                    if (!det) return 'safe';
+                    const types = ['fire', 'smoke', 'uniform', 'mask', 'cigarette', 'sleep'];
+                    for (const t of types) {
+                        if (det[t]?.alert) return det[t]?.level === 'P0' ? 'p0' : 'p1';
+                    }
+                    return 'safe';
+                }
+
+                function getBadgeText(cam) {
+                    if (!cam) return '监控中';
+                    const det = cam.detection;
+                    if (!det) return '监控中';
+                    const types = ['fire', 'smoke', 'uniform', 'mask', 'cigarette', 'sleep'];
+                    for (const t of types) {
+                        if (det[t]?.alert) {
+                            const label = typeLabel(t);
+                            return det[t]?.level === 'P0' ? 'P0 ' + label : 'P1 ' + label;
+                        }
+                    }
+                    return '监控中';
+                }
+
+                function swapMain(subIndex) {
+                    const orderIdx = 1 + subPage.value * 6 + subIndex;
+                    if (orderIdx >= cameraOrder.value.length) return;
+                    const newOrder = [...cameraOrder.value];
+                    const temp = newOrder[0];
+                    newOrder[0] = newOrder[orderIdx];
+                    newOrder[orderIdx] = temp;
+                    cameraOrder.value = newOrder;
+                }
+
+                async function fetchCameras() {
+                    try {
+                        const res = await fetch('/cameras');
+                        const data = await res.json();
+                        if (data.cameras) {
+                            cameras.value = data.cameras;
+                            const enabledIds = data.cameras.filter(c => c.enabled).map(c => c.camera_id);
+                            if (cameraOrder.value.length === 0) {
+                                cameraOrder.value = [...enabledIds];
+                            } else {
+                                const existing = new Set(cameraOrder.value);
+                                const newIds = enabledIds.filter(id => !existing.has(id));
+                                cameraOrder.value = cameraOrder.value.filter(id => enabledIds.includes(id));
+                                cameraOrder.value.push(...newIds);
+                            }
+                        }
+                    } catch (e) { console.error('获取摄像头失败:', e); }
+                }
+
+                async function fetchStatus() {
+                    try {
+                        const res = await fetch('/status');
+                        const data = await res.json();
+                        if (data.total_detections !== undefined) totalDetections.value = data.total_detections;
+                        if (data.started_at) uptime.value = calculateUptime(data.started_at);
+                        if (data.recent_records) {
+                            recentAlerts.value = data.recent_records.map(r => {
+                                const cam = cameras.value.find(c => c.camera_id === r.camera_id);
+                                return {
+                                    id: r.id,
+                                    time: r.time,
+                                    cameraName: cam?.name || r.camera_id,
+                                    detection_type: r.detection_type || r.action,
+                                    level: r.level || 'P1',
+                                };
+                            });
+                        }
+                    } catch (e) { console.error('获取状态失败:', e); }
+                }
+
+                async function fetchOverlay() {
+                    try {
+                        const res = await fetch('/overlay');
+                        const data = await res.json();
+                        if (data.overlay_types) overlayTypes.value = data.overlay_types;
+                    } catch (e) { console.error('获取画框配置失败:', e); }
+                }
+
+                async function toggleOverlay(type) {
+                    const idx = overlayTypes.value.indexOf(type);
+                    if (idx >= 0) overlayTypes.value.splice(idx, 1);
+                    else overlayTypes.value.push(type);
+                    try {
+                        await fetch('/overlay', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ types: overlayTypes.value })
+                        });
+                    } catch (e) { console.error('保存画框配置失败:', e); }
+                }
+
+                function onVideoError(cid) {
+                    streamVisible.value[cid] = false;
+                    setTimeout(() => { streamVisible.value[cid] = true; }, 3000);
+                }
+
+                function calculateUptime(startedAt) {
+                    const start = new Date(startedAt);
+                    const now = new Date();
+                    const diff = Math.floor((now - start) / 1000);
+                    const h = Math.floor(diff / 3600);
+                    const m = Math.floor((diff % 3600) / 60);
+                    return `${h}h${m}m`;
+                }
+
+                async function fetchPlaybackStatus() {
+                    if (!mainCameraId.value) return;
+                    try {
+                        const res = await fetch(`/cameras/${mainCameraId.value}/playback/status`);
+                        if (!res.ok) { playbackStatus.value = {}; return; }
+                        const data = await res.json();
+                        playbackStatus.value = data || {};
+                    } catch (e) { /* 静默失败，非关键接口 */ }
+                }
+
+                async function controlPlayback(action, extra = {}) {
+                    if (!mainCameraId.value) return;
+                    try {
+                        const res = await fetch(`/cameras/${mainCameraId.value}/playback/control`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action, ...extra }),
+                        });
+                        const data = await res.json();
+                        if (data.status) playbackStatus.value = data.status;
+                    } catch (e) { console.error('播放控制失败:', e); }
+                }
+
+                watch(mainCameraId, () => {
+                    playbackStatus.value = {};
+                    fetchPlaybackStatus();
+                });
+
+                onMounted(() => {
+                    fetchCameras();
+                    fetchStatus();
+                    fetchOverlay();
+                    fetchPlaybackStatus();
+                    refreshTimer = setInterval(() => { fetchCameras(); fetchStatus(); fetchPlaybackStatus(); }, 2000);
+                });
+
+                onUnmounted(() => {
+                    if (refreshTimer) clearInterval(refreshTimer);
+                });
+
+                return {
+                    cameras, cameraOrder, subPage, totalDetections, uptime,
+                    overlayTypes, recentAlerts, streamVisible, detectionTypes, playbackStatus,
+                    mainCameraId, mainCameraObj, mainCameraName, mainCameraStatus,
+                    totalSubPages, displayedSubIds,
+                    onlineCount, detectingCount,
+                    typeLabel, getStatusText, getCameraStatus, getCameraName, getCameraTypes,
+                    getBadgeClass, getBadgeText, swapMain, onVideoError, toggleOverlay,
+                    fetchPlaybackStatus, controlPlayback,
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

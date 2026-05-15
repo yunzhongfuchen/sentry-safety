@@ -1,0 +1,38 @@
+# Sentry RK3588 Python 依赖
+# 针对 aarch64 优化，避免不必要的重型依赖
+
+# Web 框架
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# 图像处理 (headless 版本，不需要 GUI)
+opencv-python-headless>=4.8.0
+numpy>=1.24.0,<2.0
+
+# ModelScope (DamoYOLO 口罩/香烟检测)
+modelscope>=1.30
+addict
+datasets
+simplejson
+sortedcontainers
+timm
+easydict
+yapf
+scipy
+shapely
+
+# 配置
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+# YOLOv8 (CPU 回退模式)
+# 注意: 在 aarch64 上 ultralytics 会自动使用 CPU
+# 如果只用 NPU 模式可以跳过这两行，但建议保留作为回退
+ultralytics>=8.0.0
+
+# 火山引擎 SDK (视频理解 API)
+volcengine-python-sdk[ark]>=1.0.0
+
+# RKNN Lite2 运行时 (需要手动安装对应 aarch64 wheel)
+# pip install rknn_toolkit_lite2-*-linux_aarch64.whl

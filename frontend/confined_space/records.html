@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>有限空间记录</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        :root {
+            --bg: #f1f5f9;
+            --surface: #ffffff;
+            --surface-hover: #f8fafc;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --accent: #0ea5e9;
+            --accent-light: #e0f2fe;
+            --danger: #ef4444;
+            --danger-light: #fee2e2;
+            --warning: #f97316;
+            --warning-light: #ffedd5;
+            --success: #22c55e;
+            --success-light: #dcfce7;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --radius: 12px;
+            --radius-sm: 8px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', 'Noto Sans SC', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            height: 56px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .header-brand .logo {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--accent), #38bdf8);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 16px;
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 4px;
+        }
+
+        .header-nav a {
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all .2s;
+        }
+
+        .header-nav a:hover { color: var(--text); background: var(--bg); }
+        .header-nav a.active { color: var(--accent); background: var(--accent-light); }
+
+        /* Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px 24px;
+        }
+
+        /* Stats */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 16px 20px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Filters */
+        .filters {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .filter-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 14px;
+            min-width: 140px;
+            font-family: inherit;
+        }
+
+        .filter-group select:focus,
+        .filter-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .date-picker {
+            position: relative;
+            min-width: 140px;
+        }
+        .date-picker input[type="date"] {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .date-display {
+            display: block;
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 14px;
+            white-space: nowrap;
+            font-family: inherit;
+        }
+
+        .btn {
+            padding: 8px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            transition: all .2s;
+            font-family: inherit;
+        }
+
+        .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+        .btn.primary:hover { background: #0284c7; }
+
+        /* Table */
+        .table-wrap {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            background: var(--surface-hover);
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        tr:hover td { background: var(--surface-hover); }
+        tr { cursor: pointer; }
+        tr:last-child td { border-bottom: none; }
+
+        .col-time { white-space: nowrap; }
+        .col-zone { color: var(--text-secondary); }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .badge-enter { background: var(--success-light); color: var(--success); }
+        .badge-leave { background: var(--accent-light); color: var(--accent); }
+        .badge-both { background: var(--warning-light); color: var(--warning); }
+        .badge-other { background: #f3f4f6; color: var(--text-secondary); }
+        .badge-alert { background: var(--danger-light); color: var(--danger); }
+        .badge-normal { background: var(--success-light); color: var(--success); }
+        .badge-pending { background: var(--warning-light); color: var(--warning); }
+
+        .count-change {
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .count-change .old { color: var(--text-muted); }
+        .count-change .arrow { color: var(--text-secondary); margin: 0 4px; }
+        .count-change .new { color: var(--accent); font-weight: 600; }
+
+        .desc-text {
+            color: var(--text-secondary);
+            font-size: 13px;
+            max-width: 240px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .pagination button {
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all .2s;
+        }
+
+        .pagination button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+        .pagination button:disabled { opacity: .5; cursor: not-allowed; }
+
+        .page-info { color: var(--text-secondary); font-size: 14px; }
+
+        /* Empty / Loading */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: .5; }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, .6);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-overlay.active { display: flex; align-items: flex-start; justify-content: center; }
+
+        .modal-box {
+            background: var(--surface);
+            border-radius: var(--radius);
+            width: 100%;
+            max-width: 640px;
+            max-height: calc(100vh - 40px);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            margin-top: 20px;
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+            flex-shrink: 0;
+        }
+
+        .modal-header h2 { font-size: 18px; font-weight: 700; }
+        .modal-close { background: none; border: none; font-size: 24px; color: var(--text-muted); cursor: pointer; }
+        .modal-close:hover { color: var(--text); }
+
+        .modal-body { padding: 24px; flex: 1; overflow-y: auto; }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 640px) {
+            .info-grid { grid-template-columns: 1fr; }
+            .filters { flex-direction: column; align-items: stretch; }
+            .filter-group select, .filter-group input { width: 100%; }
+        }
+
+        .info-card {
+            background: var(--surface-hover);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            border: 1px solid var(--border);
+        }
+
+        .info-card h3 {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 12px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: var(--text-secondary); }
+        .info-value { font-weight: 500; }
+
+        .json-block {
+            background: #0f172a;
+            color: #e2e8f0;
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            font-family: 'Fira Code', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .image-section { margin-bottom: 24px; }
+        .image-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-secondary); }
+
+        .frame-player {
+            background: #0f172a;
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+        }
+
+        .frame-display {
+            position: relative;
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0f172a;
+        }
+
+        .frame-display img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .frame-overlay {
+            position: absolute;
+            top: 10px; left: 10px;
+            background: rgba(0,0,0,.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .frame-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+        }
+
+        .frame-slider {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--border);
+            outline: none;
+        }
+
+        .frame-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+        }
+
+        .thumbnails {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 8px;
+            padding: 12px 16px;
+            max-height: 160px;
+            overflow-y: auto;
+            background: var(--surface);
+        }
+
+        .thumbnail {
+            aspect-ratio: 16/10;
+            background: #0f172a;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 2px solid transparent;
+            position: relative;
+        }
+
+        .thumbnail.active { border-color: var(--accent); }
+        .thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+        .thumb-idx {
+            position: absolute;
+            bottom: 2px; left: 2px;
+            font-size: 10px; color: white;
+            background: rgba(0,0,0,.5);
+            padding: 1px 4px;
+            border-radius: 2px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <header class="header">
+            <div class="header-brand">
+                <div class="logo">S</div>
+                <span>有限空间记录</span>
+            </div>
+            <nav class="header-nav">
+                <a href="/monitor">监控</a>
+                <a href="/records" class="active">记录</a>
+                <a href="/recordings">录屏</a>
+                <a href="/settings">设置</a>
+            </nav>
+        </header>
+
+        <div class="container">
+            <!-- Stats -->
+            <div class="stats-bar">
+                <div class="stat-card">
+                    <div class="stat-value" :style="{ color: 'var(--success)' }">{{ stats.today_enter }}</div>
+                    <div class="stat-label">今日进入</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" :style="{ color: 'var(--accent)' }">{{ stats.today_leave }}</div>
+                    <div class="stat-label">今日离开</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" :style="{ color: 'var(--danger)' }">{{ stats.today_alert }}</div>
+                    <div class="stat-label">今日告警</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ stats.total_records }}</div>
+                    <div class="stat-label">总记录</div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filters">
+                <div class="filter-group">
+                    <label>区域</label>
+                    <select v-model="filter.zone_id" @change="applyFilters">
+                        <option value="">全部区域</option>
+                        <option v-for="z in zones" :key="z.zone_id" :value="z.zone_id">{{ z.name || z.zone_id }}</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>事件类型</label>
+                    <select v-model="filter.event_type" @change="applyFilters">
+                        <option value="">全部</option>
+                        <option value="enter">进入</option>
+                        <option value="leave">离开</option>
+                        <option value="both">进出</option>
+                        <option value="other">其他</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>开始日期</label>
+                    <div class="date-picker">
+                        <span class="date-display">{{ filter.start_date || '选择日期' }}</span>
+                        <input type="date" v-model="filter.start_date" @change="applyFilters">
+                    </div>
+                </div>
+                <div class="filter-group">
+                    <label>结束日期</label>
+                    <div class="date-picker">
+                        <span class="date-display">{{ filter.end_date || '选择日期' }}</span>
+                        <input type="date" v-model="filter.end_date" @change="applyFilters">
+                    </div>
+                </div>
+                <div class="filter-group">
+                    <label>每页</label>
+                    <select v-model="pageSize" @change="changePageSize">
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                    </select>
+                </div>
+                <button class="btn primary" @click="loadRecords">刷新</button>
+            </div>
+
+            <!-- Table -->
+            <div class="table-wrap">
+                <div v-if="loading" class="empty-state">
+                    <div class="icon">⏳</div>
+                    <div>加载中...</div>
+                </div>
+                <div v-else-if="records.length === 0" class="empty-state">
+                    <div class="icon">📋</div>
+                    <div>暂无记录</div>
+                </div>
+                <table v-else>
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>区域</th>
+                            <th>事件类型</th>
+                            <th>人数变化</th>
+                            <th>描述</th>
+                            <th>是否告警</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="r in records" :key="r.event_id" @click="showDetail(r)">
+                            <td class="col-time">{{ formatTime(r.timestamp) }}</td>
+                            <td class="col-zone">{{ r.zone_name || r.zone_id || '-' }}</td>
+                            <td>
+                                <span class="badge" :class="r.event_type === 'pending' ? 'badge-pending' : 'badge-' + (r.event_type || 'other')">
+                                    {{ eventTypeLabel(r.event_type) }}
+                                </span>
+                            </td>
+                            <td class="count-change">
+                                <span :style="{ color: (r.diff || 0) > 0 ? 'var(--success)' : (r.diff || 0) < 0 ? 'var(--danger)' : 'var(--text-secondary)' }">
+                                    {{ r.diff != null ? ((r.diff > 0 ? '+' : '') + r.diff) : '-' }}
+                                </span>
+                            </td>
+                            <td class="desc-text" :title="r.description">{{ r.description || '-' }}</td>
+                            <td>
+                                <span class="badge" :class="r.is_alert ? 'badge-alert' : 'badge-normal'">
+                                    {{ r.is_alert ? '告警' : '正常' }}
+                                </span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="pagination" v-if="totalPages > 0">
+                    <button @click="prevPage" :disabled="page <= 1">上一页</button>
+                    <span class="page-info">第 {{ page }} 页 / 共 {{ totalPages }} 页 (共 {{ total }} 条)</span>
+                    <button @click="nextPage" :disabled="page >= totalPages">下一页</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detail Modal -->
+        <div class="modal-overlay" :class="{ active: detailVisible }" @click.self="closeDetail">
+            <div class="modal-box" v-if="detail">
+                <div class="modal-header">
+                    <h2>记录详情</h2>
+                    <button class="modal-close" @click="closeDetail">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="info-grid">
+                        <div class="info-card">
+                            <h3>基本信息</h3>
+                            <div class="info-row">
+                                <span class="info-label">记录ID</span>
+                                <span class="info-value">{{ detail.event_id || detail.id }}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">时间</span>
+                                <span class="info-value">{{ formatTime(detail.timestamp) }}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">区域</span>
+                                <span class="info-value">{{ detail.zone_name || detail.zone_id || '-' }}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">事件类型</span>
+                                <span class="info-value">
+                                    <span class="badge" :class="detail.event_type === 'pending' ? 'badge-pending' : 'badge-' + (detail.event_type || 'other')">
+                                        {{ eventTypeLabel(detail.event_type) }}
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">是否告警</span>
+                                <span class="info-value">
+                                    <span class="badge" :class="detail.is_alert ? 'badge-alert' : 'badge-normal'">
+                                        {{ detail.is_alert ? '告警' : '正常' }}
+                                    </span>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="info-card">
+                            <h3>人数变化</h3>
+                            <div class="info-row">
+                                <span class="info-label">变化量</span>
+                                <span class="info-value">
+                                    <span v-if="detail.diff != null" :style="{ color: detail.diff > 0 ? 'var(--success)' : detail.diff < 0 ? 'var(--danger)' : 'var(--text)' }">
+                                        {{ (detail.diff > 0 ? '+' : '') + detail.diff }}
+                                    </span>
+                                    <span v-else>-</span>
+                                </span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">描述</span>
+                                <span class="info-value" style="text-align: right; max-width: 200px; word-break: break-word;">{{ detail.description || '无' }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="detail.vlm_result" style="margin-bottom: 24px;">
+                        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">VLM 结果</h3>
+                        <pre class="json-block">{{ JSON.stringify(detail.vlm_result, null, 2) }}</pre>
+                    </div>
+
+                    <div class="image-section">
+                        <h3>视频帧序列</h3>
+                        <div class="frame-player">
+                            <div class="frame-display">
+                                <img v-if="detail.frames && detail.frames.length > 0" :src="'data:image/jpeg;base64,' + detail.frames[currentFrameIndex]" alt="frame">
+                                <div v-else-if="detail.loadingFrames" style="color: var(--text-muted);">加载帧...</div>
+                                <div v-else style="color: var(--text-muted);">无视频帧</div>
+                                <div v-if="detail.frames && detail.frames.length > 0" class="frame-overlay">帧 {{ currentFrameIndex + 1 }} / {{ detail.frames.length }}</div>
+                            </div>
+                            <div class="frame-controls" v-if="detail.frames && detail.frames.length > 0">
+                                <button class="btn primary" @click="togglePlay">{{ isPlaying ? '暂停' : '播放' }}</button>
+                                <button class="btn" @click="toggleReverse">{{ isReverse ? '正序' : '倒序' }}</button>
+                                <input type="range" class="frame-slider" min="0" :max="detail.frames.length - 1" v-model.number="currentFrameIndex" @input="onSliderChange">
+                                <span style="font-size: 13px; color: var(--text-secondary); min-width: 70px; text-align: center;">{{ currentFrameIndex + 1 }} / {{ detail.frames.length }}</span>
+                            </div>
+                            <div class="thumbnails" v-if="detail.frames && detail.frames.length > 0">
+                                <div v-for="(f, i) in detail.frames" :key="i" class="thumbnail" :class="{ active: i === currentFrameIndex }" @click="selectFrame(i)">
+                                    <img :src="'data:image/jpeg;base64,' + f" :alt="'帧 ' + (i + 1)">
+                                    <span class="thumb-idx">{{ i + 1 }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end;">
+                        <button class="btn" @click="closeDetail">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    stats: {
+                        today_enter: 0,
+                        today_leave: 0,
+                        today_alert: 0,
+                        total_records: 0
+                    },
+                    zones: [],
+                    records: [],
+                    page: 1,
+                    pageSize: 20,
+                    total: 0,
+                    totalPages: 0,
+                    loading: false,
+                    filter: {
+                        zone_id: '',
+                        event_type: '',
+                        start_date: '',
+                        end_date: ''
+                    },
+                    detail: null,
+                    detailVisible: false,
+                    isPlaying: false,
+                    isReverse: false,
+                    currentFrameIndex: 0,
+                    playTimer: null
+                };
+            },
+            mounted() {
+                this.loadStats();
+                this.loadZones();
+                this.loadRecords();
+                this.statsTimer = setInterval(() => this.loadStats(), 30000);
+            },
+            beforeUnmount() {
+                if (this.statsTimer) clearInterval(this.statsTimer);
+            },
+            methods: {
+                async loadStats() {
+                    try {
+                        const res = await fetch('/api/records/stats');
+                        const data = await res.json();
+                        if (data && !data.error) {
+                            this.stats = {
+                                today_enter: data.today_enter ?? 0,
+                                today_leave: data.today_leave ?? 0,
+                                today_alert: data.today_alert ?? 0,
+                                total_records: data.total_records ?? 0
+                            };
+                        }
+                    } catch (e) {
+                        console.error('加载统计失败:', e);
+                    }
+                },
+                async loadZones() {
+                    try {
+                        const res = await fetch('/api/zones');
+                        const data = await res.json();
+                        this.zones = data.zones || data || [];
+                    } catch (e) {
+                        console.error('加载区域列表失败:', e);
+                    }
+                },
+                async loadRecords() {
+                    this.loading = true;
+                    try {
+                        const params = new URLSearchParams({
+                            page: this.page,
+                            size: this.pageSize
+                        });
+                        if (this.filter.zone_id) params.append('zone_id', this.filter.zone_id);
+                        if (this.filter.event_type) params.append('event_type', this.filter.event_type);
+                        if (this.filter.start_date) params.append('start_date', this.filter.start_date);
+                        if (this.filter.end_date) params.append('end_date', this.filter.end_date);
+
+                        const res = await fetch(`/api/records?${params}`);
+                        const data = await res.json();
+                        this.records = data.records || data.items || [];
+                        this.total = data.total || 0;
+                        this.totalPages = Math.ceil(this.total / this.pageSize) || 0;
+                    } catch (e) {
+                        console.error('加载记录失败:', e);
+                        this.records = [];
+                        this.total = 0;
+                        this.totalPages = 0;
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                applyFilters() {
+                    this.page = 1;
+                    this.loadRecords();
+                },
+                changePageSize() {
+                    this.page = 1;
+                    this.loadRecords();
+                },
+                prevPage() {
+                    if (this.page > 1) {
+                        this.page--;
+                        this.loadRecords();
+                    }
+                },
+                nextPage() {
+                    if (this.page < this.totalPages) {
+                        this.page++;
+                        this.loadRecords();
+                    }
+                },
+                showDetail(record) {
+                    this.stopPlay();
+                    this.currentFrameIndex = 0;
+                    this.isReverse = false;
+                    this.detail = {
+                        ...record,
+                        frames: null,
+                        loadingFrames: true,
+                    };
+                    this.detailVisible = true;
+                    this.loadFrames(record.event_id || record.id);
+                },
+                closeDetail() {
+                    this.stopPlay();
+                    this.detailVisible = false;
+                    this.detail = null;
+                    this.currentFrameIndex = 0;
+                },
+                formatTime(ts) {
+                    if (!ts) return '-';
+                    // 后端返回的 isoformat() 无时区（如 2026-05-04T10:30:00），
+                    // 浏览器默认当成 UTC，在中国会多 8h；把 T 换成空格可按本地时间解析
+                    let s = ts;
+                    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(s)) {
+                        s = s.replace('T', ' ');
+                    }
+                    const d = new Date(s);
+                    if (isNaN(d)) return ts;
+                    const pad = (n) => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                },
+                eventTypeLabel(type) {
+                    const map = { enter: '进入', leave: '离开', both: '进出', other: '其他', pending: '检测中' };
+                    return map[type] || type || '其他';
+                },
+                async loadFrames(recordId) {
+                    try {
+                        const res = await fetch(`/api/records/${recordId}/frames?count=30`);
+                        const data = await res.json();
+                        this.detail.frames = data.frames || [];
+                    } catch (e) {
+                        console.error('加载帧失败:', e);
+                        this.detail.frames = [];
+                    } finally {
+                        this.detail.loadingFrames = false;
+                    }
+                },
+                togglePlay() {
+                    if (this.isPlaying) {
+                        this.stopPlay();
+                        return;
+                    }
+                    if (!this.detail.frames || this.detail.frames.length === 0) return;
+                    const lastIdx = this.detail.frames.length - 1;
+                    if (!this.isReverse && this.currentFrameIndex >= lastIdx) {
+                        this.currentFrameIndex = 0;
+                    }
+                    if (this.isReverse && this.currentFrameIndex <= 0) {
+                        this.currentFrameIndex = lastIdx;
+                    }
+                    this.isPlaying = true;
+                    this.playTimer = setTimeout(() => this.playNextFrame(), 300);
+                },
+                playNextFrame() {
+                    if (!this.isPlaying || !this.detail.frames) return;
+                    const len = this.detail.frames.length;
+                    if (this.isReverse) {
+                        this.currentFrameIndex--;
+                        if (this.currentFrameIndex <= 0) {
+                            this.currentFrameIndex = 0;
+                            this.stopPlay();
+                            return;
+                        }
+                    } else {
+                        this.currentFrameIndex++;
+                        if (this.currentFrameIndex >= len - 1) {
+                            this.currentFrameIndex = len - 1;
+                            this.stopPlay();
+                            return;
+                        }
+                    }
+                    this.playTimer = setTimeout(() => this.playNextFrame(), 300);
+                },
+                stopPlay() {
+                    this.isPlaying = false;
+                    if (this.playTimer) {
+                        clearTimeout(this.playTimer);
+                        this.playTimer = null;
+                    }
+                },
+                toggleReverse() {
+                    this.isReverse = !this.isReverse;
+                },
+                onSliderChange() {
+                    this.stopPlay();
+                },
+                selectFrame(index) {
+                    this.stopPlay();
+                    this.currentFrameIndex = index;
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

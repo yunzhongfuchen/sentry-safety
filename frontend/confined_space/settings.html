@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>有限空间设置</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        :root {
+            --bg: #f1f5f9;
+            --surface: #ffffff;
+            --surface-hover: #f8fafc;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --accent: #0ea5e9;
+            --accent-light: #e0f2fe;
+            --danger: #ef4444;
+            --danger-light: #fee2e2;
+            --warning: #f97316;
+            --success: #22c55e;
+            --success-light: #dcfce7;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --radius: 12px;
+            --radius-sm: 8px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', 'Noto Sans SC', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #app { height: 100vh; display: flex; flex-direction: column; }
+
+        .header {
+            height: 56px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            flex-shrink: 0;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .header-brand .logo {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--accent), #38bdf8);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 16px;
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 4px;
+        }
+
+        .header-nav a {
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all .2s;
+        }
+
+        .header-nav a:hover { color: var(--text); background: var(--bg); }
+        .header-nav a.active { color: var(--accent); background: var(--accent-light); }
+
+        .content {
+            flex: 1;
+            overflow: auto;
+            padding: 20px 24px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            background: var(--bg);
+            z-index: 10;
+            padding-bottom: 1px;
+        }
+
+        .tab {
+            padding: 10px 18px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            border-bottom: 2px solid transparent;
+            transition: all .2s;
+            margin-bottom: -1px;
+        }
+
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 14px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-field label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .form-field input, .form-field select {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text);
+            padding: 8px 12px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color .2s;
+        }
+
+        .form-field input:focus, .form-field select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .btn {
+            padding: 8px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            transition: all .2s;
+            font-family: inherit;
+        }
+
+        .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+        .btn.primary:hover { background: #0284c7; border-color: #0284c7; }
+        .btn.danger { background: var(--danger); border-color: var(--danger); color: white; }
+        .btn.danger:hover { background: #dc2626; }
+        .btn.sm { padding: 5px 12px; font-size: 13px; }
+
+        .camera-table-wrap {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .camera-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .camera-table th {
+            text-align: left;
+            padding: 12px 14px;
+            background: var(--surface-hover);
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .camera-table td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        .camera-table tr:hover td { background: var(--surface-hover); }
+        .camera-table tr:last-child td { border-bottom: none; }
+
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(15, 23, 42, .5);
+            backdrop-filter: blur(4px);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-box {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            width: 100%; max-width: 580px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+
+        .modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .modal-close {
+            background: none; border: none; color: var(--text-muted);
+            font-size: 22px; cursor: pointer;
+        }
+
+        .modal-body { padding: 18px 20px; flex: 1; overflow-y: auto; }
+        .modal-footer {
+            display: flex; gap: 10px; justify-content: flex-end;
+            padding: 12px 20px;
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .toast {
+            position: fixed;
+            top: 68px; right: 24px;
+            padding: 10px 20px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 2000;
+            animation: toastin .3s ease;
+            box-shadow: var(--shadow);
+        }
+
+        .toast.success { background: var(--success); color: white; }
+        .toast.error { background: var(--danger); color: white; }
+
+        @keyframes toastin {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <header class="header">
+            <div class="header-brand">
+                <div class="logo">S</div>
+                <span>有限空间设置</span>
+            </div>
+            <nav class="header-nav">
+                <a href="/monitor">监控</a>
+                <a href="/records">记录</a>
+                <a href="/recordings">录屏</a>
+                <a href="/settings" class="active">设置</a>
+            </nav>
+        </header>
+
+        <div class="content">
+            <div class="tabs">
+                <div :class="['tab', { active: tab === 'cameras' }]" @click="tab = 'cameras'">摄像头管理</div>
+                <div :class="['tab', { active: tab === 'global' }]" @click="tab = 'global'">全局参数</div>
+                <div :class="['tab', { active: tab === 'data' }]" @click="tab = 'data'">数据管理</div>
+            </div>
+
+            <!-- Global Settings -->
+            <div v-if="tab === 'global'">
+                <div class="section-title">全局配置</div>
+                <div class="form-grid">
+                    <div class="form-field">
+                        <label>VLM 最大并发</label>
+                        <input type="number" v-model.number="settings.vlm_max_concurrent" min="1" />
+                    </div>
+                    <div class="form-field">
+                        <label>推理间隔 (s)</label>
+                        <input type="number" step="0.1" v-model.number="settings.inference_interval" min="0.1" />
+                    </div>
+                    <div class="form-field">
+                        <label>帧采样间隔 (s)</label>
+                        <input type="number" step="0.1" v-model.number="settings.sample_interval" min="0.1" />
+                    </div>
+                    <div class="form-field">
+                        <label>窗口延迟 (s)</label>
+                        <input type="number" step="0.5" v-model.number="settings.window_delay" min="0.5" />
+                    </div>
+                    <div class="form-field">
+                        <label>连续帧要求</label>
+                        <input type="number" v-model.number="settings.consecutive_required" min="1" />
+                    </div>
+                    <div class="form-field">
+                        <label>快照质量 (1-100)</label>
+                        <input type="number" v-model.number="settings.snapshot_quality" min="1" max="100" />
+                    </div>
+                    <div class="form-field">
+                        <label>最大记录数</label>
+                        <input type="number" v-model.number="settings.max_records" min="10" />
+                    </div>
+                    <div class="form-field">
+                        <label>最大存储 (MB)</label>
+                        <input type="number" v-model.number="settings.max_storage_mb" min="10" />
+                    </div>
+                    <div class="form-field">
+                        <label>内存阈值 (%)</label>
+                        <input type="number" v-model.number="settings.memory_threshold_percent" min="1" max="100" />
+                    </div>
+                    <div class="form-field">
+                        <label>紧急清理比例</label>
+                        <input type="number" step="0.05" v-model.number="settings.emergency_cleanup_ratio" min="0.05" max="1" />
+                    </div>
+                </div>
+                <button class="btn primary" @click="saveSettings">保存全局配置</button>
+
+                <div class="section-title" style="margin-top: 28px;">VLM 提示词</div>
+                <div style="margin-bottom: 14px;">
+                    <textarea v-model="promptText" rows="16" style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: inherit; font-size: 13px; line-height: 1.6; resize: vertical; background: var(--surface); color: var(--text);"></textarea>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button class="btn primary" @click="savePrompt">保存提示词</button>
+                    <button class="btn" @click="resetPrompt">恢复默认</button>
+                    <span style="font-size: 12px; color: var(--text-muted);">修改后即时生效，无需重启</span>
+                </div>
+            </div>
+
+            <!-- Camera Management -->
+            <div v-if="tab === 'cameras'">
+                <div style="display:flex;gap:10px;margin-bottom:14px;">
+                    <button class="btn primary" @click="openCameraDialog()">+ 添加摄像头</button>
+                </div>
+
+                <div class="camera-table-wrap">
+                    <table class="camera-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名称</th>
+                                <th>源地址</th>
+                                <th>类型</th>
+                                <th>分辨率</th>
+                                <th>模式</th>
+                                <th>启用</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="cam in cameras" :key="cam.camera_id">
+                                <td>{{ cam.camera_id }}</td>
+                                <td>{{ cam.name || '-' }}</td>
+                                <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ cam.source }}</td>
+                                <td>{{ cam.source_type || 'auto' }}</td>
+                                <td>{{ cam.width }}x{{ cam.height }}</td>
+                                <td>入口</td>
+                                <td><span :style="{ color: cam.enabled !== false ? '#22c55e' : '#ef4444', fontWeight: 600 }">{{ cam.enabled !== false ? '是' : '否' }}</span></td>
+                                <td>
+                                    <button class="btn sm" @click="openCameraDialog(cam)" style="margin-right:6px;">编辑</button>
+                                    <button class="btn sm danger" @click="deleteCamera(cam.camera_id)">删除</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Data Management -->
+            <div v-if="tab === 'data'">
+                <div class="section-title">记录管理</div>
+                <div style="background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); padding: 20px;">
+                    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">
+                        清空所有有限空间检测记录及关联的快照、帧图片。此操作不可恢复。
+                    </p>
+                    <button class="btn danger" @click="clearRecords">清空所有记录</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera Edit Modal -->
+        <div v-if="cameraDialog" class="modal-overlay" @click.self="cameraDialog = null">
+            <div class="modal-box">
+                <div class="modal-header">
+                    <h3 style="font-size:16px;font-weight:700;">{{ cameraDialog.camera_id ? '编辑摄像头' : '添加摄像头' }}</h3>
+                    <button class="modal-close" @click="cameraDialog = null">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-field" style="margin-bottom:10px;">
+                        <label>摄像头 ID</label>
+                        <input v-model="cameraDialog.camera_id" :disabled="!!cameraDialog._existing" />
+                    </div>
+                    <div class="form-field" style="margin-bottom:10px;">
+                        <label>名称</label>
+                        <input v-model="cameraDialog.name" />
+                    </div>
+                    <div class="form-field" style="margin-bottom:10px;">
+                        <label>源地址</label>
+                        <input v-model="cameraDialog.source" placeholder="rtsp://... 或 /path/to/video.mp4" />
+                        <input type="file" accept="video/*" style="display:none" ref="videoFileInput" @change="onVideoFileSelected" />
+                        <button class="btn" style="margin-top:6px;font-size:12px;padding:5px 12px;" @click="$refs.videoFileInput.click()">上传本地视频</button>
+                        <span v-if="uploading" style="font-size:12px;color:var(--text-secondary);margin-left:8px;">上传中...</span>
+                    </div>
+                    <div class="form-field" style="margin-bottom:10px;">
+                        <label>源类型</label>
+                        <select v-model="cameraDialog.source_type">
+                            <option value="auto">自动</option>
+                            <option value="rtsp">RTSP</option>
+                            <option value="video">视频文件</option>
+                            <option value="camera">摄像头</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;gap:10px;margin-bottom:10px;">
+                        <div class="form-field" style="flex:1;">
+                            <label>宽</label>
+                            <input type="number" v-model.number="cameraDialog.width" />
+                        </div>
+                        <div class="form-field" style="flex:1;">
+                            <label>高</label>
+                            <input type="number" v-model.number="cameraDialog.height" />
+                        </div>
+                    </div>
+                    <div class="form-field" style="margin-bottom:10px;">
+                        <label>帧率 (fps)</label>
+                        <input type="number" v-model.number="cameraDialog.fps" />
+                    </div>
+                    <div class="form-field" style="margin-bottom:14px;">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" v-model="cameraDialog.enabled" />
+                            <span>启用摄像头</span>
+                        </label>
+                    </div>
+
+                    <div class="section-title">区域参数</div>
+                    <div class="form-field" style="margin-bottom:10px;">
+                        <label>ROI (x1,y1,x2,y2，留空为全画面)</label>
+                        <input v-model="cameraDialog.roiText" placeholder="例如: 100,100,500,400" />
+                    </div>
+                    <div class="form-field" style="margin-bottom:10px;">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" v-model="cameraDialog.enable_vlm_review" />
+                            <span>启用 VLM 复核</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn" @click="cameraDialog = null">取消</button>
+                    <button class="btn primary" @click="saveCamera">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="toast" :class="['toast', toast.type]">{{ toast.message }}</div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+
+        function defaultCamera() {
+            return {
+                camera_id: '',
+                name: '',
+                source: '',
+                source_type: 'auto',
+                width: 640,
+                height: 480,
+                fps: 15,
+                enabled: true,
+                roi: [],
+                roiText: '',
+                enable_vlm_review: true,
+            };
+        }
+
+        function cameraToDialog(cam) {
+            const d = { ...defaultCamera(), ...JSON.parse(JSON.stringify(cam)), _existing: true };
+            if (Array.isArray(d.roi) && d.roi.length === 4) {
+                d.roiText = d.roi.join(',');
+            } else {
+                d.roiText = '';
+            }
+            return d;
+        }
+
+        function dialogToPayload(d) {
+            const payload = {
+                camera_id: d.camera_id,
+                name: d.name,
+                source: d.source,
+                source_type: d.source_type,
+                width: d.width,
+                height: d.height,
+                fps: d.fps,
+                enabled: d.enabled,
+                enable_vlm_review: d.enable_vlm_review,
+            };
+            const roiText = (d.roiText || '').trim();
+            if (roiText) {
+                const parts = roiText.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+                if (parts.length === 4) {
+                    payload.roi = parts;
+                }
+            } else {
+                payload.roi = [];
+            }
+            return payload;
+        }
+
+        createApp({
+            setup() {
+                const tab = ref('cameras');
+                const cameras = ref([]);
+                const settings = ref({});
+                const cameraDialog = ref(null);
+                const toast = ref(null);
+                const uploading = ref(false);
+                const promptText = ref('');
+
+                function showToast(msg, type = 'success') {
+                    toast.value = { message: msg, type };
+                    setTimeout(() => toast.value = null, 2500);
+                }
+
+                async function loadCameras() {
+                    try {
+                        const res = await fetch('/api/cameras');
+                        const data = await res.json();
+                        cameras.value = data.cameras || [];
+                    } catch (e) {}
+                }
+
+                async function loadSettings() {
+                    try {
+                        const res = await fetch('/api/settings');
+                        const data = await res.json();
+                        settings.value = data;
+                    } catch (e) {}
+                }
+
+                async function saveSettings() {
+                    try {
+                        const res = await fetch('/api/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(settings.value)
+                        });
+                        if (res.ok) showToast('保存成功');
+                        else showToast('保存失败', 'error');
+                    } catch (e) { showToast('保存失败', 'error'); }
+                }
+
+                async function loadPrompt() {
+                    try {
+                        const res = await fetch('/api/prompt');
+                        const data = await res.json();
+                        promptText.value = data.prompt || '';
+                    } catch (e) { console.error('加载提示词失败:', e); }
+                }
+
+                async function savePrompt() {
+                    try {
+                        const res = await fetch('/api/prompt', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ prompt: promptText.value })
+                        });
+                        if (res.ok) showToast('提示词保存成功');
+                        else showToast('提示词保存失败', 'error');
+                    } catch (e) { showToast('提示词保存失败', 'error'); }
+                }
+
+                async function resetPrompt() {
+                    if (!confirm('确定恢复默认提示词？当前修改将丢失。')) return;
+                    promptText.value = '';
+                    await savePrompt();
+                    await loadPrompt();
+                }
+
+                function openCameraDialog(cam = null) {
+                    if (cam) {
+                        cameraDialog.value = cameraToDialog(cam);
+                    } else {
+                        cameraDialog.value = defaultCamera();
+                    }
+                }
+
+                async function saveCamera() {
+                    const d = cameraDialog.value;
+                    if (!d.camera_id || !d.source) {
+                        showToast('ID 和源地址必填', 'error'); return;
+                    }
+                    const payload = dialogToPayload(d);
+                    try {
+                        const url = d._existing ? `/api/cameras/${d.camera_id}/config` : '/api/cameras';
+                        const res = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            showToast('保存成功');
+                            cameraDialog.value = null;
+                            loadCameras();
+                        } else showToast('保存失败', 'error');
+                    } catch (e) { showToast('保存失败', 'error'); }
+                }
+
+                async function deleteCamera(id) {
+                    if (!confirm('确定删除摄像头 ' + id + '？')) return;
+                    try {
+                        const res = await fetch('/api/cameras/' + id, { method: 'DELETE' });
+                        if (res.ok) { showToast('删除成功'); loadCameras(); }
+                        else showToast('删除失败', 'error');
+                    } catch (e) { showToast('删除失败', 'error'); }
+                }
+
+                async function clearRecords() {
+                    if (!confirm('确定清空所有记录？此操作不可恢复。')) return;
+                    try {
+                        const res = await fetch('/api/records', { method: 'DELETE' });
+                        const data = await res.json();
+                        if (data.success) {
+                            showToast('记录已清空');
+                        } else {
+                            showToast(data.error || '清空失败', 'error');
+                        }
+                    } catch (e) { showToast('清空失败', 'error'); }
+                }
+
+                async function onVideoFileSelected(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    uploading.value = true;
+                    try {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        const res = await fetch('/api/upload/video', { method: 'POST', body: formData });
+                        const data = await res.json();
+                        if (data.success) {
+                            cameraDialog.value.source = data.path;
+                            cameraDialog.value.source_type = 'video';
+                            showToast('上传成功: ' + data.filename);
+                        } else showToast(data.error || '上传失败', 'error');
+                    } catch (e) { showToast('上传失败', 'error'); }
+                    finally { uploading.value = false; event.target.value = ''; }
+                }
+
+                onMounted(() => {
+                    loadCameras();
+                    loadSettings();
+                    loadPrompt();
+                });
+
+                return {
+                    tab, cameras, settings, cameraDialog, toast, uploading, promptText,
+                    loadCameras, loadSettings, saveSettings, openCameraDialog, saveCamera,
+                    deleteCamera, onVideoFileSelected, clearRecords, loadPrompt, savePrompt, resetPrompt
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

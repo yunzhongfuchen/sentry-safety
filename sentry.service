@@ -1,0 +1,21 @@
+[Unit]
+Description=Sentry 受限空间安全哨兵
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sentry
+Environment=PYTHONPATH=/opt/sentry:/opt/sentry/backend
+EnvironmentFile=-/opt/sentry/.env
+ExecStart=/opt/sentry/start.sh
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sentry
+
+[Install]
+WantedBy=multi-user.target
