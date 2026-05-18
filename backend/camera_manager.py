@@ -48,7 +48,7 @@ class CameraConfig:
     video_playback_speed: float = 1.0  # 播放倍速
     # 重连配置
     reconnect_interval: int = 5
-    max_reconnect_attempts: int = 10
+    max_reconnect_attempts: int = 0  # 0 = 无限重连（生产环境摄像头检修/网络抖动常见）
     # 检测配置
     detection_enabled: bool = True
     detection_types: Optional[dict] = None  # 各检测类型配置
@@ -219,13 +219,25 @@ class CameraManager:
         for camera_id in camera_ids:
             self.stop_camera(camera_id)
     
-    def get_frame(self, camera_id: str) -> Optional[np.ndarray]:
-        """获取指定摄像头的当前帧"""
+    def get_frame(self, camera_id: str, allow_paused: bool = True) -> Optional[np.ndarray]:
+        """获取指定摄像头的当前帧。
+        allow_paused=False 时，若本地视频处于暂停状态则返回 None，
+        用于检测器跳过暂停视频，避免对静止画面重复检测。
+        """
         with self._lock:
             if camera_id not in self._cameras:
                 return None
 
             state = self._cameras[camera_id]
+            if not allow_paused:
+                is_video_file = state.config.source_type == "video" or (
+                    state.config.source_type == "auto"
+                    and not str(state.config.source).isdigit()
+                    and not str(state.config.source).startswith("rtsp")
+                )
+                if is_video_file and not state.playback_state.get("playing", True):
+                    return None
+
             with state.lock:
                 return state.current_frame.copy() if state.current_frame is not None else None
 
@@ -595,7 +607,7 @@ class CameraManager:
             except Exception as e:
                 logger.error(f"Camera {camera_id} loop error: {e}")
             
-            # 重连等待
+            # 重连等待（指数退避，避免日志刷屏）
             with self._lock:
                 if camera_id not in self._cameras:
                     return
@@ -604,14 +616,17 @@ class CameraManager:
                     return
                 state.status = CameraStatus.RECONNECTING
                 state.reconnect_attempts += 1
-                
-                if state.reconnect_attempts > state.config.max_reconnect_attempts:
+
+                # max_reconnect_attempts > 0 时才启用上限（兼容旧配置）
+                if state.config.max_reconnect_attempts > 0 and state.reconnect_attempts > state.config.max_reconnect_attempts:
                     logger.error(f"Camera {camera_id} max reconnect attempts reached")
                     state.status = CameraStatus.ERROR
                     state.running = False
                     return
-            
-            time.sleep(state.config.reconnect_interval)
+
+            # 指数退避：2^attempts 秒，上限 60s
+            backoff = min(2 ** state.reconnect_attempts, 60)
+            time.sleep(backoff)
     
     def _connect_and_stream(self, camera_id: str):
         """连接并开始视频流"""

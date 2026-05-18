@@ -393,28 +393,26 @@ def storage_cleanup_loop(
         time.sleep(interval_seconds)
         try:
             records = load_records()
+            triggered = False
+
             # 1. 按记录数清理
             if len(records) > max_records:
-                excess = len(records) - max_records
-                sorted_records = sorted(records, key=lambda r: r.get("time", ""))
-                to_remove = sorted_records[:excess]
-                for r in to_remove:
-                    rid = r.get("id")
-                    if rid:
-                        delete_record_images(rid)
-                remaining = [r for r in records if r.get("id") not in {x.get("id") for x in to_remove}]
-                save_records(remaining)
-                logger.info(f"Record count cleanup: removed {excess} records")
+                logger.info(f"Record count {len(records)} > max {max_records}, triggering ratio cleanup")
+                triggered = True
 
-            # 2. 按存储空间清理
+            # 2. 按存储空间清理（0 表示无限制）
             size_mb = get_storage_size_mb()
-            if size_mb > max_storage_mb:
-                cleanup_old_records(max_storage_mb)
+            if max_storage_mb > 0 and size_mb > max_storage_mb:
+                logger.info(f"Storage {size_mb:.1f}MB > limit {max_storage_mb}MB, triggering ratio cleanup")
+                triggered = True
 
             # 3. 按内存阈值紧急清理
             mem = psutil.virtual_memory()
             if mem.percent > memory_threshold_percent:
                 logger.warning(f"Memory usage {mem.percent}% > threshold {memory_threshold_percent}%, emergency cleanup")
+                triggered = True
+
+            if triggered:
                 cleanup_oldest_records(emergency_cleanup_ratio)
 
         except Exception as e:

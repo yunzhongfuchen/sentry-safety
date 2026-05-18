@@ -87,7 +87,7 @@ class VLMInspector:
         all_enabled_types: Set[str] = set()
 
         for cam_id in selected_ids:
-            frame = self.camera_manager.get_frame(cam_id)
+            frame = self.camera_manager.get_frame(cam_id, allow_paused=False)
             if frame is None:
                 continue
             frames[cam_id] = frame.copy()

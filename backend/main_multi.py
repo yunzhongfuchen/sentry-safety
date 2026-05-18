@@ -297,9 +297,13 @@ def init_components():
             detection_records.insert(0, record)
             max_records = _global_settings.get("max_records", 100)
             if len(detection_records) > max_records:
-                for old in detection_records[max_records:]:
+                ratio = _global_settings.get("emergency_cleanup_ratio", 0.2)
+                remove_count = max(1, int(len(detection_records) * ratio))
+                # 列表按时间倒序，末尾为最旧记录
+                to_remove = detection_records[-remove_count:]
+                for old in to_remove:
                     storage.delete_record_images(old["id"])
-                detection_records = detection_records[:max_records]
+                detection_records = detection_records[:-remove_count]
         mark_records_dirty()
 
         # 立即保存触发时刻前最多5秒的时间窗口帧
