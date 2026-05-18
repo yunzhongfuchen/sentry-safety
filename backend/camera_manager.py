@@ -617,16 +617,13 @@ class CameraManager:
                 state.status = CameraStatus.RECONNECTING
                 state.reconnect_attempts += 1
 
-                # max_reconnect_attempts > 0 时才启用上限（兼容旧配置）
-                if state.config.max_reconnect_attempts > 0 and state.reconnect_attempts > state.config.max_reconnect_attempts:
+                if state.reconnect_attempts > state.config.max_reconnect_attempts:
                     logger.error(f"Camera {camera_id} max reconnect attempts reached")
                     state.status = CameraStatus.ERROR
                     state.running = False
                     return
 
-            # 指数退避：2^attempts 秒，上限 60s
-            backoff = min(2 ** state.reconnect_attempts, 60)
-            time.sleep(backoff)
+            time.sleep(state.config.reconnect_interval)
     
     def _connect_and_stream(self, camera_id: str):
         """连接并开始视频流"""
