@@ -711,7 +711,14 @@
         createApp({
             setup() {
                 const cameras = ref([]);
-                const cameraOrder = ref([]);
+                // 从 localStorage 恢复摄像头顺序，避免切换页面后主画面重置
+                const savedOrder = (() => {
+                    try {
+                        const raw = localStorage.getItem('sentry_camera_order');
+                        return raw ? JSON.parse(raw) : [];
+                    } catch { return []; }
+                })();
+                const cameraOrder = ref(savedOrder);
                 const subPage = ref(0);
                 const totalDetections = ref(0);
                 const uptime = ref('-');
@@ -807,6 +814,7 @@
                     newOrder[0] = newOrder[orderIdx];
                     newOrder[orderIdx] = temp;
                     cameraOrder.value = newOrder;
+                    localStorage.setItem('sentry_camera_order', JSON.stringify(newOrder));
                 }
 
                 async function fetchCameras() {
@@ -816,14 +824,17 @@
                         if (data.cameras) {
                             cameras.value = data.cameras;
                             const enabledIds = data.cameras.filter(c => c.enabled).map(c => c.camera_id);
+                            let newOrder;
                             if (cameraOrder.value.length === 0) {
-                                cameraOrder.value = [...enabledIds];
+                                newOrder = [...enabledIds];
                             } else {
                                 const existing = new Set(cameraOrder.value);
                                 const newIds = enabledIds.filter(id => !existing.has(id));
-                                cameraOrder.value = cameraOrder.value.filter(id => enabledIds.includes(id));
-                                cameraOrder.value.push(...newIds);
+                                newOrder = cameraOrder.value.filter(id => enabledIds.includes(id));
+                                newOrder.push(...newIds);
                             }
+                            cameraOrder.value = newOrder;
+                            localStorage.setItem('sentry_camera_order', JSON.stringify(newOrder));
                         }
                     } catch (e) { console.error('获取摄像头失败:', e); }
                 }
