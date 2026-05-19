@@ -18,6 +18,8 @@ os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 import cv2
 import numpy as np
 
+import gpu_decoder
+
 logger = logging.getLogger(__name__)
 
 
@@ -273,11 +275,18 @@ class CameraManager:
         with self._lock:
             if camera_id not in self._cameras:
                 return None
-            
+
             state = self._cameras[camera_id]
             is_video_file = state.config.source_type == "video" or (
                 state.config.source_type == "auto" and not str(state.config.source).isdigit() and not str(state.config.source).startswith("rtsp")
             )
+            # 判断解码后端
+            decoder_backend = "cpu"
+            if state.cap is not None:
+                if hasattr(state.cap, "backend"):
+                    decoder_backend = state.cap.backend
+                elif hasattr(state.cap, "isOpened"):
+                    decoder_backend = "cpu"
             return {
                 "camera_id": camera_id,
                 "name": state.config.name,
@@ -289,6 +298,7 @@ class CameraManager:
                 "error_count": state.error_count,
                 "reconnect_attempts": state.reconnect_attempts,
                 "is_video_file": is_video_file,
+                "decoder_backend": decoder_backend,
             }
     
     def get_all_status(self) -> List[dict]:
@@ -635,16 +645,27 @@ class CameraManager:
         source = state.config.source
         if source.isdigit():
             source = int(source)
-        
-        # 打开视频流
-        cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-        if not cap.isOpened():
-            cap = cv2.VideoCapture(source)
-        
+
+        is_rtsp = str(source).startswith("rtsp")
+        cap = None
+
+        # RTSP 流优先尝试 GPU 硬件解码
+        if is_rtsp and gpu_decoder.gpu_available():
+            gpu_reader = gpu_decoder.GPUVideoReader(str(source))
+            if gpu_reader.start():
+                cap = gpu_reader
+                logger.info(f"Camera {camera_id} using GPU decoder")
+
+        # 回退到 OpenCV CPU 解码
+        if cap is None:
+            cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+            if not cap.isOpened():
+                cap = cv2.VideoCapture(source)
+
         if not cap.isOpened():
             raise RuntimeError(f"Failed to open video source: {source}")
-        
-        # 设置视频参数
+
+        # 设置视频参数（GPU 读取器 set() 返回 False，不影响）
         cap.set(cv2.CAP_PROP_BUFFERSIZE, state.config.buffer_size)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)

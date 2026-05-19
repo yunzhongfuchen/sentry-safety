@@ -18,6 +18,7 @@ import storage
 from detector import PersonDetector
 from extractor import FrameExtractor
 from understander import VideoUnderstander
+import gpu_decoder
 
 # 配置日志：全局默认 WARNING（抑制第三方库 info 噪音），但保留项目自身重要 info
 logging.basicConfig(
@@ -73,7 +74,8 @@ _records_dirty = threading.Event()
 
 
 class RTSPReader:
-    """独立线程持续读取 RTSP/视频帧，外部只取最新帧。"""
+    """独立线程持续读取 RTSP/视频帧，外部只取最新帧。
+    优先尝试 NVIDIA GPU 硬件解码 (NVDEC)，失败时回退到 OpenCV CPU 解码。"""
 
     def __init__(self, source: str):
         self.source = source
@@ -82,8 +84,27 @@ class RTSPReader:
         self.lock = threading.Lock()
         self.running = False
         self.cap = None
+        self._gpu: Optional[gpu_decoder.GPUVideoReader] = None
+
+    @property
+    def backend(self) -> str:
+        """返回当前使用的解码后端：gpu | cpu"""
+        if self._gpu and self._gpu.is_opened():
+            return "gpu"
+        return "cpu"
 
     def start(self) -> bool:
+        # 1. 尝试 GPU 硬件解码（仅限 NVIDIA + 非摄像头索引）
+        if gpu_decoder.gpu_available():
+            gpu = gpu_decoder.GPUVideoReader(self.source)
+            if gpu.start():
+                self._gpu = gpu
+                self.running = True
+                logger.info(f"GPU decoder active for {self.source}")
+                return True
+            logger.debug(f"GPU decoder failed for {self.source}, fallback to CPU")
+
+        # 2. 回退到 OpenCV CPU 解码
         self.cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
         if not self.cap.isOpened():
             self.cap = cv2.VideoCapture(self.source)
@@ -104,21 +125,30 @@ class RTSPReader:
                 time.sleep(0.01)
 
     def read(self):
+        if self._gpu:
+            return self._gpu.read()
         with self.lock:
             return self.ret, self.frame.copy() if self.frame is not None else None
 
     def snapshot(self):
         """返回当前最新帧的副本，不影响内部状态。供抽帧器使用。"""
+        if self._gpu:
+            return self._gpu.snapshot()
         with self.lock:
             if self.ret and self.frame is not None:
                 return self.frame.copy()
             return None
 
     def is_opened(self):
+        if self._gpu:
+            return self._gpu.is_opened()
         return self.cap is not None and self.cap.isOpened()
 
     def stop(self):
         self.running = False
+        if self._gpu:
+            self._gpu.stop()
+            self._gpu = None
         if self.cap:
             self.cap.release()
             self.cap = None
@@ -433,6 +463,7 @@ async def get_status():
             "result": current_status["result"],
             "logs": list(current_status["logs"]),
             "stream_active": stream_active,
+            "decoder_backend": video_reader.backend if video_reader else "none",
         }
 
     # 只返回最近 10 条的元数据，不含图片

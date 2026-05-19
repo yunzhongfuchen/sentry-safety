@@ -535,6 +535,10 @@
                         <label>NPU 核心数</label>
                         <input :value="detectorInfo.npu_cores || 0" disabled />
                     </div>
+                    <div class="form-field">
+                        <label>视频解码后端</label>
+                        <input :value="(detectorInfo.decoder_backend || 'none').toUpperCase()" disabled />
+                    </div>
                 </div>
             </div>
 
@@ -758,6 +762,22 @@
                                 mode: data.mode || 'CPU',
                                 npu_cores: data.npu_cores || 0,
                             };
+                        }
+                    } catch (e) {}
+                    try {
+                        const res = await fetch('/status');
+                        const data = await res.json();
+                        if (data.decoder_backends) {
+                            const backends = Object.values(data.decoder_backends);
+                            if (backends.length === 1) {
+                                detectorInfo.value.decoder_backend = backends[0];
+                            } else if (backends.length > 1) {
+                                const gpu = backends.filter(b => b === 'gpu').length;
+                                const cpu = backends.filter(b => b === 'cpu').length;
+                                detectorInfo.value.decoder_backend = `GPU:${gpu} CPU:${cpu}`;
+                            } else {
+                                detectorInfo.value.decoder_backend = 'none';
+                            }
                         }
                     } catch (e) {}
                 }

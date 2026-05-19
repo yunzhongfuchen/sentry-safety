@@ -10,6 +10,9 @@ python-multipart>=0.0.6
 opencv-python-headless>=4.8.0
 numpy>=1.24.0,<2.0
 
+# GPU 视频硬件解码 (NVIDIA NVDEC via PyAV + CUVID)
+av>=10.0.0
+
 # ModelScope (DamoYOLO 口罩/香烟检测)
 modelscope>=1.30
 addict

@@ -539,7 +539,12 @@ async def get_status():
     if camera_manager:
         cameras = camera_manager.get_all_status()
         status["active_cameras"] = sum(1 for c in cameras if c["status"] == "connected")
-    
+        # 汇总所有摄像头的解码后端
+        status["decoder_backends"] = {
+            c["camera_id"]: c.get("decoder_backend", "cpu")
+            for c in cameras
+        }
+
     # 修正 total_detections 为实际记录数（包含从磁盘加载的历史记录）
     with _records_lock:
         status["total_detections"] = len(detection_records)
