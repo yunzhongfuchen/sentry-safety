@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # 激活虚拟环境
-PYTHON_BIN="/home/yangrunfu/miniconda3/envs/py310/bin/python"
+PYTHON_BIN="/home/yangrunfu/miniconda3/envs/py312/bin/python"
 if [[ -d "venv" ]]; then
     source venv/bin/activate
     PYTHON_BIN="python"
