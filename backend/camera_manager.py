@@ -101,7 +101,7 @@ class CameraState:
         # 让 playback_state 的初始 loop/speed 与 config 保持一致
         self.playback_state["loop"] = self.config.video_loop
         self.playback_state["speed"] = self.config.video_playback_speed
-        # 本地视频文件默认暂停、不循环，等待前端点击播放（safety_detection / confined_space 均有播放控制）
+        # 本地视频文件默认暂停、不循环，等待前端点击播放
         is_video = self.config.source_type == "video" or (
             self.config.source_type == "auto"
             and not str(self.config.source).isdigit()
@@ -353,7 +353,7 @@ class CameraManager:
                 current = pb.get("current_frame_idx", 0)
                 if total > 0 and current >= total - 1:
                     pb["current_frame_idx"] = 0
-                    # 先置空当前帧，防止 reopen/seek 空档期内 _confined_space_loop 取到旧帧
+                    # 先置空当前帧，防止 reopen/seek 空档期内取到旧帧
                     with state.lock:
                         state.current_frame = None
             elif action == "pause":
@@ -737,7 +737,7 @@ class CameraManager:
             if not ret or frame is None:
                 if is_video_file and pb.get("loop", True):
                     # 重新打开视频文件，避免某些编码 seek(0) 后非必现地返回旧帧
-                    # 先把当前帧置空，防止 reopen 期间 _confined_space_loop 取到旧帧混入新 buffer
+                    # 先把当前帧置空，防止 reopen 期间取到旧帧混入新 buffer
                     with state.lock:
                         state.current_frame = None
                     cap.release()

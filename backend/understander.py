@@ -79,89 +79,6 @@ PROMPT_TEMPLATES = {
 请以 JSON 格式返回：
 {"same_person": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
 
-    "confined_count_review": """你正在复核一个有限空间（如污水井、储罐、地下室）监控画面中的人数统计。
-请仔细数一下画面中有多少人位于这个有限空间内部（入口以内）。
-注意排除以下误判情况：
-- 只露出部分身体但在空间外部的人
-- 在入口处徘徊但未真正进入的人
-- 画面中的倒影、海报等
-
-请以 JSON 格式返回：
-{"count": 整数, "confidence": 0.0-1.0, "reason": "判断理由"}""",
-
-    "confined_window_review": """你正在分析一段有限空间入口监控，共 {N} 张按时间顺序排列的连续截图。
-
-绿色框表示有限空间入口边界。
-
-空间方向定义：
-- 摄像头位于有限空间外部
-- 靠近摄像头的一侧是外部区域
-- 远离摄像头的一侧是有限空间内部区域
-
-因此：
-- 人物从“靠近摄像头”穿过入口移动到“远离摄像头”，属于 entered
-- 人物从“远离摄像头”穿过入口移动到移动到“靠近摄像头”，属于 left
-
-任务：
-判断是否有人进入（entered）或离开（left）有限空间。
-
-注意：
-输入是低帧率抽帧图像，可以基于前后帧的位置变化进行推断，但不要脑补不存在的轨迹。
-
-判定规则：
-
-【entered】
-只有当某个人明确发生：
-“外部区域 -> 内部区域”
-且人物主体真正进入内部时，才统计 entered。
-
-【left】
-只有当某个人明确发生：
-“内部区域 -> 外部区域”
-且人物主体真正离开内部时，才统计 left。
-
-【other】
-以下情况都属于 other：
-- 人一直在内部工作、停留、移动
-- 人一直在外部活动
-- 人在入口附近徘徊
-- 人从内部移动到入口附近工作
-- 人从入口附近返回内部
-- 人突然出现或消失
-- 遮挡严重、方向不明确
-- 无法确认是否真正跨越入口边界
-- 人物仅部分身体越过边界
-
-重要：
-- “无人 -> 内部有人” 不能直接判定 entered
-- “有人 -> 无人” 不能直接判定 left
-- 人物首次出现在内部时，默认来源未知
-- 不要根据人数增减直接判断 entered 或 left
-- 不要仅根据人物出现位置判断 inside/outside，必须结合相对摄像头的移动方向判断
-- 已经在内部的人，后续靠近入口工作，不算 entered
-- 绿色框只是入口边界，不代表进入框内就算 entered
-- 多人场景下必须分别判断每个人
-- 必须根据人物主体位置判断，而不是局部身体位置
-- 仅有手臂、腿、头部、半个身体越过边界，不算 entered 或 left
-- 人物探头、伸手、探身、短暂跨出部分身体后返回原位置，都属于 other
-- 只有人物主体位置真正完成“外部 ↔ 内部”状态变化，才算 entered 或 left
-
-计数规则：
-- 同一个人每完成一次“外部 -> 内部”，entered_count +1
-- 同一个人每完成一次“内部 -> 外部”，left_count +1
-
-请严格返回 JSON：
-
-{
-  "entered": true/false,
-  "left": true/false,
-  "other": true/false,
-  "entered_count": 整数,
-  "left_count": 整数,
-  "confidence": 0.0-1.0,
-  "reason": "判断理由"
-}""",
-
     "inspection": """你正在执行工业安全监控巡检。请仔细检查监控画面，判断是否存在以下安全隐患：
 {enabled_types_desc}
 
@@ -341,11 +258,7 @@ class VideoUnderstander:
             return {"error": "No frames provided"}
 
         # 构建 prompt
-        if prompt_type == "confined_window_review":
-            template = config.load_confined_prompt()
-            if extra_context:
-                template = template.replace("{N}", str(extra_context.get("N", len(frames))))
-        elif prompt_type in PROMPT_TEMPLATES:
+        if prompt_type in PROMPT_TEMPLATES:
             template = PROMPT_TEMPLATES[prompt_type]
         else:
             template = PROMPT_TEMPLATES["fire_review"]
@@ -525,16 +438,6 @@ class VideoUnderstander:
         elif prompt_type == "inspection":
             result = {
                 "detections": {},
-            }
-        elif prompt_type == "confined_window_review":
-            result = {
-                "entered": random.choice([True, False]),
-                "left": random.choice([True, False]),
-                "other": random.choice([True, False]),
-                "entered_count": random.randint(0, 2),
-                "left_count": random.randint(0, 2),
-                "confidence": round(random.uniform(0.6, 0.95), 2),
-                "reason": "Mock: 有限空间窗口复核结果",
             }
         else:
             result = {

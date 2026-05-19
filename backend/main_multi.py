@@ -59,15 +59,6 @@ except ImportError as e:
     logger.error(f"Import error: {e}")
     raise
 
-# 有限空间模块（可选导入，失败不影响主功能）
-try:
-    from confined_space.zone_counter import ZoneCounter
-    from confined_space.api import router as confined_space_router
-    CONFINED_SPACE_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"Confined space module not available: {e}")
-    CONFINED_SPACE_AVAILABLE = False
-
 # 创建 FastAPI 应用
 app = FastAPI(title="Sentry Multi-Camera Safety Detection API")
 
@@ -75,11 +66,6 @@ app = FastAPI(title="Sentry Multi-Camera Safety Detection API")
 frontend_path = Path(__file__).parent.parent / "frontend" / "safety_detection"
 if frontend_path.exists():
     app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
-
-# 挂载有限空间前端静态文件（独立目录）
-confined_frontend_path = Path(__file__).parent.parent / "frontend" / "confined_space"
-if confined_frontend_path.exists():
-    app.mount("/confined-static", StaticFiles(directory=str(confined_frontend_path)), name="confined-static")
 
 # CORS
 app.add_middleware(
@@ -92,17 +78,12 @@ app.add_middleware(
 # 挂载安全检测业务路由
 app.include_router(safety_router)
 
-# 挂载有限空间业务路由
-if CONFINED_SPACE_AVAILABLE:
-    app.include_router(confined_space_router)
-
 # ── 全局组件 ──
 camera_manager: Optional[CameraManager] = None
 safety_detector: Optional[SafetyDetector] = None
 multi_detector: Optional[MultiDetector] = None
 vlm_queue: Optional[VLMQueue] = None
 vlm_inspector: Optional[VLMInspector] = None
-zone_counter = None
 stream_server = get_stream_server()
 _global_settings: dict = {}
 
@@ -393,18 +374,7 @@ def init_components():
         max_cameras_per_inspection=3,
     )
 
-    # 9. 初始化有限空间计数器（预留，可通过 API 动态注册区域）
-    if CONFINED_SPACE_AVAILABLE:
-        zone_counter = ZoneCounter(
-            camera_manager=camera_manager,
-            inference_engine=safety_detector,
-            vlm_queue=vlm_queue,
-            performance_storage=storage,
-        )
-        app.state.zone_counter = zone_counter
-        log_message("ZoneCounter initialized")
-
-    # 10. 加载历史记录
+    # 9. 加载历史记录
     global detection_records
     detection_records = storage.load_records()
 
@@ -1239,15 +1209,6 @@ async def settings_page():
     return {"error": "Settings page not found"}
 
 
-@app.get("/confined-space")
-async def confined_space_page():
-    """有限空间监控页面"""
-    fp = Path(__file__).parent.parent / "frontend" / "confined_space" / "index.html"
-    if fp.exists():
-        return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "Confined space page not found"}
-
-
 @app.get("/system/mode")
 async def get_system_mode():
     """获取当前运行模式和检测设备"""
@@ -1263,7 +1224,6 @@ async def restart_system():
         log_message("System restart requested via API")
         # 停止现有组件
         stop_overlay_thread()
-        stop_confined_thread()
         if vlm_inspector:
             vlm_inspector.stop()
         if vlm_queue:
@@ -1286,8 +1246,6 @@ async def restart_system():
         if vlm_inspector and _global_settings.get("vlm_inspection_interval", 30.0) > 0:
             vlm_inspector.start()
         start_overlay_thread()
-        if zone_counter:
-            start_confined_thread()
 
         log_message("System restart completed")
         return {"success": True, "message": "Detection service restarted"}
@@ -1377,62 +1335,6 @@ def stop_overlay_thread():
         _overlay_thread.join(timeout=2)
 
 
-# ── 有限空间处理线程 ──
-_confined_running = False
-_confined_thread: Optional[threading.Thread] = None
-
-
-def _confined_space_loop():
-    """有限空间人员计数处理线程：定期取帧、检测 ROI 内人数、状态机防抖"""
-    global _confined_running
-    log_message("Confined space processing thread started")
-    while _confined_running:
-        try:
-            if camera_manager is None or zone_counter is None:
-                time.sleep(0.5)
-                continue
-
-            cameras = zone_counter.list_cameras()
-            for cam_info in cameras:
-                if not _confined_running:
-                    break
-                camera_id = cam_info.get("camera_id")
-                if not camera_id:
-                    continue
-
-                frame = camera_manager.get_frame(camera_id)
-                if frame is None:
-                    continue
-
-                zone_counter.process_frame(camera_id, frame)
-
-        except Exception as e:
-            logger.error(f"Confined space loop error: {e}")
-        # 约 2fps 处理频率（有限空间不需要太高帧率）
-        time.sleep(0.5)
-    log_message("Confined space processing thread stopped")
-
-
-def start_confined_thread():
-    """启动有限空间处理线程"""
-    global _confined_running, _confined_thread
-    if _confined_thread and _confined_thread.is_alive():
-        return
-    _confined_running = True
-    _confined_thread = threading.Thread(
-        target=_confined_space_loop, daemon=True, name="confined-space"
-    )
-    _confined_thread.start()
-
-
-def stop_confined_thread():
-    """停止有限空间处理线程"""
-    global _confined_running
-    _confined_running = False
-    if _confined_thread:
-        _confined_thread.join(timeout=2)
-
-
 @app.on_event("startup")
 async def startup():
     """服务启动"""
@@ -1457,10 +1359,6 @@ async def startup():
     # 启动独立渲染线程（画框 + 送流，与检测解耦）
     start_overlay_thread()
 
-    # 启动有限空间处理线程
-    if zone_counter:
-        start_confined_thread()
-
     log_message(f"Sentry Safety Detection started on {app_config.API_HOST}:{app_config.API_PORT}")
     log_message(f"Access the multi-camera console at http://{app_config.API_HOST}:{app_config.API_PORT}/multi")
 
@@ -1470,7 +1368,6 @@ async def shutdown():
     """服务关闭"""
     log_message("Shutting down...")
     stop_overlay_thread()
-    stop_confined_thread()
 
     if vlm_inspector:
         vlm_inspector.stop()
