@@ -41,6 +41,12 @@ RKNN_MODEL = os.getenv("RKNN_MODEL", "models/yolov8n.rknn")
 # RKNN 核心分配模式: auto | manual
 RKNN_CORE_MODE = os.getenv("RKNN_CORE_MODE", "auto")
 
+# ==================== GPU 动态调度器配置 ====================
+USE_GPU_SCHEDULER = os.getenv("USE_GPU_SCHEDULER", "false").lower() == "true"
+GPU_SCHEDULER_NUM_QUEUES = int(os.getenv("GPU_SCHEDULER_NUM_QUEUES", "0"))  # 0 = 自动（一模型一队列）
+GPU_SCHEDULER_INTERVAL = float(os.getenv("GPU_SCHEDULER_INTERVAL", "0.5"))
+GPU_SCHEDULER_HALF = os.getenv("GPU_SCHEDULER_HALF", "false").lower() == "true"
+
 # ==================== 抽帧配置 ====================
 FRAME_COUNT = int(os.getenv("FRAME_COUNT", "15"))
 FRAME_INTERVAL = float(os.getenv("FRAME_INTERVAL", "0.5"))
@@ -147,6 +153,10 @@ DEFAULT_GLOBAL_SETTINGS = {
     "snapshot_quality": 70,
     "frame_quality": 60,
     "detection_resolution": [640, 480],
+    "use_gpu_scheduler": False,
+    "gpu_scheduler_num_queues": 0,
+    "gpu_scheduler_interval": 0.5,
+    "gpu_scheduler_half": False,
 }
 
 # ==================== 默认摄像头参数（全局模板） ====================

@@ -86,6 +86,7 @@ vlm_queue: Optional[VLMQueue] = None
 vlm_inspector: Optional[VLMInspector] = None
 stream_server = get_stream_server()
 _global_settings: dict = {}
+gpu_scheduler = None
 
 # 状态管理
 _status_lock = threading.Lock()
@@ -140,12 +141,65 @@ def encode_frame_to_base64(frame: np.ndarray, quality: int = 70) -> str:
     return base64.b64encode(buffer.tobytes()).decode('utf-8')
 
 
+def _convert_ultralytics_result(dtype: str, result) -> Optional[dict]:
+    """将 ultralytics Results 转换为 SafetyDetector 风格的 dict"""
+    if result is None or result.boxes is None or len(result.boxes) == 0:
+        if dtype == "sleep":
+            return {"detected": False, "boxes": [], "scores": [], "subjects": [], "count": 0}
+        return {"detected": False, "boxes": [], "scores": [], "max_confidence": 0.0}
+
+    boxes = []
+    scores = []
+    for b in result.boxes:
+        boxes.append(list(map(int, b.xyxy[0])))
+        scores.append(float(b.conf[0]))
+
+    if dtype == "sleep":
+        subjects = []
+        detected = False
+        count = 0
+        if result.keypoints is not None and result.keypoints.data is not None:
+            for i in range(len(result.boxes)):
+                bbox = result.boxes.xyxy[i].cpu().numpy()
+                kp = result.keypoints.data[i].cpu().numpy()
+                if len(kp) >= 17:
+                    from safety_detection.sleep_detect import analyze_sleep
+                    info = analyze_sleep(kp, bbox)
+                    subjects.append({
+                        "box": bbox.tolist(),
+                        "score": float(result.boxes.conf[i]),
+                        "sleeping": info["is_sleeping"],
+                        "posture_label": info["posture_label"],
+                        "sleep_confidence": info["sleep_confidence"],
+                        "keypoints": kp,
+                    })
+                    if info["is_sleeping"]:
+                        detected = True
+                        count += 1
+        return {
+            "detected": detected,
+            "boxes": boxes,
+            "scores": scores,
+            "subjects": subjects,
+            "count": count,
+            "max_confidence": max(scores) if scores else 0.0,
+        }
+
+    max_conf = max(scores) if scores else 0.0
+    return {
+        "detected": len(boxes) > 0,
+        "boxes": boxes,
+        "scores": scores,
+        "max_confidence": max_conf,
+    }
+
+
 # ── 初始化 ──
 
 def init_components():
     """初始化所有组件（新架构）"""
     global camera_manager, safety_detector, multi_detector
-    global vlm_queue, vlm_inspector, stream_server, _global_settings
+    global vlm_queue, vlm_inspector, stream_server, _global_settings, gpu_scheduler
 
     log_message("Initializing Sentry Safety Detection System...")
 
@@ -198,9 +252,13 @@ def init_components():
         for dtype, cfg in cam_data.get("detection_types", {}).items():
             if cfg.get("enabled", False):
                 all_enabled_types.add(dtype)
+    use_gpu_scheduler = _global_settings.get("use_gpu_scheduler", app_config.USE_GPU_SCHEDULER)
     if all_enabled_types:
-        safety_detector.ensure_models_loaded(list(all_enabled_types))
-        log_message(f"Models loaded for types: {list(all_enabled_types)} on {device}")
+        if use_gpu_scheduler and device == "gpu":
+            log_message(f"GPU scheduler mode: deferring model load to scheduler")
+        else:
+            safety_detector.ensure_models_loaded(list(all_enabled_types))
+            log_message(f"Models loaded for types: {list(all_enabled_types)} on {device}")
 
     # 5. 初始化 VLMQueue
     understander = VideoUnderstander()
@@ -363,6 +421,70 @@ def init_components():
         detection_types = cam_data.get("detection_types", {})
         if detection_types:
             multi_detector.register_camera(cam_data["camera_id"], detection_types)
+
+    # 7.5 初始化 GPU 动态调度器（可选，仅 GPU 模式）
+    gpu_scheduler = None
+    if use_gpu_scheduler and device == "gpu":
+        try:
+            from gpu_scheduler import ModelConfig, GPUDynamicScheduler
+            from inference_engine import _resolve_model_path, MASK_TARGET_CLASSES, CIGARETTE_TARGET_CLASSES
+
+            def _gpu_on_result(cam_id: str, dtype: str, result):
+                if multi_detector is None:
+                    return
+                res_dict = _convert_ultralytics_result(dtype, result)
+                if res_dict is None:
+                    return
+                if dtype == "uniform":
+                    res_dict["detected"] = False
+                frame = getattr(result, "orig_img", None)
+                multi_detector._latest_results.setdefault(cam_id, {})[dtype] = res_dict
+                with multi_detector._lock:
+                    schedule = multi_detector._schedules.get(cam_id, {}).get(dtype)
+                    if schedule is None:
+                        return
+                    schedule.last_run = time.time()
+                    try:
+                        if dtype == "uniform":
+                            multi_detector._handle_uniform_window(cam_id, frame, res_dict, schedule)
+                        elif dtype == "sleep":
+                            multi_detector._handle_sleep_detection(cam_id, frame, res_dict, schedule)
+                        else:
+                            multi_detector._handle_standard_detection(cam_id, dtype, frame, res_dict, schedule)
+                    except Exception as e:
+                        logger.error(f"GPU scheduler result handling error [{cam_id}/{dtype}]: {e}")
+
+            model_configs = {}
+            fire_path = _resolve_model_path("fire", use_npu=False)
+            if fire_path:
+                model_configs["fire"] = ModelConfig(fire_path, "fire", device="cuda", classes=[0])
+                model_configs["smoke"] = ModelConfig(fire_path, "smoke", device="cuda", classes=[1])
+            mask_path = _resolve_model_path("mask", use_npu=False)
+            if mask_path:
+                model_configs["mask"] = ModelConfig(mask_path, "mask", device="cuda", classes=MASK_TARGET_CLASSES)
+            cigarette_path = _resolve_model_path("cigarette", use_npu=False)
+            if cigarette_path:
+                model_configs["cigarette"] = ModelConfig(cigarette_path, "cigarette", device="cuda", classes=CIGARETTE_TARGET_CLASSES)
+            sleep_path = _resolve_model_path("sleep", use_npu=False)
+            if sleep_path:
+                model_configs["sleep"] = ModelConfig(sleep_path, "sleep", device="cuda")
+            person_path = _resolve_model_path("person", use_npu=False)
+            if person_path:
+                model_configs["uniform"] = ModelConfig(person_path, "uniform", device="cuda", classes=[0])
+
+            num_queues = _global_settings.get("gpu_scheduler_num_queues", app_config.GPU_SCHEDULER_NUM_QUEUES) or None
+            gpu_scheduler = GPUDynamicScheduler(
+                camera_manager=camera_manager,
+                model_configs=model_configs,
+                num_queues=num_queues,
+                interval=_global_settings.get("gpu_scheduler_interval", app_config.GPU_SCHEDULER_INTERVAL),
+                on_result=_gpu_on_result,
+                half=_global_settings.get("gpu_scheduler_half", app_config.GPU_SCHEDULER_HALF),
+            )
+            log_message(f"GPU scheduler initialized: {len(model_configs)} models, {gpu_scheduler.num_queues} queues")
+        except Exception as e:
+            log_message(f"GPU scheduler init failed: {e}", "error")
+            gpu_scheduler = None
 
     # 8. 初始化 VLMInspector
     vlm_inspector = VLMInspector(
@@ -529,7 +651,13 @@ async def get_status():
         status["logs"] = list(_system_status["logs"])
     
     # 添加检测器状态
-    if safety_detector:
+    if gpu_scheduler:
+        status["detector"] = {
+            "mode": "gpu_scheduler",
+            "loaded_models": list(gpu_scheduler.detectors.keys()),
+            "queues": gpu_scheduler.num_queues,
+        }
+    elif safety_detector:
         status["detector"] = {
             "loaded_models": safety_detector.loaded_models,
             "model_status": safety_detector.get_model_status(),
@@ -1233,7 +1361,9 @@ async def restart_system():
             vlm_inspector.stop()
         if vlm_queue:
             vlm_queue.stop()
-        if multi_detector:
+        if gpu_scheduler:
+            gpu_scheduler.stop()
+        elif multi_detector:
             multi_detector.stop()
         if camera_manager:
             camera_manager.stop_all()
@@ -1244,7 +1374,9 @@ async def restart_system():
         init_components()
         if camera_manager:
             camera_manager.start_all()
-        if multi_detector:
+        if gpu_scheduler:
+            gpu_scheduler.start()
+        elif multi_detector:
             multi_detector.start()
         if vlm_queue:
             vlm_queue.start()
@@ -1350,7 +1482,10 @@ async def startup():
         camera_manager.start_all()
 
     # 启动检测器
-    if multi_detector:
+    if gpu_scheduler:
+        gpu_scheduler.start()
+        log_message("GPU scheduler started")
+    elif multi_detector:
         multi_detector.start()
 
     # 启动 VLM 队列
@@ -1380,7 +1515,9 @@ async def shutdown():
     if vlm_queue:
         vlm_queue.stop()
 
-    if multi_detector:
+    if gpu_scheduler:
+        gpu_scheduler.stop()
+    elif multi_detector:
         multi_detector.stop()
 
     if camera_manager:

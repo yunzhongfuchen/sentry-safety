@@ -68,7 +68,7 @@ When running scripts, installing packages, or performing any Python-related oper
 
 ## 工作日志自动记录
 
-当你帮用户完成了某项任务，例如但不限于以下类型的工作后，**主动按照 worklog-skill 的规则将工作内容记录到当日草稿**，不需要等用户说"记一下"：
+当你帮用户完成了某项任务，例如但不限于以下类型的工作后，**主动使用 worklog-skill 技能**，不需要等用户说"记一下"：
 
 - 修复了 Bug 或解决了问题
 - 实现了新功能或添加了新能力
@@ -76,4 +76,3 @@ When running scripts, installing packages, or performing any Python-related oper
 - 提交了代码或合并了分支
 - 更新了文档或完善了注释
 
-记录完成之后需要在末尾简要告知："已记录到日报草稿：xxx"
