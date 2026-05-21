@@ -597,6 +597,15 @@ async def multi_view():
     return {"error": "Multi-camera page not found"}
 
 
+@app.get("/hud")
+async def hud_view():
+    """HUD 风格监控中心"""
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "hud.html"
+    if fp.exists():
+        return HTMLResponse(fp.read_text(encoding="utf-8"))
+    return {"error": "HUD page not found"}
+
+
 @app.get("/cameras")
 async def list_cameras():
     """列出所有摄像头（包含 detection_types）"""
