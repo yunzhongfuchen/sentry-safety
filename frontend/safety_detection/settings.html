@@ -412,21 +412,6 @@
                         <input type="number" v-model.number="settings.vlm_inspection_interval" min="0" />
                     </div>
                     <div class="form-field">
-                        <label>启用 VLM 复核</label>
-                        <select v-model="settings.use_vlm">
-                            <option :value="true">是</option>
-                            <option :value="false">否</option>
-                        </select>
-                    </div>
-                    <div class="form-field">
-                        <label>P0 告警冷却 (s)</label>
-                        <input type="number" v-model.number="settings.p0_alert_cooldown" min="0" />
-                    </div>
-                    <div class="form-field">
-                        <label>P1 告警冷却 (s)</label>
-                        <input type="number" v-model.number="settings.p1_alert_cooldown" min="0" />
-                    </div>
-                    <div class="form-field">
                         <label>最大记录数</label>
                         <input type="number" v-model.number="settings.max_records" min="10" />
                     </div>
@@ -487,6 +472,7 @@
                     <span>间隔</span>
                     <span>阈值</span>
                     <span>连续</span>
+                    <span>冷却</span>
                     <span>VLM</span>
                 </div>
                 <div v-for="t in detectionTypes" :key="t.key" class="type-row">
@@ -495,6 +481,7 @@
                     <input type="number" v-model.number="settings.default_detection_types[t.key].interval" />
                     <input type="number" step="0.1" v-model.number="settings.default_detection_types[t.key].threshold" />
                     <input type="number" v-model.number="settings.default_detection_types[t.key].consecutive_required" />
+                    <input type="number" v-model.number="settings.default_detection_types[t.key].cooldown" min="0" />
                     <input type="checkbox" v-model="settings.default_detection_types[t.key].use_vlm" />
                 </div>
                 <button class="btn primary" @click="saveDefaultTypes" style="margin-top:14px;">保存检测默认值</button>
@@ -651,6 +638,7 @@
                         <span>间隔</span>
                         <span>阈值</span>
                         <span>连续</span>
+                        <span>冷却</span>
                         <span>VLM</span>
                     </div>
                     <div v-for="t in detectionTypes" :key="t.key" class="type-row">
@@ -659,6 +647,7 @@
                         <input type="number" v-model.number="cameraDialog.detection_types[t.key].interval" />
                         <input type="number" step="0.1" v-model.number="cameraDialog.detection_types[t.key].threshold" />
                         <input type="number" v-model.number="cameraDialog.detection_types[t.key].consecutive_required" />
+                        <input type="number" v-model.number="cameraDialog.detection_types[t.key].cooldown" min="0" />
                         <input type="checkbox" v-model="cameraDialog.detection_types[t.key].use_vlm" />
                     </div>
                 </div>
@@ -685,6 +674,7 @@
                         <span>间隔</span>
                         <span>阈值</span>
                         <span>连续</span>
+                        <span>冷却</span>
                         <span>VLM</span>
                     </div>
                     <div v-for="t in detectionTypes" :key="t.key" class="type-row">
@@ -693,6 +683,7 @@
                         <input type="number" v-model.number="batchTypes[t.key].interval" />
                         <input type="number" step="0.1" v-model.number="batchTypes[t.key].threshold" />
                         <input type="number" v-model.number="batchTypes[t.key].consecutive_required" />
+                        <input type="number" v-model.number="batchTypes[t.key].cooldown" min="0" />
                         <input type="checkbox" v-model="batchTypes[t.key].use_vlm" />
                     </div>
                 </div>
@@ -712,12 +703,12 @@
 
         function defaultTypes() {
             return {
-                fire: { enabled: false, interval: 1, threshold: 0.6, consecutive_required: 2, level: 'P0', use_vlm: false },
-                smoke: { enabled: false, interval: 1, threshold: 0.55, consecutive_required: 2, level: 'P0', use_vlm: false },
-                uniform: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, level: 'P1', compliance_window_seconds: 30, use_vlm: false },
-                mask: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, level: 'P1', use_vlm: false },
-                cigarette: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, level: 'P1', use_vlm: false },
-                sleep: { enabled: false, interval: 60, threshold: 0.7, consecutive_required: 3, level: 'P1', use_vlm: false },
+                fire: { enabled: false, interval: 1, threshold: 0.6, consecutive_required: 2, cooldown: 10, use_vlm: false },
+                smoke: { enabled: false, interval: 1, threshold: 0.55, consecutive_required: 2, cooldown: 10, use_vlm: false },
+                uniform: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, compliance_window_seconds: 30, cooldown: 3, use_vlm: false },
+                mask: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, cooldown: 3, use_vlm: false },
+                cigarette: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, cooldown: 3, use_vlm: false },
+                sleep: { enabled: false, interval: 60, threshold: 0.7, consecutive_required: 3, cooldown: 30, use_vlm: false },
             };
         }
 
