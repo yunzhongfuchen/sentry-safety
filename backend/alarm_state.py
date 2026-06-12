@@ -2,11 +2,14 @@ import time
 from typing import Any, Dict, Optional
 
 
-def create_record(camera_id: str, dtype: str, result: Dict[str, Any], record_id: Optional[str] = None) -> Dict[str, Any]:
+def create_record(camera_id: str, dtype: str, result: Dict[str, Any], record_id: Optional[str] = None, now: Optional[float] = None) -> Dict[str, Any]:
     """根据小模型检测结果创建一条新告警记录"""
+    if now is None:
+        now = time.time()
     if record_id is None:
-        record_id = f"{camera_id}_{dtype}_{int(time.time() * 1000)}"
-    trigger_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        record_id = f"{camera_id}_{dtype}_{int(now * 1000)}"
+    trigger_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
+    confidence = result.get("max_confidence", result.get("confidence", 0))
     return {
         "id": record_id,
         "camera_id": camera_id,
@@ -14,11 +17,11 @@ def create_record(camera_id: str, dtype: str, result: Dict[str, Any], record_id:
         "level": "small_model_alarm",
         "status": "pending",
         "time": trigger_time,
-        "confidence": result.get("max_confidence", result.get("confidence", 0)),
+        "confidence": confidence,
         "reason": result.get("reason", ""),
         "small_model": {
             "detected": result.get("detected", False),
-            "confidence": result.get("max_confidence", 0),
+            "confidence": confidence,
             "boxes": result.get("boxes", []),
         },
         "vlm_review": None,
@@ -28,7 +31,13 @@ def create_record(camera_id: str, dtype: str, result: Dict[str, Any], record_id:
 
 
 def apply_vlm_review(record: Dict[str, Any], vlm_result: Dict[str, Any]) -> None:
-    """把 VLM 复核结果应用到记录：只改 level 和 vlm_review，不改 status"""
+    """把 VLM 复核结果应用到记录：只改 level 和 vlm_review，不改 status
+
+    vlm_result 预期字段：
+        - confirmed (bool): 是否确认告警
+        - confidence (float): VLM 置信度
+        - reason (str): 复核理由/说明
+    """
     confirmed = vlm_result.get("confirmed", False)
     conf = vlm_result.get("confidence", 0)
     reason = vlm_result.get("reason", "")
