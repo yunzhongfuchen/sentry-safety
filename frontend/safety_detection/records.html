@@ -235,8 +235,9 @@
             white-space: nowrap;
         }
 
-        .badge-p0 { background: var(--danger-light); color: var(--danger); }
-        .badge-p1 { background: var(--warning-light); color: var(--warning); }
+        .badge-small_model_alarm { background: var(--danger-light); color: var(--danger); }
+        .badge-vlm_alarm { background: var(--warning-light); color: var(--warning); }
+        .badge-vlm_ignore { background: var(--success-light); color: var(--success); }
         .badge-alerted { background: var(--danger-light); color: var(--danger); }
         .badge-pending { background: var(--warning-light); color: var(--warning); }
         .badge-false_positive { background: var(--success-light); color: var(--success); }
@@ -498,16 +499,16 @@
                 <div class="stat-label">总记录</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" id="statP0" style="color: var(--danger);">-</div>
-                <div class="stat-label">P0 告警</div>
+                <div class="stat-value" id="statPending" style="color: var(--warning);">-</div>
+                <div class="stat-label">待确认</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" id="statP1" style="color: var(--warning);">-</div>
-                <div class="stat-label">P1 告警</div>
+                <div class="stat-value" id="statConfirmed" style="color: var(--danger);">-</div>
+                <div class="stat-label">已确认</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" id="statFP" style="color: var(--success);">-</div>
-                <div class="stat-label">已忽略</div>
+                <div class="stat-value" id="statFalsePositive" style="color: var(--success);">-</div>
+                <div class="stat-label">误报</div>
             </div>
         </div>
 
@@ -535,18 +536,18 @@
                 <label>告警级别</label>
                 <select id="filterLevel" onchange="applyFilters()">
                     <option value="">全部</option>
-                    <option value="P0">P0</option>
-                    <option value="P1">P1</option>
+                    <option value="small_model_alarm">小模型报警</option>
+                    <option value="vlm_alarm">大模型报警</option>
+                    <option value="vlm_ignore">大模型忽略</option>
                 </select>
             </div>
             <div class="filter-group">
                 <label>状态</label>
                 <select id="filterStatus" onchange="applyFilters()">
                     <option value="">全部</option>
-                    <option value="alerted">已告警</option>
                     <option value="pending">待确认</option>
-                    <option value="false_positive">已忽略</option>
                     <option value="confirmed">已确认</option>
+                    <option value="false_positive">误报</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -632,7 +633,8 @@
                 </div>
 
                 <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
-                    <button class="btn" id="ignoreBtn" onclick="ignoreCurrent()">标记为误报</button>
+                    <button class="btn" id="confirmBtn" onclick="confirmCurrent()">确认报警</button>
+                    <button class="btn" id="ignoreBtn" onclick="ignoreCurrent()">确认误报</button>
                     <button class="btn" onclick="closeModal()">关闭</button>
                 </div>
             </div>
@@ -658,9 +660,9 @@
                 const res = await fetch('/alerts/stats');
                 const data = await res.json();
                 document.getElementById('statTotal').textContent = data.total || 0;
-                document.getElementById('statP0').textContent = data.p0 || 0;
-                document.getElementById('statP1').textContent = data.p1 || 0;
-                document.getElementById('statFP').textContent = data.false_positive || 0;
+                document.getElementById('statPending').textContent = data.pending || 0;
+                document.getElementById('statConfirmed').textContent = data.confirmed || 0;
+                document.getElementById('statFalsePositive').textContent = data.false_positive || 0;
             } catch (e) { console.error('加载统计失败:', e); }
         }
 
@@ -715,7 +717,10 @@
 
             const typeLabels = { fire: '明火', smoke: '烟雾', uniform: '工服', mask: '口罩', cigarette: '吸烟', sleep: '睡岗' };
             const typeColors = { fire: '#ef4444', smoke: '#f97316', uniform: '#22c55e', mask: '#0ea5e9', cigarette: '#a855f7', sleep: '#eab308' };
-            const statusLabels = { alerted: '已告警', pending: '待确认', false_positive: '已忽略', confirmed: '已确认', rejected: '已驳回' };
+            const levelLabels = { small_model_alarm: '小模型报警', vlm_alarm: '大模型报警', vlm_ignore: '大模型忽略' };
+            const levelClasses = { small_model_alarm: 'badge-small_model_alarm', vlm_alarm: 'badge-vlm_alarm', vlm_ignore: 'badge-vlm_ignore' };
+            const statusLabels = { pending: '待确认', confirmed: '已确认', false_positive: '误报' };
+            const statusClasses = { pending: 'badge-pending', confirmed: 'badge-confirmed', false_positive: 'badge-false_positive' };
 
             let html = `<table><thead><tr>
                 <th>ID</th><th>时间</th><th>摄像头</th><th>类型</th><th>级别</th><th>状态</th><th>置信度</th><th>说明</th>
@@ -724,15 +729,17 @@
             html += state.records.map(r => {
                 const typeLabel = typeLabels[r.detection_type] || r.detection_type;
                 const typeColor = typeColors[r.detection_type] || '#94a3b8';
-                const statusLabel = statusLabels[r.status] || r.status;
-                const statusClass = r.status === 'false_positive' ? 'badge-false_positive' : r.status === 'confirmed' ? 'badge-confirmed' : r.status === 'alerted' ? 'badge-alerted' : 'badge-pending';
+                const levelLabel = levelLabels[r.level] || r.level || '-';
+                const levelClass = levelClasses[r.level] || 'badge-vlm_ignore';
+                const statusLabel = statusLabels[r.status] || r.status || '-';
+                const statusClass = statusClasses[r.status] || 'badge-pending';
                 const conf = r.confidence != null ? (r.confidence * 100).toFixed(0) + '%' : '-';
                 return `<tr onclick="showDetail('${encodeURIComponent(r.id)}')">
                     <td class="col-id">${r.id.slice(-8)}</td>
                     <td class="col-time">${formatTime(r.time)}</td>
                     <td class="col-camera">${r.camera_id}</td>
                     <td><span class="type-dot" style="background:${typeColor}"></span>${typeLabel}</td>
-                    <td><span class="badge badge-${r.level?.toLowerCase() || 'p1'}">${r.level || '-'}</span></td>
+                    <td><span class="badge ${levelClass}">${levelLabel}</span></td>
                     <td><span class="badge ${statusClass}">${statusLabel}</span></td>
                     <td class="confidence">${conf}</td>
                     <td class="reason" title="${r.reason || ''}">${r.reason || '-'}</td>
@@ -786,14 +793,21 @@
                 currentDetail.encodedId = recordId;
 
                 const typeLabels = { fire: '明火', smoke: '烟雾', uniform: '工服', mask: '口罩', cigarette: '吸烟', sleep: '睡岗' };
-                const statusLabels = { alerted: '已告警', pending: '待确认', false_positive: '已忽略', confirmed: '已确认' };
+                const levelLabels = { small_model_alarm: '小模型报警', vlm_alarm: '大模型报警', vlm_ignore: '大模型忽略' };
+                const levelClasses = { small_model_alarm: 'badge-small_model_alarm', vlm_alarm: 'badge-vlm_alarm', vlm_ignore: 'badge-vlm_ignore' };
+                const statusLabels = { pending: '待确认', confirmed: '已确认', false_positive: '误报' };
+                const statusClasses = { pending: 'badge-pending', confirmed: 'badge-confirmed', false_positive: 'badge-false_positive' };
 
                 document.getElementById('detailId').textContent = data.id;
                 document.getElementById('detailTime').textContent = data.time;
                 document.getElementById('detailCamera').textContent = data.camera_id;
                 document.getElementById('detailType').textContent = typeLabels[data.detection_type] || data.detection_type;
-                document.getElementById('detailLevel').innerHTML = `<span class="badge badge-${data.level?.toLowerCase() || 'p1'}">${data.level || '-'}</span>`;
-                document.getElementById('detailStatus').innerHTML = `<span class="badge badge-${data.status === 'false_positive' ? 'false_positive' : data.status === 'confirmed' ? 'confirmed' : data.status === 'alerted' ? 'alerted' : 'pending'}">${statusLabels[data.status] || data.status}</span>`;
+                const levelLabel = levelLabels[data.level] || data.level || '-';
+                const levelClass = levelClasses[data.level] || 'badge-vlm_ignore';
+                document.getElementById('detailLevel').innerHTML = `<span class="badge ${levelClass}">${levelLabel}</span>`;
+                const statusLabel = statusLabels[data.status] || data.status || '-';
+                const statusClass = statusClasses[data.status] || 'badge-pending';
+                document.getElementById('detailStatus').innerHTML = `<span class="badge ${statusClass}">${statusLabel}</span>`;
                 document.getElementById('detailConfidence').textContent = data.confidence != null ? (data.confidence * 100).toFixed(1) + '%' : '-';
                 document.getElementById('detailSource').textContent = data.source === 'vlm' ? 'VLM复核' : '小模型';
                 document.getElementById('detailFrames').textContent = data.frame_count || 0;
@@ -801,7 +815,18 @@
                 document.getElementById('detailVlm').textContent = data.vlm_review ? (data.vlm_review.confirmed ? '确认告警' : '已排除') : '未复核';
                 document.getElementById('detailReason').textContent = data.reason || '无说明';
 
-                if (data.status === 'false_positive') document.getElementById('ignoreBtn').style.display = 'none';
+                const confirmBtn = document.getElementById('confirmBtn');
+                const ignoreBtn = document.getElementById('ignoreBtn');
+                if (data.status === 'confirmed') {
+                    confirmBtn.style.display = 'none';
+                    ignoreBtn.style.display = 'inline-block';
+                } else if (data.status === 'false_positive') {
+                    confirmBtn.style.display = 'inline-block';
+                    ignoreBtn.style.display = 'none';
+                } else {
+                    confirmBtn.style.display = 'inline-block';
+                    ignoreBtn.style.display = 'inline-block';
+                }
 
                 // Snapshot
                 const snapContainer = document.getElementById('snapshotContainer');
@@ -950,6 +975,19 @@
             currentFrameIndex = index;
             document.getElementById('frameSlider').value = index;
             updateFrameDisplay(index);
+        }
+
+        async function confirmCurrent() {
+            if (!currentDetail) return;
+            try {
+                const res = await fetch(`/alerts/${currentDetail.encodedId}/confirm`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('confirmBtn').style.display = 'none';
+                    loadRecords();
+                    loadSummary();
+                } else alert('操作失败: ' + (data.error || '未知错误'));
+            } catch (e) { alert('操作失败'); }
         }
 
         async function ignoreCurrent() {
