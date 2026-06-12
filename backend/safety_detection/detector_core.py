@@ -504,6 +504,7 @@ class MultiDetector:
             result["reason"] = f"检测到 {dtype}，置信度 {max_conf:.2f}"
 
         # 达到阈值，统一触发告警流程：先创建记录，再按需提交 VLM 复核
+        # 告警记录会在 trigger_callback 中立即创建；VLM 复核结果通过 vlm_result_callback 更新同一条记录。
         self._alert_states[camera_id][dtype] = {"active": True, "time": now, "level": "small_model_alarm"}
         if schedule.use_vlm:
             result["pending_vlm_review"] = True
@@ -544,6 +545,7 @@ class MultiDetector:
                                 result["reason"] = "工服合规窗口过期，未检测到反光背心"
                             self._alert_states[camera_id]["uniform"] = {"active": True, "time": now, "level": "small_model_alarm"}
                             if schedule.use_vlm:
+                                # 告警记录会在 trigger_callback 中立即创建；VLM 复核结果通过 vlm_result_callback 更新同一条记录。
                                 schedule.pending_vlm = True
                                 result["pending_vlm_review"] = True
                                 logger.info(f"{camera_id} uniform window expired, submitting VLM confirm")
@@ -671,7 +673,12 @@ class MultiDetector:
     # ------------------------------------------------------------------
 
     def _on_vlm_review(self, camera_id: str, dtype: str, vlm_result: dict) -> None:
-        """VLM 复核回调：透传给上层，由上层更新记录"""
+        """VLM 复核回调：透传给上层，由上层更新记录。
+
+        注意：小模型告警记录已在 trigger_callback 中创建（当检测命中时）。
+        此回调仅将 VLM 复核结果通过 vlm_result_callback 转发给上层，
+        以便上层更新现有记录的 level。它不会再次调用 trigger_callback。
+        """
         logger.info(f"VLM review result for {camera_id} {dtype}: {vlm_result}")
         if self.vlm_result_callback:
             try:
@@ -681,7 +688,12 @@ class MultiDetector:
 
     def _on_vlm_confirm(self, camera_id: str, dtype: str, frame: np.ndarray,
                         result: dict, schedule: TypeSchedule, vlm_result: dict) -> None:
-        """VLM 确认回调：透传给上层，由上层更新记录 level"""
+        """VLM 确认回调：透传给上层，由上层更新记录 level。
+
+        注意：小模型告警记录已在 trigger_callback 中创建（当检测命中时）。
+        此回调仅将 VLM 确认结果通过 vlm_result_callback 转发给上层，
+        以便上层更新现有记录的 level。它不会再次调用 trigger_callback。
+        """
         schedule.pending_vlm = False
         logger.info(f"VLM confirm result for {camera_id} {dtype}: {vlm_result}")
         if self.vlm_result_callback:
