@@ -288,7 +288,7 @@ def get_record_summary() -> Dict:
         dtype = r.get("detection_type", "unknown")
         by_type[dtype] = by_type.get(dtype, 0) + 1
 
-        level = r.get("level", "small_model_alarm")
+        level = r.get("level", "unknown")
         by_level[level] = by_level.get(level, 0) + 1
 
     camera_stats = {}
