@@ -181,9 +181,9 @@ def get_records_paginated(
     分页查询告警记录（不含图片）
 
     Args:
-        level: "P0" | "P1" | None
+        level: "small_model_alarm" | "vlm_alarm" | "vlm_ignore" | None
         dtype: "fire" | "smoke" | "uniform" | "mask" | "cigarette" | "sleep" | None
-        status: "alerted" | "pending" | "confirmed" | "rejected" | "false_positive" | None
+        status: "pending" | "confirmed" | "false_positive" | None
 
     Returns:
         (当前页记录列表, 总记录数)
