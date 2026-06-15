@@ -576,13 +576,20 @@ class MultiDetector:
         detected = result.get("detected", False)
 
         if not detected:
-            # 任何一次未检测到，清空计数和历史帧
-            schedule.consecutive_count = 0
-            schedule.history_frames.clear()
+            # 宽容递减：没检测到时计数减1（不是直接清零）
+            # 这样睡岗的人偶尔动一下（翻身、抬头）不会完全重置
+            schedule.consecutive_count = max(0, schedule.consecutive_count - 1)
+            if schedule.consecutive_count == 0:
+                schedule.history_frames.clear()
             return
 
         schedule.consecutive_count += 1
         schedule.history_frames.append(frame.copy())
+        # 限制历史帧数量，防止内存无限增长
+        max_history = getattr(schedule, 'consecutive_required', 3) * 3
+        if len(schedule.history_frames) > max_history:
+            schedule.history_frames = schedule.history_frames[-max_history:]
+
         logger.debug(f"{camera_id} sleep consecutive={schedule.consecutive_count}/{schedule.consecutive_required}")
 
         if schedule.consecutive_count < schedule.consecutive_required:
@@ -590,8 +597,7 @@ class MultiDetector:
 
         now = time.time()
         if self.is_in_cooldown(camera_id, "sleep", now):
-            schedule.consecutive_count = 0
-            schedule.history_frames.clear()
+            schedule.consecutive_count = max(0, schedule.consecutive_count - 1)
             return
 
         # 小模型直接告警
@@ -609,8 +615,10 @@ class MultiDetector:
             except Exception as e:
                 logger.error(f"Trigger callback error: {e}")
 
+        # 触发后重置计数，但保留最近一帧用于后续观察
         schedule.consecutive_count = 0
-        schedule.history_frames.clear()
+        if schedule.history_frames:
+            schedule.history_frames = [schedule.history_frames[-1]]
 
     # ------------------------------------------------------------------
     # VLM 提交辅助

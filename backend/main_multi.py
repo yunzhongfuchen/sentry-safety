@@ -3,6 +3,7 @@ Sentry 多摄像头版本主程序
 支持 RK3588 边缘端部署，多路视频流并行处理
 """
 
+import asyncio
 import os
 import sys
 import json
@@ -107,7 +108,7 @@ _display_lock = threading.Lock()
 _records_lock = threading.Lock()
 detection_records: List[dict] = []
 _records_dirty = threading.Event()
-# P0 VLM 复核待更新记录映射 (camera_id, dtype) -> record_id
+# 小模型告警 VLM 复核待更新记录映射 (camera_id, dtype) -> record_id
 _pending_reviews: Dict[Tuple[str, str], str] = {}
 _pending_reviews_lock = threading.Lock()
 
@@ -416,7 +417,7 @@ def init_components():
                 model_configs["cigarette"] = ModelConfig(cigarette_path, "cigarette", device="cuda", classes=CIGARETTE_TARGET_CLASSES)
             sleep_path = _resolve_model_path("sleep", use_npu=False)
             if sleep_path:
-                model_configs["sleep"] = ModelConfig(sleep_path, "sleep", device="cuda")
+                model_configs["sleep"] = ModelConfig(sleep_path, "sleep", device="cuda", confidence=0.1)
             person_path = _resolve_model_path("person", use_npu=False)
             if person_path:
                 model_configs["uniform"] = ModelConfig(person_path, "uniform", device="cuda", classes=[0])
@@ -555,6 +556,15 @@ async def hud_view():
     if fp.exists():
         return HTMLResponse(fp.read_text(encoding="utf-8"))
     return {"error": "HUD page not found"}
+
+
+@app.get("/console")
+async def console_view():
+    """Surveillance Pro 风格监控中心"""
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "console.html"
+    if fp.exists():
+        return HTMLResponse(fp.read_text(encoding="utf-8"))
+    return {"error": "Console page not found"}
 
 
 @app.get("/cameras")
@@ -1446,33 +1456,37 @@ def stop_overlay_thread():
 
 @app.on_event("startup")
 async def startup():
-    """服务启动"""
-    init_components()
+    """服务启动：耗时初始化放到后台线程，避免阻塞事件循环，让前端尽快可访问"""
+    def _do_startup():
+        init_components()
 
-    # 启动摄像头
-    if camera_manager:
-        camera_manager.start_all()
+        # 启动摄像头
+        if camera_manager:
+            camera_manager.start_all()
 
-    # 启动检测器
-    if gpu_scheduler:
-        gpu_scheduler.start()
-        log_message("GPU scheduler started")
-    elif multi_detector:
-        multi_detector.start()
+        # 启动检测器
+        if gpu_scheduler:
+            gpu_scheduler.start()
+            log_message("GPU scheduler started")
+        elif multi_detector:
+            multi_detector.start()
 
-    # 启动 VLM 队列
-    if vlm_queue:
-        vlm_queue.start()
+        # 启动 VLM 队列
+        if vlm_queue:
+            vlm_queue.start()
 
-    # 启动 VLM 巡检（由 vlm_inspection_interval 控制）
-    if vlm_inspector and _global_settings.get("vlm_inspection_interval", 30.0) > 0:
-        vlm_inspector.start()
+        # 启动 VLM 巡检（由 vlm_inspection_interval 控制）
+        if vlm_inspector and _global_settings.get("vlm_inspection_interval", 30.0) > 0:
+            vlm_inspector.start()
 
-    # 启动独立渲染线程（画框 + 送流，与检测解耦）
-    start_overlay_thread()
+        # 启动独立渲染线程（画框 + 送流，与检测解耦）
+        start_overlay_thread()
 
-    log_message(f"Sentry Safety Detection started on {app_config.API_HOST}:{app_config.API_PORT}")
-    log_message(f"Access the multi-camera console at http://{app_config.API_HOST}:{app_config.API_PORT}/multi")
+        log_message(f"Sentry Safety Detection started on {app_config.API_HOST}:{app_config.API_PORT}")
+        log_message(f"Access the multi-camera console at http://{app_config.API_HOST}:{app_config.API_PORT}/multi")
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _do_startup)
 
 
 @app.on_event("shutdown")

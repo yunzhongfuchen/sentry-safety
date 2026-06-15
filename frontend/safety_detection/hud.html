@@ -5,7 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SENTRY HUD</title>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="/static/vue3.global.prod.js"></script>
+    <noscript>
+        <style>body { background: #030308; color: #E8E8EC; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }</style>
+        <div>请启用 JavaScript 以使用 SENTRY HUD</div>
+    </noscript>
     <style>
         :root {
             --bg: #030308;
@@ -92,6 +96,7 @@
             background: linear-gradient(90deg, transparent, var(--accent-dim), transparent);
             animation: header-scanline 5s linear infinite;
             pointer-events: none;
+            will-change: left;
         }
 
         @keyframes header-scanline {
@@ -235,6 +240,7 @@
             cursor: pointer;
             white-space: nowrap;
             overflow: hidden;
+            will-change: transform, opacity;
         }
 
         @keyframes log-slide-in {
@@ -336,7 +342,7 @@
         }
 
         .cam-status-dot.connected { background: var(--success); box-shadow: 0 0 4px var(--success); }
-        .cam-status-dot.connecting { background: var(--warning); animation: pulse-dot 1.5s infinite; }
+        .cam-status-dot.connecting { background: var(--warning); animation: pulse-dot 1.5s infinite; will-change: opacity, transform; }
         .cam-status-dot.error { background: var(--danger); }
         .cam-status-dot.idle { background: var(--text-muted); }
 
@@ -461,6 +467,7 @@
             border: 2px solid transparent;
             animation: alert-pulse-anim 2s ease-in-out infinite;
             opacity: 0;
+            will-change: opacity, box-shadow;
         }
 
         .alert-pulse.active {
@@ -516,9 +523,23 @@
             background: var(--success-dim);
         }
 
-        .detection-badge.small_model_alarm { background: var(--danger); color: #fff; animation: badge-pulse 1.5s ease-in-out infinite; }
-        .detection-badge.vlm_alarm { background: var(--warning); color: #fff; }
-        .detection-badge.vlm_ignore { background: var(--success); color: #fff; }
+        .detection-badge.small_model_alarm {
+            color: var(--danger);
+            border-color: var(--danger);
+            background: var(--danger-dim);
+            animation: badge-pulse 1.5s ease-in-out infinite;
+            will-change: opacity;
+        }
+        .detection-badge.vlm_alarm {
+            color: var(--warning);
+            border-color: var(--warning);
+            background: var(--warning-dim);
+        }
+        .detection-badge.vlm_ignore {
+            color: var(--success);
+            border-color: var(--success);
+            background: var(--success-dim);
+        }
 
         @keyframes badge-pulse {
             0%, 100% { opacity: 1; }
@@ -776,6 +797,14 @@
             border-color: var(--accent);
             color: var(--accent);
         }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
     </style>
 </head>
 <body>
@@ -829,13 +858,16 @@
                 <div class="camera-list">
                     <div v-for="cam in cameras" :key="cam.camera_id"
                          :class="['camera-list-item', cam.camera_id === mainCameraId ? 'active' : '']"
-                         @click="selectCamera(cam.camera_id)">
+                         @click="selectCamera(cam.camera_id)"
+                         :aria-label="'Switch to camera ' + cam.name"
+                         role="button" tabindex="0">
                         <div :class="['cam-status-dot', cam.status]"></div>
                         <span class="cam-name">{{ cam.name }}</span>
                         <div class="cam-types">
-                            <span v-for="(cfg, type) in cam.detection_types" :key="type"
-                                  v-if="cfg.enabled"
-                                  class="cam-type-tag active">{{ typeLabel(type) }}</span>
+                            <template v-for="(cfg, type) in cam.detection_types" :key="type">
+                                <span v-if="cfg.enabled"
+                                      class="cam-type-tag active">{{ typeLabel(type) }}</span>
+                            </template>
                         </div>
                     </div>
                 </div>
@@ -894,11 +926,13 @@
 
                 <!-- Playback controls -->
                 <div class="playback-controls" v-if="playbackStatus.is_video_file">
-                    <button class="ctrl-btn" @click="controlPlayback(playbackStatus.playing ? 'pause' : 'play')">
+                    <button class="ctrl-btn" @click="controlPlayback(playbackStatus.playing ? 'pause' : 'play')"
+                            :aria-label="playbackStatus.playing ? 'Pause playback' : 'Start playback'">
                         {{ playbackStatus.playing ? 'PAUSE' : 'PLAY' }}
                     </button>
                     <button :class="['ctrl-btn', playbackStatus.loop ? 'active' : '']"
-                            @click="controlPlayback('loop', { loop: !playbackStatus.loop })">
+                            @click="controlPlayback('loop', { loop: !playbackStatus.loop })"
+                            aria-label="Toggle loop playback">
                         LOOP
                     </button>
                 </div>
@@ -962,7 +996,8 @@
                 <div class="toggle-grid">
                     <button v-for="t in detectionTypes" :key="t.key"
                             :class="['toggle-btn', overlayTypes.includes(t.key) ? 'on' : '']"
-                            @click="toggleOverlay(t.key)">
+                            @click="toggleOverlay(t.key)"
+                            :aria-label="(overlayTypes.includes(t.key) ? 'Disable' : 'Enable') + ' ' + t.label + ' detection'">
                         {{ t.label }}
                     </button>
                 </div>
@@ -973,13 +1008,16 @@
         <footer class="hud-bottom">
             <div v-for="cam in cameras" :key="cam.camera_id"
                  :class="['bottom-cam', cam.camera_id === mainCameraId ? 'active' : '']"
-                 @click="selectCamera(cam.camera_id)">
+                 @click="selectCamera(cam.camera_id)"
+                 :aria-label="'Switch to camera ' + cam.name"
+                 role="button" tabindex="0">
                 <div :class="['bc-dot', cam.status]"></div>
                 <span class="bc-name">{{ cam.name }}</span>
                 <div class="bc-types">
-                    <span v-for="(cfg, type) in cam.detection_types" :key="type"
-                          v-if="cfg.enabled"
-                          class="bc-type-tag active">{{ typeLabel(type) }}</span>
+                    <template v-for="(cfg, type) in cam.detection_types" :key="type">
+                        <span v-if="cfg.enabled"
+                              class="bc-type-tag active">{{ typeLabel(type) }}</span>
+                    </template>
                 </div>
             </div>
         </footer>
