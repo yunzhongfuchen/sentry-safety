@@ -28,7 +28,7 @@ class TypeSchedule:
     enabled: bool
     interval: float
     threshold: float
-    level: str  # "P0" or "P1"
+    cooldown: float
     consecutive_required: int = 1
     consecutive_count: int = 0
     last_run: float = 0.0
@@ -199,9 +199,6 @@ class MultiDetector:
         trigger_callback: Optional[Callable[[str, str, np.ndarray, dict], None]] = None,
         frame_callback: Optional[Callable[[str, np.ndarray], None]] = None,
         vlm_result_callback: Optional[Callable[[str, str, dict], None]] = None,
-        p0_cooldown: float = 10.0,
-        p1_cooldown: float = 3.0,
-        use_vlm: bool = True,
     ):
         self.camera_manager = camera_manager
         self.safety_detector = safety_detector
@@ -210,14 +207,11 @@ class MultiDetector:
         self.trigger_callback = trigger_callback
         self.frame_callback = frame_callback
         self.vlm_result_callback = vlm_result_callback
-        self.p0_cooldown = p0_cooldown
-        self.p1_cooldown = p1_cooldown
-        self.use_vlm = use_vlm
 
-        self._schedules: Dict[str, Dict[str, TypeSchedule]] = {}  # camera_id -> dtype -> schedule
-        self._alert_states: Dict[str, Dict[str, dict]] = {}  # camera_id -> dtype -> state
-        self._cooldowns: Dict[str, Dict[str, float]] = {}  # camera_id -> dtype -> last_alert_time
-        self._latest_results: Dict[str, Dict[str, dict]] = {}  # camera_id -> dtype -> result (缓存画框)
+        self._schedules: Dict[str, Dict[str, TypeSchedule]] = {}
+        self._alert_states: Dict[str, Dict[str, dict]] = {}
+        self._cooldowns: Dict[str, Dict[str, float]] = {}
+        self._latest_results: Dict[str, Dict[str, dict]] = {}
         self._lock = threading.RLock()
         self._running = False
 
@@ -255,7 +249,7 @@ class MultiDetector:
                     enabled=True,
                     interval=cfg.get("interval", 1.0),
                     threshold=cfg.get("threshold", 0.5),
-                    level=cfg.get("level", "P1"),
+                    cooldown=cfg.get("cooldown", 3.0),
                     consecutive_required=cfg.get("consecutive_required", 1),
                     compliance_window_seconds=cfg.get("compliance_window_seconds", 30.0),
                     use_vlm=cfg.get("use_vlm", False),
@@ -501,36 +495,25 @@ class MultiDetector:
             return
 
         # 达到阈值，触发告警流程
-        logger.info(f"{camera_id} {dtype} TRIGGERING alarm (conf={max_conf:.2f}, level={schedule.level})")
+        logger.info(f"{camera_id} {dtype} TRIGGERING alarm (conf={max_conf:.2f})")
         self._cooldowns[camera_id][dtype] = now
 
         # 把 level 和 reason 写入 result，供 trigger_callback 创建记录时使用
-        result["level"] = schedule.level
+        result["level"] = "small_model_alarm"
         if not result.get("reason"):
             result["reason"] = f"检测到 {dtype}，置信度 {max_conf:.2f}"
 
-        if schedule.level == "P0":
-            # P0：立即告警 + 异步 VLM 复核（全局开启且该类型开启才复核）
-            self._alert_states[camera_id][dtype] = {"active": True, "time": now, "level": "P0"}
-            if self.use_vlm and schedule.use_vlm:
-                self._submit_vlm_review(camera_id, dtype, frame, schedule, result)
-            if self.trigger_callback:
-                try:
-                    self.trigger_callback(camera_id, dtype, frame, result)
-                except Exception as e:
-                    logger.error(f"Trigger callback error: {e}")
-        else:
-            # P1：全局开启且该类型开启才提交确认，否则直接告警
-            if self.use_vlm and schedule.use_vlm:
-                schedule.pending_vlm = True
-                self._submit_vlm_confirm(camera_id, dtype, frame, schedule, result)
-            else:
-                self._alert_states[camera_id][dtype] = {"active": True, "time": now, "level": "P1"}
-                if self.trigger_callback:
-                    try:
-                        self.trigger_callback(camera_id, dtype, frame, result)
-                    except Exception as e:
-                        logger.error(f"Trigger callback error: {e}")
+        # 达到阈值，统一触发告警流程：先创建记录，再按需提交 VLM 复核
+        # 告警记录会在 trigger_callback 中立即创建；VLM 复核结果通过 vlm_result_callback 更新同一条记录。
+        self._alert_states[camera_id][dtype] = {"active": True, "time": now, "level": "small_model_alarm"}
+        if schedule.use_vlm:
+            result["pending_vlm_review"] = True
+            self._submit_vlm_review(camera_id, dtype, frame, schedule, result)
+        if self.trigger_callback:
+            try:
+                self.trigger_callback(camera_id, dtype, frame, result)
+            except Exception as e:
+                logger.error(f"Trigger callback error: {e}")
 
     # ------------------------------------------------------------------
     # 工服合规窗口
@@ -557,21 +540,22 @@ class MultiDetector:
                         # 窗口内始终未合规 → 触发告警
                         if not self.is_in_cooldown(camera_id, "uniform", now):
                             self._cooldowns[camera_id]["uniform"] = now
-                            if self.use_vlm and schedule.use_vlm:
+                            result["level"] = "small_model_alarm"
+                            if not result.get("reason"):
+                                result["reason"] = "工服合规窗口过期，未检测到反光背心"
+                            self._alert_states[camera_id]["uniform"] = {"active": True, "time": now, "level": "small_model_alarm"}
+                            if schedule.use_vlm:
+                                # 告警记录会在 trigger_callback 中立即创建；VLM 复核结果通过 vlm_result_callback 更新同一条记录。
                                 schedule.pending_vlm = True
+                                result["pending_vlm_review"] = True
                                 logger.info(f"{camera_id} uniform window expired, submitting VLM confirm")
                                 self._submit_vlm_confirm(camera_id, "uniform", frame, schedule, result)
-                            else:
-                                result["level"] = schedule.level
-                                if not result.get("reason"):
-                                    result["reason"] = "工服合规窗口过期，未检测到反光背心"
-                                self._alert_states[camera_id]["uniform"] = {"active": True, "time": now, "level": "P1"}
-                                logger.info(f"{camera_id} uniform window expired, alerting directly (VLM off)")
-                                if self.trigger_callback:
-                                    try:
-                                        self.trigger_callback(camera_id, "uniform", frame, result)
-                                    except Exception as e:
-                                        logger.error(f"Trigger callback error: {e}")
+                            logger.info(f"{camera_id} uniform window expired, alerting")
+                            if self.trigger_callback:
+                                try:
+                                    self.trigger_callback(camera_id, "uniform", frame, result)
+                                except Exception as e:
+                                    logger.error(f"Trigger callback error: {e}")
                     # 无论是否告警，关闭窗口
                     schedule.compliance_window_start = None
                     schedule.vest_detected_in_window = False
@@ -610,13 +594,13 @@ class MultiDetector:
             schedule.history_frames.clear()
             return
 
-        # 小模型直接告警（跳过 VLM）
-        result["level"] = schedule.level
+        # 小模型直接告警
+        result["level"] = "small_model_alarm"
         if not result.get("reason"):
             result["reason"] = f"睡岗检测连续 {schedule.consecutive_required} 次命中"
         self._cooldowns[camera_id]["sleep"] = now
         self._alert_states[camera_id]["sleep"] = {
-            "active": True, "time": now, "level": "P1"
+            "active": True, "time": now, "level": "small_model_alarm"
         }
         logger.info(f"{camera_id} sleep triggered directly (small-model only)")
         if self.trigger_callback:
@@ -634,14 +618,14 @@ class MultiDetector:
 
     def _submit_vlm_review(self, camera_id: str, dtype: str, frame: np.ndarray,
                            schedule: TypeSchedule, result: dict) -> None:
-        """P0 异步复核（fire/smoke）"""
-        if not self.use_vlm or self.vlm_queue is None:
+        """异步复核（fire/smoke）"""
+        if self.vlm_queue is None:
             return
         task = {
             "task_id": str(uuid.uuid4()),
             "camera_id": camera_id,
             "dtype": dtype,
-            "level": "P0",
+            "level": "small_model_alarm",
             "frames": [frame],
             "prompt_type": f"{dtype}_review",
             "callback": lambda res: self._on_vlm_review(camera_id, dtype, res),
@@ -650,14 +634,14 @@ class MultiDetector:
 
     def _submit_vlm_confirm(self, camera_id: str, dtype: str, frame: np.ndarray,
                             schedule: TypeSchedule, result: dict) -> None:
-        """P1 确认（mask/cigarette）"""
-        if not self.use_vlm or self.vlm_queue is None:
+        """确认（mask/cigarette/uniform）"""
+        if self.vlm_queue is None:
             return
         task = {
             "task_id": str(uuid.uuid4()),
             "camera_id": camera_id,
             "dtype": dtype,
-            "level": "P1",
+            "level": "small_model_alarm",
             "frames": [frame],
             "prompt_type": f"{dtype}_confirm",
             "callback": lambda res: self._on_vlm_confirm(camera_id, dtype, frame, result, schedule, res),
@@ -667,13 +651,13 @@ class MultiDetector:
     def _submit_sleep_identity(self, camera_id: str, frames: List[np.ndarray],
                                schedule: TypeSchedule, result: dict) -> None:
         """睡岗同一人判定"""
-        if not self.use_vlm or self.vlm_queue is None:
+        if self.vlm_queue is None:
             return
         task = {
             "task_id": str(uuid.uuid4()),
             "camera_id": camera_id,
             "dtype": "sleep",
-            "level": "P1",
+            "level": "small_model_alarm",
             "frames": frames,
             "prompt_type": "sleep_identity",
             "extra_context": {
@@ -689,7 +673,12 @@ class MultiDetector:
     # ------------------------------------------------------------------
 
     def _on_vlm_review(self, camera_id: str, dtype: str, vlm_result: dict) -> None:
-        """P0 复核回调：更新记录状态"""
+        """VLM 复核回调：透传给上层，由上层更新记录。
+
+        注意：小模型告警记录已在 trigger_callback 中创建（当检测命中时）。
+        此回调仅将 VLM 复核结果通过 vlm_result_callback 转发给上层，
+        以便上层更新现有记录的 level。它不会再次调用 trigger_callback。
+        """
         logger.info(f"VLM review result for {camera_id} {dtype}: {vlm_result}")
         if self.vlm_result_callback:
             try:
@@ -699,31 +688,19 @@ class MultiDetector:
 
     def _on_vlm_confirm(self, camera_id: str, dtype: str, frame: np.ndarray,
                         result: dict, schedule: TypeSchedule, vlm_result: dict) -> None:
-        """P1 确认回调：VLM 确认后才真正告警"""
-        schedule.pending_vlm = False
-        confirmed = vlm_result.get("confirmed", False)
-        conf = vlm_result.get("confidence", 0)
-        logger.info(f"VLM confirm result for {camera_id} {dtype}: confirmed={confirmed} conf={conf}")
+        """VLM 确认回调：透传给上层，由上层更新记录 level。
 
-        if confirmed and conf >= 0.7:
-            self._alert_states[camera_id][dtype] = {
-                "active": True, "time": time.time(), "level": "P1"
-            }
-            # 把 VLM 确认信息写入 result，供 trigger_callback 创建记录时标记为已复核
-            result["vlm_confirmed"] = True
-            result["vlm_confidence"] = conf
-            result["vlm_reason"] = vlm_result.get("reason", "")
-            result["reason"] = vlm_result.get("reason", result.get("reason", ""))
-            if self.trigger_callback:
-                try:
-                    self.trigger_callback(camera_id, dtype, frame, result)
-                except Exception as e:
-                    logger.error(f"Trigger callback error: {e}")
-            if self.vlm_result_callback:
-                try:
-                    self.vlm_result_callback(camera_id, dtype, vlm_result)
-                except Exception as e:
-                    logger.error(f"VLM result callback error: {e}")
+        注意：小模型告警记录已在 trigger_callback 中创建（当检测命中时）。
+        此回调仅将 VLM 确认结果通过 vlm_result_callback 转发给上层，
+        以便上层更新现有记录的 level。它不会再次调用 trigger_callback。
+        """
+        schedule.pending_vlm = False
+        logger.info(f"VLM confirm result for {camera_id} {dtype}: {vlm_result}")
+        if self.vlm_result_callback:
+            try:
+                self.vlm_result_callback(camera_id, dtype, vlm_result)
+            except Exception as e:
+                logger.error(f"VLM result callback error: {e}")
 
     def _on_sleep_identity(self, camera_id: str, schedule: TypeSchedule,
                            result: dict, vlm_result: dict) -> None:
@@ -735,7 +712,7 @@ class MultiDetector:
 
         if same_person and conf >= 0.7:
             self._alert_states[camera_id]["sleep"] = {
-                "active": True, "time": time.time(), "level": "P1"
+                "active": True, "time": time.time(), "level": "small_model_alarm"
             }
             if self.trigger_callback:
                 try:
@@ -782,7 +759,7 @@ class MultiDetector:
                 # 简化：直接标记告警
                 self._cooldowns[camera_id][dtype] = now
                 self._alert_states[camera_id][dtype] = {
-                    "active": True, "time": now, "level": schedule.level, "source": "vlm_inspection"
+                    "active": True, "time": now, "level": "small_model_alarm", "source": "vlm_inspection"
                 }
                 logger.info(f"Injected {dtype} detection for {camera_id} from VLM inspection")
 
@@ -802,7 +779,8 @@ class MultiDetector:
     def is_in_cooldown(self, camera_id: str, dtype: str, now: float) -> bool:
         with self._lock:
             last = self._cooldowns.get(camera_id, {}).get(dtype, 0)
-            cooldown = self.p0_cooldown if dtype in ("fire", "smoke") else self.p1_cooldown
+            schedule = self._schedules.get(camera_id, {}).get(dtype)
+            cooldown = schedule.cooldown if schedule else 3.0
             return now - last < cooldown
 
     def sleep_has_pending_vlm(self, camera_id: str) -> bool:

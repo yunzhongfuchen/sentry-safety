@@ -144,8 +144,9 @@
             transition: background .2s;
         }
 
-        .alert-item.p0 { border-left-color: var(--danger); background: var(--danger-light); }
-        .alert-item.p1 { border-left-color: var(--warning); background: var(--warning-light); }
+        .alert-item.small_model_alarm { border-left-color: var(--danger); background: var(--danger-light); }
+        .alert-item.vlm_alarm { border-left-color: var(--warning); background: var(--warning-light); }
+        .alert-item.vlm_ignore { border-left-color: var(--success); background: var(--success-light); }
 
         .alert-time {
             font-size: 10px;
@@ -246,8 +247,9 @@
             font-weight: 600;
         }
 
-        .detection-badge.p0 { background: var(--danger-light); color: var(--danger); animation: alert-pulse 2s infinite; }
-        .detection-badge.p1 { background: var(--warning-light); color: var(--warning); }
+        .detection-badge.small_model_alarm { background: var(--danger-light); color: var(--danger); animation: alert-pulse 2s infinite; }
+        .detection-badge.vlm_alarm { background: var(--warning-light); color: var(--warning); }
+        .detection-badge.vlm_ignore { background: var(--success-light); color: var(--success); }
         .detection-badge.safe { background: var(--success-light); color: var(--success); }
 
         @keyframes alert-pulse {
@@ -570,7 +572,7 @@
                 <div class="alert-list">
                     <template v-if="recentAlerts.length">
                         <div v-for="alert in recentAlerts" :key="alert.id"
-                             :class="['alert-item', alert.level === 'P0' ? 'p0' : 'p1']">
+                             :class="['alert-item', alert.level || 'small_model_alarm']">
                             <div class="alert-time">{{ alert.time }}</div>
                             <div class="alert-body">
                                 <span class="alert-cam" :title="alert.cameraName">{{ alert.cameraName }}</span>
@@ -787,7 +789,7 @@
                     if (!det) return 'safe';
                     const types = ['fire', 'smoke', 'uniform', 'mask', 'cigarette', 'sleep'];
                     for (const t of types) {
-                        if (det[t]?.alert) return det[t]?.level === 'P0' ? 'p0' : 'p1';
+                        if (det[t]?.alert) return det[t]?.level || 'small_model_alarm';
                     }
                     return 'safe';
                 }
@@ -800,7 +802,7 @@
                     for (const t of types) {
                         if (det[t]?.alert) {
                             const label = typeLabel(t);
-                            return det[t]?.level === 'P0' ? 'P0 ' + label : 'P1 ' + label;
+                            return (det[t]?.level ? det[t].level.replace(/_/g, ' ').toUpperCase() + ' ' : '') + label;
                         }
                     }
                     return '监控中';
@@ -853,7 +855,7 @@
                                     time: r.time,
                                     cameraName: cam?.name || r.camera_id,
                                     detection_type: r.detection_type || r.action,
-                                    level: r.level || 'P1',
+                                    level: r.level || 'small_model_alarm',
                                 };
                             });
                         }

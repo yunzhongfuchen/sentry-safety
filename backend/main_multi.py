@@ -55,6 +55,7 @@ try:
     import config as app_config
     from video_stream import get_stream_server
     from safety_detection.api import router as safety_router
+    from alarm_state import create_record, apply_vlm_review, confirm_alarm, confirm_false_positive
 except ImportError as e:
     logger.error(f"Import error: {e}")
     raise
@@ -283,11 +284,10 @@ def init_components():
         with _status_lock:
             _system_status["total_detections"] += 1
 
-        log_message(f"Camera {camera_id}: {dtype} detected, level={result.get('level', 'P1')}")
+        log_message(f"Camera {camera_id}: {dtype} detected, level={result.get('level', 'small_model_alarm')}")
 
-        record_id = f"{camera_id}_{dtype}_{int(time.time()*1000)}"
-        trigger_time = time.strftime("%Y-%m-%d %H:%M:%S")
         trigger_ts = time.time()
+        record_id = f"{camera_id}_{dtype}_{int(trigger_ts * 1000)}"
 
         # 保存快照（只画触发类型的框）
         if frame is not None:
@@ -296,39 +296,11 @@ def init_components():
             snapshot_b64 = encode_frame_to_base64(annotated, quality=_global_settings.get("snapshot_quality", 70))
             storage.save_image(record_id, "snapshot", snapshot_b64)
 
-        # 状态判断：P0 直接 alerted；P1 若由 VLM 确认触发则 confirmed，否则 pending
-        vlm_confirmed = result.get("vlm_confirmed", False)
-        level = result.get("level", "P1")
-        if level == "P0":
-            status = "alerted"
-        else:
-            status = "confirmed" if vlm_confirmed else "pending"
+        record = create_record(camera_id, dtype, result, record_id=record_id)
+        record["time"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(trigger_ts))
 
-        record = {
-            "id": record_id,
-            "camera_id": camera_id,
-            "detection_type": dtype,
-            "level": level,
-            "status": status,
-            "time": trigger_time,
-            "confidence": result.get("max_confidence", result.get("confidence", 0)),
-            "reason": result.get("reason", ""),
-            "small_model": {
-                "detected": result.get("detected", False),
-                "confidence": result.get("max_confidence", 0),
-                "boxes": result.get("boxes", []),
-            },
-            "vlm_review": {
-                "confirmed": vlm_confirmed,
-                "confidence": result.get("vlm_confidence", 0),
-                "reason": result.get("vlm_reason", ""),
-            } if vlm_confirmed else None,
-            "source": result.get("source", "small_model"),
-            "frame_count": 0,
-        }
-
-        # P0 且启用 VLM 复核时，记录待更新映射，供复核回调更新状态
-        if level == "P0" and multi_detector.use_vlm:
+        # 如果该类型启用了 VLM 复核，记录待更新映射，供 VLM 回调更新 level
+        if result.get("pending_vlm_review"):
             with _pending_reviews_lock:
                 _pending_reviews[(camera_id, dtype)] = record_id
 
@@ -338,14 +310,13 @@ def init_components():
             if len(detection_records) > max_records:
                 ratio = _global_settings.get("emergency_cleanup_ratio", 0.2)
                 remove_count = max(1, int(len(detection_records) * ratio))
-                # 列表按时间倒序，末尾为最旧记录
                 to_remove = detection_records[-remove_count:]
                 for old in to_remove:
                     storage.delete_record_images(old["id"])
                 detection_records = detection_records[:-remove_count]
         mark_records_dirty()
 
-        # 立即保存触发时刻前最多5秒的时间窗口帧
+        # 保存触发时刻前最多5秒的时间窗口帧
         try:
             window_frames = camera_manager.get_window_frames(camera_id, trigger_ts - 5, trigger_ts)
             if window_frames:
@@ -356,7 +327,6 @@ def init_components():
                 record["frame_count"] = len(window_frames)
                 log_message(f"Saved {len(window_frames)} window frames for {record_id}")
             elif frame is not None:
-                # 窗口帧为空时（如视频暂停超过5秒），至少保存触发帧本身
                 quality = _global_settings.get("frame_quality", 60)
                 b64 = encode_frame_to_base64(frame, quality=quality)
                 storage.save_image(record_id, "frame", b64, 0)
@@ -366,7 +336,7 @@ def init_components():
             logger.error(f"Failed to save window frames for {record_id}: {e}")
 
     def on_vlm_result(camera_id: str, dtype: str, vlm_result: dict):
-        """VLM 复核/确认结果回调：更新已有记录状态"""
+        """VLM 复核/确认结果回调：更新已有记录 level，不改 status"""
         global detection_records
         record_id = None
         with _pending_reviews_lock:
@@ -374,34 +344,16 @@ def init_components():
         if not record_id:
             return
 
-        confirmed = vlm_result.get("confirmed", False)
-        conf = vlm_result.get("confidence", 0)
-        new_status = "confirmed" if confirmed else "rejected"
-        updated = False
-        vlm_reason = vlm_result.get("reason", "")
+        updated_record = None
         with _records_lock:
             for r in detection_records:
                 if r.get("id") == record_id:
-                    r["status"] = new_status
-                    r["vlm_review"] = {
-                        "confirmed": confirmed,
-                        "confidence": conf,
-                        "reason": vlm_reason,
-                    }
-                    # 把 VLM 说明回填到记录的 reason 字段，前端详情页直接显示
-                    if confirmed and vlm_reason:
-                        r["reason"] = f"[VLM 确认] {vlm_reason}"
-                    elif not confirmed and vlm_reason:
-                        r["reason"] = f"[VLM 已排除] {vlm_reason}"
-                    elif confirmed:
-                        r["reason"] = "[VLM 确认] 复核通过"
-                    else:
-                        r["reason"] = "[VLM 已排除] 复核未通过"
-                    updated = True
+                    apply_vlm_review(r, vlm_result)
+                    updated_record = r
                     break
-        if updated:
+        if updated_record:
             mark_records_dirty()
-            log_message(f"Record {record_id} updated to {new_status} by VLM")
+            log_message(f"Record {record_id} updated by VLM: level={updated_record['level']}, status={updated_record['status']}")
 
     multi_detector = MultiDetector(
         camera_manager=camera_manager,
@@ -410,9 +362,6 @@ def init_components():
         strategy=strategy,
         trigger_callback=on_trigger,
         vlm_result_callback=on_vlm_result,
-        p0_cooldown=_global_settings.get("p0_alert_cooldown", 10.0),
-        p1_cooldown=_global_settings.get("p1_alert_cooldown", 3.0),
-        use_vlm=_global_settings.get("use_vlm", True),
     )
     app.state.multi_detector = multi_detector
 
@@ -496,9 +445,11 @@ def init_components():
         max_cameras_per_inspection=3,
     )
 
-    # 9. 加载历史记录
+    # 9. 加载历史记录（按需求清空测试数据）
     global detection_records
-    detection_records = storage.load_records()
+    detection_records = []
+    storage.save_records(detection_records)
+    log_message("Historical records cleared")
 
     # 10. 启动后台保存线程
     threading.Thread(target=_records_saver_loop, daemon=True).start()
@@ -884,9 +835,8 @@ async def update_settings(data: dict):
 
         # 动态更新运行中组件的参数
         if multi_detector:
-            multi_detector.p0_cooldown = settings.get("p0_alert_cooldown", 10.0)
-            multi_detector.p1_cooldown = settings.get("p1_alert_cooldown", 3.0)
-            multi_detector.use_vlm = settings.get("use_vlm", True)
+            # 冷却与 VLM 开关已下沉到 per-type 配置，动态更新通过摄像头配置接口处理
+            pass
         if vlm_inspector:
             vlm_inspector.interval = settings.get("vlm_inspection_interval", 30.0)
             new_interval = settings.get("vlm_inspection_interval", 30.0)
@@ -925,10 +875,23 @@ async def get_alerts_stats():
     summary = storage.get_record_summary()
     return {
         "total": summary.get("total", 0),
-        "p0": summary.get("by_level", {}).get("P0", 0),
-        "p1": summary.get("by_level", {}).get("P1", 0),
+        "pending": summary.get("by_status", {}).get("pending", 0),
+        "confirmed": summary.get("by_status", {}).get("confirmed", 0),
         "false_positive": summary.get("by_status", {}).get("false_positive", 0),
     }
+
+
+@app.post("/alerts/{record_id}/confirm")
+async def confirm_alert(record_id: str):
+    """标记告警为已确认"""
+    global detection_records
+    with _records_lock:
+        for r in detection_records:
+            if r.get("id") == record_id:
+                confirm_alarm(r)
+                mark_records_dirty()
+                return {"success": True}
+    return JSONResponse({"error": "Record not found"}, status_code=404)
 
 
 @app.post("/alerts/{record_id}/ignore")
@@ -938,7 +901,7 @@ async def ignore_alert(record_id: str):
     with _records_lock:
         for r in detection_records:
             if r.get("id") == record_id:
-                r["status"] = "false_positive"
+                confirm_false_positive(r)
                 mark_records_dirty()
                 return {"success": True}
     return JSONResponse({"error": "Record not found"}, status_code=404)

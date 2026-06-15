@@ -94,7 +94,7 @@ DEFAULT_TYPE_CONFIG = {
         "interval": 1,
         "threshold": 0.6,
         "consecutive_required": 2,
-        "level": "P0",
+        "cooldown": 10,
         "use_vlm": False,
     },
     "smoke": {
@@ -102,7 +102,7 @@ DEFAULT_TYPE_CONFIG = {
         "interval": 1,
         "threshold": 0.55,
         "consecutive_required": 2,
-        "level": "P0",
+        "cooldown": 10,
         "use_vlm": False,
     },
     "uniform": {
@@ -110,7 +110,7 @@ DEFAULT_TYPE_CONFIG = {
         "interval": 1,
         "threshold": 0.5,
         "compliance_window_seconds": 30,
-        "level": "P1",
+        "cooldown": 3,
         "use_vlm": False,
     },
     "mask": {
@@ -118,7 +118,7 @@ DEFAULT_TYPE_CONFIG = {
         "interval": 1,
         "threshold": 0.5,
         "consecutive_required": 1,
-        "level": "P1",
+        "cooldown": 3,
         "use_vlm": False,
     },
     "cigarette": {
@@ -126,7 +126,7 @@ DEFAULT_TYPE_CONFIG = {
         "interval": 1,
         "threshold": 0.5,
         "consecutive_required": 1,
-        "level": "P1",
+        "cooldown": 3,
         "use_vlm": False,
     },
     "sleep": {
@@ -134,7 +134,7 @@ DEFAULT_TYPE_CONFIG = {
         "interval": 60,
         "threshold": 0.7,
         "consecutive_required": 3,
-        "level": "P1",
+        "cooldown": 30,
         "use_vlm": False,
     },
 }
@@ -143,9 +143,6 @@ DEFAULT_TYPE_CONFIG = {
 DEFAULT_GLOBAL_SETTINGS = {
     "vlm_max_concurrent": 3,
     "vlm_inspection_interval": 30,
-    "use_vlm": True,
-    "p0_alert_cooldown": 10,
-    "p1_alert_cooldown": 3,
     "max_records": 100000,
     "max_storage_mb": 500,
     "memory_threshold_percent": 80,
@@ -354,6 +351,15 @@ def load_camera_configs() -> List[Dict[str, Any]]:
         for dtype, cfg in cam.get("detection_types", {}).items():
             if "use_vlm" not in cfg:
                 cfg["use_vlm"] = False
+                migrated = True
+
+        # 旧配置迁移：移除 level，补充 cooldown
+        for dtype, cfg in cam.get("detection_types", {}).items():
+            if "level" in cfg:
+                del cfg["level"]
+                migrated = True
+            if "cooldown" not in cfg:
+                cfg["cooldown"] = DEFAULT_TYPE_CONFIG.get(dtype, {}).get("cooldown", 3)
                 migrated = True
 
         # 确保新字段存在

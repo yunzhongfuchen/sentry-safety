@@ -181,9 +181,9 @@ def get_records_paginated(
     分页查询告警记录（不含图片）
 
     Args:
-        level: "P0" | "P1" | None
+        level: "small_model_alarm" | "vlm_alarm" | "vlm_ignore" | None
         dtype: "fire" | "smoke" | "uniform" | "mask" | "cigarette" | "sleep" | None
-        status: "alerted" | "pending" | "confirmed" | "rejected" | "false_positive" | None
+        status: "pending" | "confirmed" | "false_positive" | None
 
     Returns:
         (当前页记录列表, 总记录数)
@@ -273,25 +273,24 @@ def get_record_detail(record_id: str, include_frames: bool = True) -> Optional[D
 
 
 def get_record_summary() -> Dict:
-    """获取记录统计摘要（按类型和级别聚合）"""
+    """获取记录统计摘要（按状态和告警来源聚合）"""
     records = load_records()
 
     total = len(records)
-    by_level = {"P0": 0, "P1": 0}
-    by_type = {}
     by_status = {}
+    by_type = {}
+    by_level = {}
 
     for r in records:
-        level = r.get("level", "P1")
-        by_level[level] = by_level.get(level, 0) + 1
+        status = r.get("status", "unknown")
+        by_status[status] = by_status.get(status, 0) + 1
 
         dtype = r.get("detection_type", "unknown")
         by_type[dtype] = by_type.get(dtype, 0) + 1
 
-        status = r.get("status", "unknown")
-        by_status[status] = by_status.get(status, 0) + 1
+        level = r.get("level", "unknown")
+        by_level[level] = by_level.get(level, 0) + 1
 
-    # 按摄像头分组统计
     camera_stats = {}
     for r in records:
         cam_id = r.get("camera_id", "unknown")
@@ -299,10 +298,10 @@ def get_record_summary() -> Dict:
 
     return {
         "total": total,
-        "by_level": by_level,
-        "by_type": by_type,
         "by_status": by_status,
-        "by_camera": camera_stats,
+        "by_type": by_type,
+        "by_level": by_level,
+        "camera_stats": camera_stats,
     }
 
 

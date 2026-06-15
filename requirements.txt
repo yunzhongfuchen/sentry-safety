@@ -39,3 +39,4 @@ volcengine-python-sdk[ark]>=1.0.0
 
 # RKNN Lite2 运行时 (需要手动安装对应 aarch64 wheel)
 # pip install rknn_toolkit_lite2-*-linux_aarch64.whl
+pytest>=7.0.0
