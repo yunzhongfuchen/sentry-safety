@@ -124,20 +124,36 @@ class MJPEGStreamServer:
                 if camera_id in self._buffers:
                     self._buffers[camera_id].put(frame)
 
+    def _placeholder_frame(self) -> bytes:
+        """生成黑屏占位帧，避免无帧时 HTTP 连接挂起导致浏览器并发槽耗尽"""
+        if not hasattr(self, '_placeholder_jpeg'):
+            black = np.zeros((360, 640, 3), dtype=np.uint8)
+            _, jpeg = cv2.imencode('.jpg', black, [cv2.IMWRITE_JPEG_QUALITY, 60])
+            self._placeholder_jpeg = jpeg.tobytes() if _ else b''
+        return (b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' +
+                self._placeholder_jpeg + b'\r\n')
+
     def generate_frames(self, camera_id: str, raw: bool = False):
         """
         生成 MJPEG 帧流
         只在帧内容变化时才推送，避免重复帧和固定帧率不匹配导致的卡顿
+        无帧时推送黑屏占位帧，防止浏览器连接挂起阻塞其他 API
         Args:
             raw: True 输出原始帧流，False 输出标注帧流
         """
         last_seq = -1
+        placeholder_sent = False
 
         while True:
             with self._lock:
                 buffer = self._raw_buffers.get(camera_id) if raw else self._buffers.get(camera_id)
 
             if buffer is None:
+                # 缓冲区不存在（摄像头未注册），发送一次占位帧后慢轮询
+                if not placeholder_sent:
+                    yield self._placeholder_frame()
+                    placeholder_sent = True
                 time.sleep(0.1)
                 continue
 
@@ -152,6 +168,11 @@ class MJPEGStreamServer:
                            b'Content-Type: image/jpeg\r\n\r\n' +
                            jpeg.tobytes() + b'\r\n')
                     last_seq = seq
+                    placeholder_sent = False
+            elif frame is None and not placeholder_sent:
+                # 缓冲区存在但尚无帧（摄像头连接中或读帧失败），发送一次占位帧
+                yield self._placeholder_frame()
+                placeholder_sent = True
 
             # 短轮询，降低 CPU 占用同时保证低延迟
             time.sleep(0.005)

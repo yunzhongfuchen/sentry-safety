@@ -707,7 +707,7 @@ class SafetyDetector:
             return result
         try:
             from safety_detection.sleep_detect import process_frame
-            subjects = process_frame(model, frame, conf=0.25)
+            subjects = process_frame(model, frame, conf=0.1)
             for s in subjects:
                 result["boxes"].append(s["box"])
                 result["scores"].append(s.get("sleep_confidence", 0))

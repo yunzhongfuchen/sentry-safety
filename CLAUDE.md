@@ -1,10 +1,8 @@
-# Karpathy Guidelines
+# Project Guidelines
 
-Behavioral guidelines to reduce common LLM coding mistakes, derived from [Andrej Karpathy's observations](https://x.com/karpathy/status/2015883857489522876) on LLM coding pitfalls.
+## Coding Guidelines
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-
-## 1. Think Before Coding
+### 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
 
@@ -14,7 +12,7 @@ Before implementing:
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
 
-## 2. Simplicity First
+### 2. Simplicity First
 
 **Minimum code that solves the problem. Nothing speculative.**
 
@@ -26,7 +24,7 @@ Before implementing:
 
 Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
-## 3. Surgical Changes
+### 3. Surgical Changes
 
 **Touch only what you must. Clean up only your own mess.**
 
@@ -42,7 +40,7 @@ When your changes create orphans:
 
 The test: Every changed line should trace directly to the user's request.
 
-## 4. Goal-Driven Execution
+### 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
 
@@ -60,19 +58,21 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-## 5. Python Environment
+### 5. Restate Before Acting
 
-**Use the conda `py312` environment for all code execution.**
+**Confirm understanding before implementation.**
 
-When running scripts, installing packages, or performing any Python-related operations, prefer the conda `py312` environment over the system Python or other virtual environments.
+Before implementing any request:
+- Summarize the user's requirement in the context of the project's current environment, architecture, and conventions.
+- Confirm this understanding explicitly with the user before proceeding.
 
-## 工作日志自动记录
+Do not start coding until the user confirms or clarifies the restated requirement.
 
-当你帮用户完成了某项任务，例如但不限于以下类型的工作后，**主动使用 worklog-skill 技能**，不需要等用户说"记一下"：
+## Communication Style
 
-- 修复了 Bug 或解决了问题
-- 实现了新功能或添加了新能力
-- 完成了重构或性能优化
-- 提交了代码或合并了分支
-- 更新了文档或完善了注释
+Start every response with "主人".
+
+## Environment
+- **Language**: Python 3.12
+- **Conda 环境**: `py312`
 

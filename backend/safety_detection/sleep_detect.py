@@ -119,26 +119,35 @@ def analyze_sleep(keypoints, bbox):
     head_hidden = head_visible_count == 0 and len(sh_y_vals) > 0
 
     # ===== 综合判断: 是否在睡觉 =====
-    head_drop_score = max(0, head_drop * 3) if head_below_shoulder else 0.0
+    # 办公室场景：看不到眼睛，只通过身体姿态判断
+    # 目标：趴桌(头部明显下沉) 或 躺下(身体横卧) 才算异常
+    # 排除：轻微低头(看手机/写字)、正常坐姿办公
 
-    if aspect_ratio > 1.15:
+    # 头部下沉深度（相对 bbox 高度）
+    head_drop_ratio = head_drop if head_below_shoulder else 0.0
+
+    # 1. 躺下判定：bbox 明显横宽（人横卧）
+    #    通用阈值 1.5：多摄像头、不可定制场景下的保守策略
+    #    - 真实监控中正常人最大 AR ≈ 1.42，1.5 基本零误报
+    #    - 加 head_drop <= 0.1 排除弯腰/蹲着捡东西等极端 case
+    if aspect_ratio > 1.5 and head_drop <= 0.1:
         sleep_score = min(aspect_ratio / 2.0, 1.0)
         is_sleeping = True
-    elif head_below_shoulder:
-        sleep_score = head_drop_score
+        sleep_reason = 'lying'
+    # 2. 趴桌判定：头部明显下沉（>8% bbox 高度）且姿态大致竖直或略前倾
+    #    正常低头看手机/写字时 head_drop_ratio 通常 < 0.12
+    #    趴桌时 head_drop_ratio 通常 > 0.20
+    #    阈值从 0.18 放宽到 0.08，覆盖更多轻度趴桌/头靠手臂场景
+    #    AR>0.7 排除躺着的人（AR 通常很高），但不设上限，避免趴桌且身体横宽时被漏掉
+    elif head_drop_ratio > 0.08 and aspect_ratio > 0.7:
+        sleep_score = min(0.5 + head_drop_ratio, 1.0)
         is_sleeping = True
-    elif head_kpt_low_conf > 0 and aspect_ratio > 0.6:
-        sleep_score = 0.7
-        is_sleeping = True
-    elif head_hidden and aspect_ratio > 0.6:
-        sleep_score = 0.8
-        is_sleeping = True
-    elif aspect_ratio > 0.9:
-        sleep_score = head_drop_score * 0.5 + max(0, (aspect_ratio - 0.9) / 0.25) * 0.5
-        is_sleeping = sleep_score > 0.4
+        sleep_reason = 'head_on_desk'
+    # 3. 其他情况都不算睡岗（包括轻微低头、正常办公、站立）
     else:
         sleep_score = 0.0
         is_sleeping = False
+        sleep_reason = 'none'
 
     # ===== 睡姿分类 =====
     if is_sleeping:
@@ -158,7 +167,7 @@ def analyze_sleep(keypoints, bbox):
         posture_conf = max(1.0 - sleep_score, 0.1)
         scores = {}
 
-    sleep_reason = 'lying (AR)' if aspect_ratio > 1.15 else \
+    sleep_reason = 'lying (AR)' if aspect_ratio > 1.5 and head_drop <= 0.1 else \
                    'head_drop' if head_below_shoulder else \
                    'head_hidden' if head_hidden else 'none'
 
@@ -211,6 +220,6 @@ def process_frame(pose_model, frame, conf=0.25):
                         'keypoints': kp,
                         '_info': info,
                     })
-    except Exception:
-        pass
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Sleep detection inference error: {e}")
     return results

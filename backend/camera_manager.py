@@ -287,11 +287,17 @@ class CameraManager:
                     decoder_backend = state.cap.backend
                 elif hasattr(state.cap, "isOpened"):
                     decoder_backend = "cpu"
+
+            # 状态修正：cap 已打开但还没读到第一帧时，实际仍是连接中
+            actual_status = state.status.value
+            if state.status == CameraStatus.CONNECTED and state.current_frame is None:
+                actual_status = CameraStatus.CONNECTING.value
+
             return {
                 "camera_id": camera_id,
                 "name": state.config.name,
                 "source": state.config.source,
-                "status": state.status.value,
+                "status": actual_status,
                 "enabled": state.config.enabled,
                 "fps": state.get_avg_fps(),
                 "frame_count": state.frame_count,
