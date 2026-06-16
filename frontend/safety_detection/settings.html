@@ -254,7 +254,7 @@
             background: var(--surface);
             border-radius: var(--radius);
             border: 1px solid var(--border);
-            width: 100%; max-width: 580px;
+            width: 100%; max-width: 680px;
             max-height: 90vh;
             display: flex;
             flex-direction: column;
@@ -283,10 +283,17 @@
 
         .type-row {
             display: grid;
-            grid-template-columns: 80px 60px 70px 80px 80px 60px;
+            grid-template-columns: 80px 60px 70px 80px 80px 60px 50px;
             gap: 10px;
             align-items: center;
             margin-bottom: 6px;
+        }
+        .type-row > input[type="checkbox"] {
+            justify-self: center;
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent);
+            cursor: pointer;
         }
 
         .type-row label { font-size: 12px; font-weight: 500; }
