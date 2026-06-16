@@ -306,17 +306,33 @@
         }
 
         /* 检测类型默认值卡片（与全局配置 form-grid 风格统一） */
+        .type-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        @media (max-width: 1100px) {
+            .type-cards-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 700px) {
+            .type-cards-grid { grid-template-columns: 1fr; }
+        }
+
         .type-card {
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            padding: 16px;
+            padding: 14px;
             border-top: 3px solid;
+            height: 100%;
+            box-sizing: border-box;
+            min-width: 0;
         }
         .type-card-header {
             font-size: 14px;
             font-weight: 600;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
         .type-card-checkboxes {
             display: flex;
@@ -528,7 +544,7 @@
                 <button class="btn primary" @click="saveSettings">保存全局配置</button>
 
                 <div class="section-title" style="margin-top:28px;">检测类型默认值</div>
-                <div class="form-grid">
+                <div class="type-cards-grid">
                     <div v-for="t in detectionTypes" :key="t.key" class="type-card" :style="{ borderTopColor: t.color }">
                         <div class="type-card-header" :style="{ color: t.color }">{{ t.label }}</div>
                         <div class="type-card-checkboxes">
