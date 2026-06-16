@@ -305,6 +305,68 @@
             border-color: var(--accent);
         }
 
+        /* 检测类型默认值卡片（与全局配置 form-grid 风格统一） */
+        .type-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            border-top: 3px solid;
+        }
+        .type-card-header {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        .type-card-checkboxes {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+        .type-card-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .type-card-checkbox input {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+        .type-card-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .type-card-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .type-card-field label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+        .type-card-field input, .type-card-field select {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text);
+            padding: 6px 10px;
+            font-size: 13px;
+            font-family: inherit;
+            transition: border-color .2s;
+        }
+        .type-card-field input:focus, .type-card-field select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
         .overlay-chips {
             display: flex;
             gap: 8px;
@@ -466,23 +528,44 @@
                 <button class="btn primary" @click="saveSettings">保存全局配置</button>
 
                 <div class="section-title" style="margin-top:28px;">检测类型默认值</div>
-                <div class="type-row" style="font-weight:600;color:var(--text-muted);margin-bottom:8px;">
-                    <span>类型</span>
-                    <span>启用</span>
-                    <span>间隔</span>
-                    <span>阈值</span>
-                    <span>连续</span>
-                    <span>冷却</span>
-                    <span>VLM</span>
-                </div>
-                <div v-for="t in detectionTypes" :key="t.key" class="type-row">
-                    <span :style="{ color: t.color, fontWeight: 500 }">{{ t.label }}</span>
-                    <input type="checkbox" v-model="settings.default_detection_types[t.key].enabled" />
-                    <input type="number" v-model.number="settings.default_detection_types[t.key].interval" />
-                    <input type="number" step="0.1" v-model.number="settings.default_detection_types[t.key].threshold" />
-                    <input type="number" v-model.number="settings.default_detection_types[t.key].consecutive_required" />
-                    <input type="number" v-model.number="settings.default_detection_types[t.key].cooldown" min="0" />
-                    <input type="checkbox" v-model="settings.default_detection_types[t.key].use_vlm" />
+                <div class="form-grid">
+                    <div v-for="t in detectionTypes" :key="t.key" class="type-card" :style="{ borderTopColor: t.color }">
+                        <div class="type-card-header" :style="{ color: t.color }">{{ t.label }}</div>
+                        <div class="type-card-checkboxes">
+                            <label class="type-card-checkbox">
+                                <input type="checkbox" v-model="settings.default_detection_types[t.key].enabled" />
+                                <span>启用</span>
+                            </label>
+                            <label class="type-card-checkbox">
+                                <input type="checkbox" v-model="settings.default_detection_types[t.key].use_vlm" />
+                                <span>VLM</span>
+                            </label>
+                        </div>
+                        <div class="type-card-grid">
+                            <div class="type-card-field">
+                                <label>间隔</label>
+                                <input type="number" v-model.number="settings.default_detection_types[t.key].interval" />
+                            </div>
+                            <div class="type-card-field">
+                                <label>阈值</label>
+                                <input type="number" step="0.1" v-model.number="settings.default_detection_types[t.key].threshold" />
+                            </div>
+                            <div class="type-card-field">
+                                <label>连续</label>
+                                <input type="number" v-model.number="settings.default_detection_types[t.key].consecutive_required" />
+                            </div>
+                            <div class="type-card-field">
+                                <label>冷却</label>
+                                <input type="number" v-model.number="settings.default_detection_types[t.key].cooldown" min="0" />
+                            </div>
+                        </div>
+                        <div v-if="t.key === 'uniform'" class="type-card-grid" style="margin-top:10px;">
+                            <div class="type-card-field" style="grid-column: span 2;">
+                                <label>合规窗口 (s)</label>
+                                <input type="number" v-model.number="settings.default_detection_types[t.key].compliance_window_seconds" />
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <button class="btn primary" @click="saveDefaultTypes" style="margin-top:14px;">保存检测默认值</button>
             </div>
