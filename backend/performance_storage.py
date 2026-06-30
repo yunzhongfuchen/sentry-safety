@@ -201,6 +201,11 @@ def get_records_paginated(
     if status:
         filtered = [r for r in filtered if r.get("status") == status]
 
+    if date_from:
+        filtered = [r for r in filtered if r.get("time", "") >= date_from]
+    if date_to:
+        filtered = [r for r in filtered if r.get("time", "") <= date_to + "T23:59:59"]
+
     total = len(filtered)
 
     # 分页

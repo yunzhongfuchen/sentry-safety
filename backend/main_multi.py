@@ -540,22 +540,13 @@ async def root():
     }
 
 
-@app.get("/multi")
-async def multi_view():
-    """多摄像头控制台页面"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "multi.html"
+@app.get("/monitor")
+async def monitor_view():
+    """Glass-clay 风格监控中心"""
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "monitor.html"
     if fp.exists():
         return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "Multi-camera page not found"}
-
-
-@app.get("/hud")
-async def hud_view():
-    """HUD 风格监控中心"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "hud.html"
-    if fp.exists():
-        return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "HUD page not found"}
+    return {"error": "Monitor page not found"}
 
 
 @app.get("/console")
@@ -868,6 +859,8 @@ async def get_alerts(
     level: Optional[str] = None,
     type: Optional[str] = None,
     status: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
 ):
@@ -875,6 +868,7 @@ async def get_alerts(
     records, total = storage.get_records_paginated(
         page=page, page_size=page_size,
         camera_id=camera_id, level=level, dtype=type, status=status,
+        date_from=date_from, date_to=date_to,
     )
     return {"records": records, "total": total, "page": page, "page_size": page_size}
 
