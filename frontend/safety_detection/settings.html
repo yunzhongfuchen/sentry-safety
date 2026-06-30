@@ -10,20 +10,17 @@
     <script src="/static/shared.js"></script>
     <style>
         .settings-container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 24px;
         }
 
         .type-cards-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
             gap: 16px;
             margin-bottom: 24px;
         }
-
-        @media (max-width: 1000px) { .type-cards-grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (max-width: 640px) { .type-cards-grid { grid-template-columns: 1fr; } }
 
         .type-card {
             border-top: 3px solid;
