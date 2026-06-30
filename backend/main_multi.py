@@ -1478,7 +1478,7 @@ async def startup():
         start_overlay_thread()
 
         log_message(f"Sentry Safety Detection started on {app_config.API_HOST}:{app_config.API_PORT}")
-        log_message(f"Access the multi-camera console at http://{app_config.API_HOST}:{app_config.API_PORT}/multi")
+        log_message(f"Access the monitoring center at http://{app_config.API_HOST}:{app_config.API_PORT}/monitor")
 
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _do_startup)
