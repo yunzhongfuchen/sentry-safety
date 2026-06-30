@@ -300,11 +300,11 @@
                             <span :class="['status-dot', cam.status === 'connected' ? 'online' : 'offline']"></span>
                             <span class="cam-name">{{ cam.name || cam.camera_id }}</span>
                             <div class="cam-types">
-                                <span v-for="(cfg, type) in cam.detection_types" :key="type"
-                                      v-if="cfg.enabled"
-                                      class="cam-type-mini">
-                                    {{ getTypeLabel(type) }}
-                                </span>
+                                <template v-for="(cfg, type) in cam.detection_types" :key="type">
+                                    <span v-if="cfg.enabled" class="cam-type-mini">
+                                        {{ getTypeLabel(type) }}
+                                    </span>
+                                </template>
                             </div>
                         </div>
                     </div>
