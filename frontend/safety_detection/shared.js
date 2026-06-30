@@ -1,0 +1,131 @@
+// Shared utilities for Sentry frontend pages
+// Safe fetch wrapper with AbortController support and error handling
+async function safeFetch(url, options = {}) {
+    const controller = new AbortController();
+    const timeout = options.timeout || 10000;
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } catch (e) {
+        clearTimeout(timer);
+        if (e.name === 'AbortError') return null;
+        console.error(`safeFetch error: ${url}`, e);
+        throw e;
+    }
+}
+
+// Stable hash from string (replaces Math.random in data mapping)
+function stableHash(str, max = 150) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+    return Math.abs(h) % max;
+}
+
+// Format ISO timestamp to local display string
+function formatTime(iso) {
+    return iso.replace('T', ' ');
+}
+
+// Debounce function for search inputs
+function debounce(fn, ms = 300) {
+    let t;
+    return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), ms);
+    };
+}
+
+// Throttle function for scroll/resize events
+function throttle(fn, ms = 100) {
+    let last = 0;
+    return (...args) => {
+        const now = Date.now();
+        if (now - last >= ms) {
+            last = now;
+            fn(...args);
+        }
+    };
+}
+
+// Create managed interval that auto-cleans on page hide
+function createManagedInterval(fn, ms) {
+    let id = setInterval(fn, ms);
+    function pause() { clearInterval(id); }
+    function resume() { id = setInterval(fn, ms); }
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) pause(); else resume();
+    });
+    return { pause, resume };
+}
+
+// Type labels and colors shared across pages
+const DETECTION_TYPES = [
+    { key: 'fire', label: '明火', color: '#ef4444' },
+    { key: 'smoke', label: '烟雾', color: '#f97316' },
+    { key: 'uniform', label: '工服', color: '#22c55e' },
+    { key: 'mask', label: '口罩', color: '#0ea5e9' },
+    { key: 'cigarette', label: '吸烟', color: '#a855f7' },
+    { key: 'sleep', label: '睡岗', color: '#eab308' },
+];
+
+function getTypeLabel(type) {
+    return DETECTION_TYPES.find(t => t.key === type)?.label || type || '未知';
+}
+
+function getTypeColor(type) {
+    return DETECTION_TYPES.find(t => t.key === type)?.color || '#94a3b8';
+}
+
+function formatDateTime(iso) {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
+function formatTimeOnly(iso) {
+    if (!iso) return '--:--:--';
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
+function calculateUptime(startedAt) {
+    const start = new Date(startedAt);
+    if (isNaN(start)) return '-';
+    const diff = Math.floor((Date.now() - start) / 1000);
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    return `${h}h${m}m`;
+}
+
+function getLevelLabel(level) {
+    const map = {
+        small_model_alarm: '小模型报警',
+        vlm_alarm: '大模型报警',
+        vlm_ignore: '大模型忽略',
+        P0: 'P0',
+        P1: 'P1'
+    };
+    return map[level] || level || '-';
+}
+
+function getStatusLabel(status) {
+    const map = { pending: '待确认', confirmed: '已确认', false_positive: '误报' };
+    return map[status] || status || '-';
+}
+
+// Default detection type configuration structure
+function defaultDetectionTypes() {
+    return {
+        fire: { enabled: false, interval: 1, threshold: 0.6, consecutive_required: 2, cooldown: 10, use_vlm: false },
+        smoke: { enabled: false, interval: 1, threshold: 0.55, consecutive_required: 2, cooldown: 10, use_vlm: false },
+        uniform: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, compliance_window_seconds: 30, cooldown: 3, use_vlm: false },
+        mask: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, cooldown: 3, use_vlm: false },
+        cigarette: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, cooldown: 3, use_vlm: false },
+        sleep: { enabled: false, interval: 60, threshold: 0.7, consecutive_required: 3, cooldown: 30, use_vlm: false },
+    };
+}
