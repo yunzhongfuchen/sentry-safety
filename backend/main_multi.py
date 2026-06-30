@@ -523,8 +523,8 @@ def generate_multi_view():
 
 @app.get("/")
 async def root():
-    """根路径 - 重定向到多摄像头控制台"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "multi.html"
+    """根路径 - 返回监控中心"""
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "monitor.html"
     if fp.exists():
         return HTMLResponse(fp.read_text(encoding="utf-8"))
     return {
@@ -532,9 +532,10 @@ async def root():
         "version": "2.0",
         "cameras": len(camera_manager._cameras) if camera_manager else 0,
         "endpoints": [
-            "/multi - 多摄像头控制台",
+            "/monitor - 监控中心",
+            "/records.html - 检测记录",
+            "/settings.html - 系统设置",
             "/cameras - 摄像头列表",
-            "/stream - 多画面视频流",
             "/status - 系统状态",
         ]
     }
