@@ -274,7 +274,7 @@
                             <td style="white-space: nowrap;">{{ formatDateTime(r.time) }}</td>
                             <td>{{ r.camera_name }}</td>
                             <td>
-                                <span class="type-badge" :class="r.detection_type">
+                                <span class="type-badge" :class="{ [r.detection_type]: DETECTION_TYPES.some(t => t.key === r.detection_type) }">
                                     {{ getTypeLabel(r.detection_type) }}
                                 </span>
                             </td>
@@ -290,7 +290,7 @@
                 <div v-if="!loading && records.length === 0" class="empty-state">暂无检测记录</div>
 
                 <!-- Pagination -->
-                <div class="pagination">
+                <div v-if="!loading && pagination.total > 0" class="pagination">
                     <button class="clay-button" @click="prevPage" :disabled="pagination.page <= 1">上一页</button>
                     <span style="color: var(--text-secondary);">第 {{ pagination.page }} 页 / 共 {{ totalPages }} 页（共 {{ pagination.total }} 条）</span>
                     <button class="clay-button" @click="nextPage" :disabled="pagination.page >= totalPages">下一页</button>
@@ -382,6 +382,7 @@
                 const totalPages = computed(() => Math.ceil(pagination.value.total / pagination.value.page_size) || 1);
 
                 watch(() => pagination.value.page_size, () => { pagination.value.page = 1; loadRecords(); });
+                watch(filters, () => { pagination.value.page = 1; loadRecords(); }, { deep: true });
 
                 async function loadCameras() {
                     try {
@@ -474,7 +475,10 @@
                     } catch (e) { console.error('误报确认失败:', e); }
                 }
 
+                const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
                 function togglePlay() {
+                    if (prefersReducedMotion) return;
                     if (playing.value) { stopPlay(); return; }
                     if (!frames.value.length) return;
                     playing.value = true;
@@ -482,6 +486,7 @@
                 }
 
                 function playNext() {
+                    if (!frames.value.length) { stopPlay(); return; }
                     if (!playing.value) return;
                     if (!reverse.value && currentFrame.value >= frames.value.length - 1) {
                         currentFrame.value = 0;
