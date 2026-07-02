@@ -623,7 +623,7 @@ async def list_cameras():
 
 @app.get("/")
 async def root():
-    fp = Path(__file__).parent.parent / "frontend" / "index.html"
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "monitor.html"
     if fp.exists():
         return HTMLResponse(fp.read_text(encoding="utf-8"))
     return {"message": "Sentry API", "status": "running"}
