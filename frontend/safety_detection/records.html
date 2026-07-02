@@ -459,7 +459,7 @@
                     if (!detail.value) return;
                     try {
                         await safeFetch(`/alerts/${encodeURIComponent(detail.value.id)}/confirm`, { method: 'POST' });
-                        detail.value.status = 'confirmed';
+                        detail.value = null;
                         loadRecords();
                         loadStats();
                     } catch (e) { console.error('确认失败:', e); }
@@ -469,7 +469,7 @@
                     if (!detail.value) return;
                     try {
                         await safeFetch(`/alerts/${encodeURIComponent(detail.value.id)}/ignore`, { method: 'POST' });
-                        detail.value.status = 'false_positive';
+                        detail.value = null;
                         loadRecords();
                         loadStats();
                     } catch (e) { console.error('误报确认失败:', e); }
