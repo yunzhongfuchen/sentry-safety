@@ -227,33 +227,65 @@
     </style>
 </head>
 <body>
-    <div id="app">
-        <header class="nav-header">
-            <div class="nav-brand">
-                <div class="logo">S</div>
-                <span>Sentry</span>
-            </div>
-            <div class="nav-stats">
-                <div class="stat-pill">
-                    <span class="status-dot online"></span>
-                    在线 {{ onlineCount }} / {{ cameras.length }}
-                </div>
-                <div class="stat-pill">
-                    <span class="status-dot alert"></span>
-                    告警 {{ alertCount }}
-                </div>
-                <div class="stat-pill" style="font-family: var(--font-mono);">
-                    {{ utcTime }}
+    <div id="app" class="app-shell">
+        <aside class="app-sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-mark">S</div>
+                <div class="sidebar-brand-copy">
+                    <div class="sidebar-brand-title">Sentry</div>
+                    <div class="sidebar-brand-subtitle">安全检测平台</div>
                 </div>
             </div>
-            <nav class="nav-links">
-                <a href="/monitor" class="active">监控</a>
-                <a href="/records.html">记录</a>
-                <a href="/settings.html">设置</a>
+            <nav class="sidebar-nav">
+                <div class="nav-group">
+                    <a href="/monitor" :class="['nav-item', { active: sidebar.page === 'monitor' }]">
+                        <span class="nav-item-label">监控</span>
+                    </a>
+                    <a href="/records.html" :class="['nav-item', { active: sidebar.page === 'records' }]">
+                        <span class="nav-item-label">记录</span>
+                    </a>
+                </div>
+                <div class="nav-group">
+                    <button
+                        type="button"
+                        class="nav-item parent"
+                        :class="{ active: sidebar.page === 'settings' }"
+                        :aria-expanded="String(sidebar.settingsExpanded)"
+                        @click="toggleSettingsNav"
+                    >
+                        <span class="nav-item-label">设置</span>
+                        <span class="nav-item-caret">›</span>
+                    </button>
+                    <div :class="['nav-children', { open: sidebar.settingsExpanded }]">
+                        <a href="/settings.html?tab=cameras" :class="['nav-item', 'child', { active: sidebar.page === 'settings' && sidebar.tab === 'cameras' }]">摄像头</a>
+                        <a href="/settings.html?tab=detection" :class="['nav-item', 'child', { active: sidebar.page === 'settings' && sidebar.tab === 'detection' }]">检测配置</a>
+                        <a href="/settings.html?tab=system" :class="['nav-item', 'child', { active: sidebar.page === 'settings' && sidebar.tab === 'system' }]">系统设置</a>
+                    </div>
+                </div>
             </nav>
-        </header>
+        </aside>
+        <main class="app-main">
+            <div class="nav-header">
+                <div class="nav-brand">
+                    <div class="logo">S</div>
+                    <span>Sentry</span>
+                </div>
+                <div class="nav-stats">
+                    <div class="stat-pill">
+                        <span class="status-dot online"></span>
+                        在线 {{ onlineCount }} / {{ cameras.length }}
+                    </div>
+                    <div class="stat-pill">
+                        <span class="status-dot alert"></span>
+                        告警 {{ alertCount }}
+                    </div>
+                    <div class="stat-pill" style="font-family: var(--font-mono);">
+                        {{ utcTime }}
+                    </div>
+                </div>
+            </div>
 
-        <div class="monitor-layout">
+            <div class="monitor-layout">
             <!-- Main video -->
             <div class="main-area">
                 <div class="glass-card video-card">
@@ -342,6 +374,7 @@
 
         createApp({
             setup() {
+                const sidebar = ref(getSidebarContext());
                 const cameras = ref([]);
                 const cameraOrder = ref([]);
                 const recentAlerts = ref([]);
@@ -374,6 +407,10 @@
                 function getStatusText(status) {
                     const map = { idle: '空闲', connecting: '连接中', connected: '已连接', error: '错误', reconnecting: '重连中' };
                     return map[status] || status;
+                }
+
+                function toggleSettingsNav() {
+                    sidebar.value.settingsExpanded = !sidebar.value.settingsExpanded;
                 }
 
                 function selectCamera(cid) {
@@ -496,11 +533,11 @@
                 });
 
                 return {
-                    cameras, recentAlerts, overlayTypes, playbackStatus, streamVisible, utcTime,
+                    sidebar, cameras, recentAlerts, overlayTypes, playbackStatus, streamVisible, utcTime,
                     mainCameraId, mainCameraName, mainCameraStatus, mainAlertType,
                     onlineCount, alertCount,
                     getTypeLabel, getLevelLabel, getStatusText,
-                    selectCamera, onVideoError, controlPlayback
+                    toggleSettingsNav, selectCamera, onVideoError, controlPlayback
                 };
             }
         }).mount('#app');
