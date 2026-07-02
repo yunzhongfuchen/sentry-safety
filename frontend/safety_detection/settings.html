@@ -338,6 +338,7 @@
                     </div>
                 </div>
             </div>
+                </div>
         </main>
 
         <!-- Camera Modal -->
@@ -485,7 +486,7 @@
                     sidebar.value.page = 'settings';
                     sidebar.value.tab = next;
                     sidebar.value.settingsExpanded = true;
-                });
+                }, { immediate: true });
 
                 function showToast(msg, type = 'success') {
                     toast.value = { message: msg, type };
