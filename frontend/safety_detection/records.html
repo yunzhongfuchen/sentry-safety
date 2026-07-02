@@ -352,8 +352,8 @@
                 </div>
                 <div class="gc-modal-footer">
                     <button class="clay-button" @click="detail = null">关闭</button>
-                    <button v-if="detail.status !== 'confirmed'" class="clay-button primary" @click="confirmAlert">确认报警</button>
-                    <button v-if="detail.status !== 'false_positive'" class="clay-button" @click="ignoreAlert" style="color: var(--danger);">确认误报</button>
+                    <button v-if="detail.status === 'pending'" class="clay-button primary" @click="confirmAlert">确认报警</button>
+                    <button v-if="detail.status === 'pending'" class="clay-button" @click="ignoreAlert" style="color: var(--danger);">确认误报</button>
                 </div>
             </div>
         </div>

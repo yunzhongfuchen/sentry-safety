@@ -891,12 +891,17 @@ async def confirm_alert(record_id: str):
     """标记告警为已确认"""
     global detection_records
     with _records_lock:
+        found = False
         for r in detection_records:
             if r.get("id") == record_id:
                 confirm_alarm(r)
-                mark_records_dirty()
-                return {"success": True}
-    return JSONResponse({"error": "Record not found"}, status_code=404)
+                found = True
+                break
+        if not found:
+            return JSONResponse({"error": "Record not found"}, status_code=404)
+        data = list(detection_records)
+    storage.save_records(data)
+    return {"success": True}
 
 
 @app.post("/alerts/{record_id}/ignore")
@@ -904,12 +909,17 @@ async def ignore_alert(record_id: str):
     """标记告警为误报"""
     global detection_records
     with _records_lock:
+        found = False
         for r in detection_records:
             if r.get("id") == record_id:
                 confirm_false_positive(r)
-                mark_records_dirty()
-                return {"success": True}
-    return JSONResponse({"error": "Record not found"}, status_code=404)
+                found = True
+                break
+        if not found:
+            return JSONResponse({"error": "Record not found"}, status_code=404)
+        data = list(detection_records)
+    storage.save_records(data)
+    return {"success": True}
 
 
 @app.get("/overlay")
