@@ -299,7 +299,7 @@
                         </span>
                     </div>
                     <div class="video-body">
-                        <img v-if="mainCameraId && mainCameraStatus === 'connected' && streamVisible"
+                        <img v-if="mainCameraId && mainCameraStatus === 'connected' && streamVisible[mainCameraId] !== false"
                              :src="`/cameras/${mainCameraId}/stream`"
                              @error="onVideoError(mainCameraId)" />
                         <div v-else class="video-placeholder">
