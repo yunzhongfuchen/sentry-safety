@@ -657,15 +657,6 @@ async def update_prompt(data: dict):
     return {"success": False, "message": "保存失败"}
 
 
-@app.get("/prompt.html")
-async def prompt_page():
-    """提示词编辑页面"""
-    fp = Path(__file__).parent.parent / "frontend" / "prompt.html"
-    if fp.exists():
-        return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "Prompt page not found"}
-
-
 @app.on_event("startup")
 async def startup():
     init_modules()

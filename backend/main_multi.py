@@ -1292,15 +1292,6 @@ async def delete_camera(camera_id: str):
         return JSONResponse({"error": "Camera not found"}, status_code=404)
 
 
-@app.get("/legacy")
-async def legacy_view():
-    """旧版单摄像头页面"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "index.html"
-    if fp.exists():
-        return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "Legacy page not found"}
-
-
 @app.get("/records.html")
 async def records_page():
     """记录页面"""
