@@ -455,23 +455,33 @@
                     } catch (e) { console.error('加载详情失败:', e); }
                 }
 
+                function applyReview(id, status) {
+                    const rec = records.value.find(r => r.id === id);
+                    if (rec && rec.status === 'pending') {
+                        rec.status = status;
+                        if (stats.value.pending > 0) stats.value.pending--;
+                        if (status === 'confirmed') stats.value.confirmed++;
+                        else stats.value.false_positive++;
+                    }
+                }
+
                 async function confirmAlert() {
                     if (!detail.value) return;
+                    const id = detail.value.id;
                     try {
-                        await safeFetch(`/alerts/${encodeURIComponent(detail.value.id)}/confirm`, { method: 'POST' });
+                        await safeFetch(`/alerts/${encodeURIComponent(id)}/confirm`, { method: 'POST' });
+                        applyReview(id, 'confirmed');
                         detail.value = null;
-                        loadRecords();
-                        loadStats();
                     } catch (e) { console.error('确认失败:', e); }
                 }
 
                 async function ignoreAlert() {
                     if (!detail.value) return;
+                    const id = detail.value.id;
                     try {
-                        await safeFetch(`/alerts/${encodeURIComponent(detail.value.id)}/ignore`, { method: 'POST' });
+                        await safeFetch(`/alerts/${encodeURIComponent(id)}/ignore`, { method: 'POST' });
+                        applyReview(id, 'false_positive');
                         detail.value = null;
-                        loadRecords();
-                        loadStats();
                     } catch (e) { console.error('误报确认失败:', e); }
                 }
 
