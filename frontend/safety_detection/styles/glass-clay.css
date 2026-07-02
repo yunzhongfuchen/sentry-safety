@@ -1,40 +1,40 @@
 /* Glass-Clay Design System for Sentry */
 
 :root {
-    --bg-base: #f0f2ee;
-    --bg-soft: #f7f8f6;
+    --bg-base: #eef1f4;
+    --bg-soft: #f4f6f9;
     --bg-elevated: #ffffff;
 
     --glass-bg: rgba(255, 255, 255, 0.78);
     --glass-border: rgba(255, 255, 255, 0.9);
-    --glass-edge: rgba(15, 23, 42, 0.06);
+    --glass-edge: rgba(30, 41, 59, 0.06);
     --glass-shadow:
-        0 2px 4px rgba(15, 23, 42, 0.04),
-        0 12px 24px rgba(15, 23, 42, 0.06),
+        0 1px 2px rgba(30, 41, 59, 0.05),
+        0 10px 22px rgba(30, 41, 59, 0.07),
         inset 0 1px 0 rgba(255, 255, 255, 0.95);
 
     --clay-shadow:
-        4px 4px 10px rgba(181, 189, 177, 0.5),
-        -4px -4px 10px rgba(255, 255, 255, 0.85);
+        3px 3px 8px rgba(148, 163, 184, 0.4),
+        -3px -3px 8px rgba(255, 255, 255, 0.9);
     --clay-shadow-inset:
-        inset 3px 3px 6px rgba(181, 189, 177, 0.45),
-        inset -3px -3px 6px rgba(255, 255, 255, 0.9);
+        inset 2px 2px 5px rgba(148, 163, 184, 0.35),
+        inset -2px -2px 5px rgba(255, 255, 255, 0.95);
     --clay-shadow-pressed:
-        inset 4px 4px 8px rgba(181, 189, 177, 0.5),
-        inset -4px -4px 8px rgba(255, 255, 255, 0.85);
+        inset 3px 3px 6px rgba(148, 163, 184, 0.4),
+        inset -3px -3px 6px rgba(255, 255, 255, 0.9);
 
-    --text-primary: #1a211c;
-    --text-secondary: #5f6b63;
-    --text-muted: #949f96;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --text-muted: #94a3b8;
 
-    --accent: #e05a18;
-    --accent-soft: rgba(224, 90, 24, 0.10);
-    --accent-hover: #c44c12;
+    --accent: #2563eb;
+    --accent-soft: rgba(37, 99, 235, 0.10);
+    --accent-hover: #1d4ed8;
 
-    --success: #0d9f6e;
-    --warning: #e05a18;
+    --success: #0d9488;
+    --warning: #d97706;
     --danger: #dc2626;
-    --info: #2563eb;
+    --info: #0284c7;
 
     --radius-lg: 18px;
     --radius-md: 10px;
@@ -102,7 +102,7 @@ body {
     background: var(--accent);
     color: #fff;
     box-shadow:
-        4px 4px 10px rgba(224, 90, 24, 0.25),
+        4px 4px 10px rgba(37, 99, 235, 0.25),
         -4px -4px 10px rgba(255, 255, 255, 0.5);
 }
 
@@ -239,7 +239,7 @@ body {
     justify-content: center;
     color: #fff;
     font-size: 16px;
-    box-shadow: 0 2px 8px rgba(224, 90, 24, 0.25);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
 }
 
 .nav-links {
