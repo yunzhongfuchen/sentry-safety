@@ -31,7 +31,7 @@ logger.setLevel(logging.INFO)
 app = FastAPI(title="Sentry API")
 
 # 挂载前端静态文件
-frontend_path = Path(__file__).parent.parent / "frontend"
+frontend_path = Path(__file__).parent.parent / "frontend" / "safety_detection"
 if frontend_path.exists():
     app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
 
@@ -631,7 +631,7 @@ async def root():
 
 @app.get("/records.html")
 async def records_page():
-    fp = Path(__file__).parent.parent / "frontend" / "records.html"
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "records.html"
     if fp.exists():
         return HTMLResponse(fp.read_text(encoding="utf-8"))
     return {"error": "Records page not found"}
