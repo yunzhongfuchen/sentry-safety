@@ -129,3 +129,33 @@ function defaultDetectionTypes() {
         sleep: { enabled: false, interval: 60, threshold: 0.7, consecutive_required: 3, cooldown: 30, use_vlm: false },
     };
 }
+
+
+const SETTINGS_TABS = ['cameras', 'detection', 'system'];
+
+function normalizeSettingsTab(raw) {
+    return SETTINGS_TABS.includes(raw) ? raw : 'cameras';
+}
+
+function getSettingsTabFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    return normalizeSettingsTab(params.get('tab'));
+}
+
+function setSettingsTabQuery(tab) {
+    const next = normalizeSettingsTab(tab);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', next);
+    window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+}
+
+function getSidebarContext() {
+    const path = window.location.pathname;
+    if (path.includes('settings')) {
+        return { page: 'settings', tab: getSettingsTabFromQuery(), settingsExpanded: true };
+    }
+    if (path.includes('records')) {
+        return { page: 'records', tab: 'cameras', settingsExpanded: false };
+    }
+    return { page: 'monitor', tab: 'cameras', settingsExpanded: false };
+}
