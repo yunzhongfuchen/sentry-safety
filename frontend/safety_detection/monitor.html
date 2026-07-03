@@ -159,17 +159,17 @@
 
         .alerts-list {
             flex: 1;
-            display: flex;
-            gap: 12px;
+            display: grid;
+            grid-template-columns: repeat(5, minmax(220px, 1fr));
+            gap: 14px;
             overflow-x: auto;
-            padding: 4px 2px;
+            padding: 4px 2px 6px;
             align-items: stretch;
         }
 
         .alert-card {
-            flex-shrink: 0;
-            width: 260px;
-            padding: 14px 16px;
+            min-width: 220px;
+            padding: 18px;
             display: flex;
             flex-direction: column;
             gap: 6px;
@@ -232,7 +232,7 @@
             <div class="sidebar-brand">
                 <div class="sidebar-brand-mark">S</div>
                 <div class="sidebar-brand-copy">
-                    <div class="sidebar-brand-title">Sentry</div>
+                    <div class="sidebar-brand-title">安全哨兵</div>
                     <div class="sidebar-brand-subtitle">安全检测平台</div>
                 </div>
             </div>
@@ -268,7 +268,7 @@
             <div class="nav-header">
                 <div class="nav-brand">
                     <div class="logo">S</div>
-                    <span>Sentry</span>
+                    <span>安全哨兵</span>
                 </div>
                 <div class="nav-stats">
                     <div class="stat-pill">
@@ -466,7 +466,7 @@
                     try {
                         const data = await safeFetch('/status');
                         if (data.recent_records) {
-                            recentAlerts.value = data.recent_records.slice(0, 6).map(r => {
+                            recentAlerts.value = data.recent_records.slice(0, 5).map(r => {
                                 const cam = cameras.value.find(c => c.camera_id === r.camera_id);
                                 return {
                                     id: r.id,
