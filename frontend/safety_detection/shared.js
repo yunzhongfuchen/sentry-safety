@@ -155,7 +155,7 @@ function getSidebarContext() {
         return { page: 'settings', tab: getSettingsTabFromQuery(), settingsExpanded: true };
     }
     if (path.includes('records')) {
-        return { page: 'records', tab: 'cameras', settingsExpanded: false };
+        return { page: 'records', tab: 'cameras', settingsExpanded: true };
     }
-    return { page: 'monitor', tab: 'cameras', settingsExpanded: false };
+    return { page: 'monitor', tab: 'cameras', settingsExpanded: true };
 }
