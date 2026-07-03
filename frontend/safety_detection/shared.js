@@ -159,3 +159,44 @@ function getSidebarContext() {
     }
     return { page: 'monitor', tab: 'cameras', settingsExpanded: true };
 }
+
+function renderSidebar(container, context) {
+    const expandedClass = context.settingsExpanded ? 'open' : '';
+    container.innerHTML = `
+        <aside class="app-sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-mark">S</div>
+                <div class="sidebar-brand-copy">
+                    <div class="sidebar-brand-title">安全哨兵</div>
+                    <div class="sidebar-brand-subtitle">安全检测平台</div>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-group">
+                    <a href="/monitor" class="nav-item ${context.page === 'monitor' ? 'active' : ''}">
+                        <span class="nav-item-label">监控</span>
+                    </a>
+                    <a href="/records.html" class="nav-item ${context.page === 'records' ? 'active' : ''}">
+                        <span class="nav-item-label">记录</span>
+                    </a>
+                </div>
+                <div class="nav-group">
+                    <button
+                        type="button"
+                        class="nav-item parent ${context.page === 'settings' ? 'active' : ''}"
+                        aria-expanded="${String(context.settingsExpanded)}"
+                        onclick="window.toggleSettingsNav && window.toggleSettingsNav()"
+                    >
+                        <span class="nav-item-label">设置</span>
+                        <span class="nav-item-caret">›</span>
+                    </button>
+                    <div class="nav-children ${expandedClass}">
+                        <a href="/settings.html?tab=cameras" class="nav-item child ${context.page === 'settings' && context.tab === 'cameras' ? 'active' : ''}">摄像头</a>
+                        <a href="/settings.html?tab=detection" class="nav-item child ${context.page === 'settings' && context.tab === 'detection' ? 'active' : ''}">检测配置</a>
+                        <a href="/settings.html?tab=system" class="nav-item child ${context.page === 'settings' && context.tab === 'system' ? 'active' : ''}">系统设置</a>
+                    </div>
+                </div>
+            </nav>
+        </aside>
+    `;
+}
