@@ -49,6 +49,9 @@ class LRUCache:
 # 全局图片缓存
 _image_cache = LRUCache(max_size=100)
 
+# 记录元数据内存缓存（write-through）
+_records_cache: Optional[List[Dict]] = None
+
 
 def ensure_dirs():
     """确保数据目录存在"""
@@ -121,7 +124,10 @@ def get_frame_count(record_id: str) -> int:
 
 
 def load_records() -> List[Dict]:
-    """加载记录元数据（不含图片数据）"""
+    """加载记录元数据（不含图片数据），带内存缓存"""
+    global _records_cache
+    if _records_cache is not None:
+        return _records_cache
     ensure_dirs()
     if not RECORDS_FILE.exists():
         return []
@@ -129,6 +135,7 @@ def load_records() -> List[Dict]:
         with open(RECORDS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         logger.info(f"Loaded {len(data)} records metadata")
+        _records_cache = data
         return data
     except Exception as e:
         logger.error(f"Failed to load records: {e}")
@@ -137,11 +144,13 @@ def load_records() -> List[Dict]:
 
 def save_records(records: List[Dict]):
     """保存记录元数据"""
+    global _records_cache
     ensure_dirs()
     try:
         with open(RECORDS_FILE, "w", encoding="utf-8") as f:
             json.dump(records, f, ensure_ascii=False)
         logger.info(f"Saved {len(records)} records metadata")
+        _records_cache = records
     except Exception as e:
         logger.error(f"Failed to save records: {e}")
 
