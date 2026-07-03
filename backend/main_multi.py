@@ -432,6 +432,12 @@ def init_components():
                 half=_global_settings.get("gpu_scheduler_half", app_config.GPU_SCHEDULER_HALF),
             )
             log_message(f"GPU scheduler initialized: {len(model_configs)} models, {gpu_scheduler.num_queues} queues")
+
+            # 让 MultiDetector 跳过已由 GPU scheduler 推理的类型，避免重复检测
+            scheduler_types = list(model_configs.keys())
+            for cam_data in camera_configs_data:
+                camera_id = cam_data["camera_id"]
+                multi_detector.mark_externally_managed(camera_id, scheduler_types)
         except Exception as e:
             log_message(f"GPU scheduler init failed: {e}", "error")
             gpu_scheduler = None
