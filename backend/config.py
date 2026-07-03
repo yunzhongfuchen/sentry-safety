@@ -21,6 +21,10 @@ if not os.getenv('ARK_API_KEY'):
 ARK_API_KEY = os.getenv("ARK_API_KEY", "")
 VLM_ENDPOINT = os.getenv("VLM_ENDPOINT", "")
 
+# Backward-compatible: ARK_MODEL defaults to VLM_ENDPOINT so existing deployments keep working.
+# New deployments should set ARK_MODEL to the actual Ark model ID (e.g. doubao-vision-pro-32k).
+ARK_MODEL = os.getenv("ARK_MODEL", VLM_ENDPOINT)
+
 BAILIAN_API_KEY = os.getenv("BAILIAN_API_KEY", "")
 BAILIAN_ENDPOINT = os.getenv("BAILIAN_ENDPOINT", "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions")
 BAILIAN_MODEL = os.getenv("BAILIAN_MODEL", "qwen3.5-plus")
