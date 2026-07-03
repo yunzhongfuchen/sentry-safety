@@ -59,6 +59,14 @@ class CameraConfig:
     use_npu: bool = False
     npu_core: int = 0  # 0-2, RK3588有3个NPU核心
 
+    def is_video_source(self) -> bool:
+        """判断当前源是否为本地视频文件（非摄像头索引、非 RTSP 流）"""
+        if self.source_type == "video":
+            return True
+        if self.source_type == "auto":
+            return not str(self.source).isdigit() and not str(self.source).startswith("rtsp")
+        return False
+
 
 @dataclass
 class CameraState:
@@ -104,11 +112,7 @@ class CameraState:
         self.playback_state["loop"] = self.config.video_loop
         self.playback_state["speed"] = self.config.video_playback_speed
         # 本地视频文件默认暂停、不循环，等待前端点击播放
-        is_video = self.config.source_type == "video" or (
-            self.config.source_type == "auto"
-            and not str(self.config.source).isdigit()
-            and not str(self.config.source).startswith("rtsp")
-        )
+        is_video = self.config.is_video_source()
         if is_video:
             self.playback_state["playing"] = False
 
@@ -232,11 +236,7 @@ class CameraManager:
 
             state = self._cameras[camera_id]
             if not allow_paused:
-                is_video_file = state.config.source_type == "video" or (
-                    state.config.source_type == "auto"
-                    and not str(state.config.source).isdigit()
-                    and not str(state.config.source).startswith("rtsp")
-                )
+                is_video_file = state.config.is_video_source()
                 if is_video_file and not state.playback_state.get("playing", True):
                     return None
 
@@ -277,9 +277,7 @@ class CameraManager:
                 return None
 
             state = self._cameras[camera_id]
-            is_video_file = state.config.source_type == "video" or (
-                state.config.source_type == "auto" and not str(state.config.source).isdigit() and not str(state.config.source).startswith("rtsp")
-            )
+            is_video_file = state.config.is_video_source()
             # 判断解码后端
             decoder_backend = "cpu"
             if state.cap is not None:
@@ -336,11 +334,7 @@ class CameraManager:
             state = self._cameras[camera_id]
             state.config.source = source
             state.config.source_type = source_type
-            is_video = source_type == "video" or (
-                source_type == "auto"
-                and not str(source).isdigit()
-                and not str(source).startswith("rtsp")
-            )
+            is_video = state.config.is_video_source()
             state.playback_state = {
                 "playing": not is_video,  # 视频文件默认暂停，等待用户手动开始
                 "current_frame_idx": 0,
@@ -385,9 +379,7 @@ class CameraManager:
                 state.config.video_loop = pb["loop"]
 
             result = dict(pb)
-            result["is_video_file"] = state.config.source_type == "video" or (
-                state.config.source_type == "auto" and not str(state.config.source).isdigit() and not str(state.config.source).startswith("rtsp")
-            )
+            result["is_video_file"] = state.config.is_video_source()
             return result
 
     def get_playback_status(self, camera_id: str) -> Optional[dict]:
@@ -396,9 +388,7 @@ class CameraManager:
             if camera_id not in self._cameras:
                 return None
             state = self._cameras[camera_id]
-            is_video_file = state.config.source_type == "video" or (
-                state.config.source_type == "auto" and not str(state.config.source).isdigit() and not str(state.config.source).startswith("rtsp")
-            )
+            is_video_file = state.config.is_video_source()
             result = dict(state.playback_state)
             result["is_video_file"] = is_video_file
             return result
@@ -421,9 +411,7 @@ class CameraManager:
 
         # 如果是本地视频且已暂停（播放到末尾），先恢复播放/回退到开头
         pb = state.playback_state
-        is_video_file = state.config.source_type == "video" or (
-            state.config.source_type == "auto" and not str(state.config.source).isdigit() and not str(state.config.source).startswith("rtsp")
-        )
+        is_video_file = state.config.is_video_source()
         if is_video_file and not pb.get("playing", True):
             self.control_playback(camera_id, "play")
 
@@ -692,9 +680,7 @@ class CameraManager:
 
         last_fps_time = time.time()
         frame_counter = 0
-        is_video_file = state.config.source_type == "video" or (
-            state.config.source_type == "auto" and not str(state.config.source).isdigit() and not str(state.config.source).startswith("rtsp")
-        )
+        is_video_file = state.config.is_video_source()
 
         # 视频文件：连接成功后先读取第一帧作为静态预览，方便用户在不点击播放时也能看到画面、画 ROI
         if is_video_file:
