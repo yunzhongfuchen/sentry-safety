@@ -498,6 +498,8 @@ class CameraManager:
         """设置主画面摄像头，旧主画面降级为按需解码，返回旧主画面 camera_id"""
         with self._lock:
             old_main = self._main_camera_id
+            if camera_id == old_main:
+                return old_main
             if old_main and old_main in self._cameras:
                 self._set_decode_mode_unlocked(old_main, DecodeMode.SCHEDULED)
 
