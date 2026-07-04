@@ -1512,14 +1512,14 @@ async def startup():
         if vlm_inspector and _global_settings.get("vlm_inspection_interval", 30.0) > 0:
             vlm_inspector.start()
 
-        # 启动独立渲染线程（画框 + 送流，与检测解耦）
-        start_overlay_thread()
-
         # 设置默认主画面（第一个启用的摄像头）
         main_id = _pick_default_main_camera()
         if main_id:
             set_main_camera(main_id)
             log_message(f"Default main camera set to {main_id}")
+
+        # 启动独立渲染线程（画框 + 送流，与检测解耦）
+        start_overlay_thread()
 
         log_message(f"Sentry Safety Detection started on {app_config.API_HOST}:{app_config.API_PORT}")
         log_message(f"Access the multi-camera console at http://{app_config.API_HOST}:{app_config.API_PORT}/multi")
