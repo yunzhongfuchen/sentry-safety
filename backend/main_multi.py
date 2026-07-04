@@ -556,15 +556,6 @@ async def monitor_view():
     return {"error": "Monitor page not found"}
 
 
-@app.get("/console")
-async def console_view():
-    """Surveillance Pro 风格监控中心"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "console.html"
-    if fp.exists():
-        return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "Console page not found"}
-
-
 @app.get("/cameras")
 async def list_cameras():
     """列出所有摄像头（包含 detection_types）"""
