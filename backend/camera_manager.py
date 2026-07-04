@@ -32,6 +32,12 @@ class CameraStatus(Enum):
     RECONNECTING = "reconnecting"
 
 
+class DecodeMode(Enum):
+    """摄像头解码模式"""
+    CONTINUOUS = "continuous"   # 主画面：持续解码，最高 25 FPS
+    SCHEDULED = "scheduled"     # 非主画面：按需解码，解完就睡
+
+
 @dataclass
 class CameraConfig:
     """摄像头配置"""
@@ -98,6 +104,11 @@ class CameraState:
     record_preview_path: Optional[str] = None
     record_preview_queue: Optional[queue.Queue] = None
     record_preview_thread: Optional[threading.Thread] = None
+    # 新增字段
+    decode_mode: DecodeMode = DecodeMode.SCHEDULED
+    frame_request_event: threading.Event = field(default_factory=threading.Event)
+    frame_ready_event: threading.Event = field(default_factory=threading.Event)
+    current_scheduled_frame: Optional[np.ndarray] = None
 
     def __post_init__(self):
         # 让 playback_state 的初始 loop/speed 与 config 保持一致
