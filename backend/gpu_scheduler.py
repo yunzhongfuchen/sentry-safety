@@ -34,7 +34,7 @@ class ModelConfig:
 class ModelDetector:
     """轻量模型包装，内部使用 InferenceBackend"""
 
-    def __init__(self, cfg: ModelConfig, backend: InferenceBackend = None):
+    def __init__(self, cfg: ModelConfig, backend: Optional[InferenceBackend] = None):
         self.cfg = cfg
         self.device = cfg.device
         if backend is None:
