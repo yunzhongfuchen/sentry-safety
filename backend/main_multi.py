@@ -200,15 +200,12 @@ def _pick_default_main_camera() -> Optional[str]:
     """选择第一个启用的摄像头作为默认主画面"""
     if camera_manager is None:
         return None
-    cam_ids = camera_manager.get_camera_ids()
-    if not cam_ids:
-        return None
-    # 默认选第一个启用的摄像头
-    for cid in cam_ids:
-        state = camera_manager._cameras.get(cid)
-        if state and state.config.enabled:
-            return cid
-    return cam_ids[0]
+    enabled_ids = camera_manager.get_enabled_camera_ids()
+    if not enabled_ids:
+        # 回退：返回第一个摄像头（无论是否启用）
+        cam_ids = camera_manager.get_camera_ids()
+        return cam_ids[0] if cam_ids else None
+    return enabled_ids[0]
 
 
 # ── 初始化 ──
@@ -1434,7 +1431,9 @@ def _overlay_loop():
                 time.sleep(0.1)
                 continue
 
-            frame = camera_manager.request_frame(main_id, store_history=False)
+            frame = camera_manager.get_frame(main_id)
+            if frame is None:
+                frame = camera_manager.request_frame(main_id, timeout=0.05, store_history=False)
             if frame is None:
                 time.sleep(0.02)
                 continue

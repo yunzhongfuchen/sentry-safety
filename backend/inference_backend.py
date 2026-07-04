@@ -19,7 +19,7 @@ class InferenceBackend(ABC):
     """推理后端抽象"""
 
     @abstractmethod
-    def predict_batch(self, frames: List[np.ndarray], dtype: str) -> List[Any]:
+    def predict_batch(self, frames: List[np.ndarray], dtype: str, half: bool = False) -> List[Any]:
         """对一批帧进行推理，返回与输入顺序一致的结果列表"""
         ...
 
@@ -36,11 +36,12 @@ class YoloCudaBackend(InferenceBackend):
         self.confidence = confidence
         self.classes = classes if classes is not None else [0]
 
-    def predict_batch(self, frames: List[np.ndarray], dtype: str) -> List[Any]:
+    def predict_batch(self, frames: List[np.ndarray], dtype: str, half: bool = False) -> List[Any]:
         return self.model(
             frames,
             conf=self.confidence,
             classes=self.classes,
             device=self.device,
             verbose=False,
+            half=half,
         )

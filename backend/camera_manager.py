@@ -284,11 +284,12 @@ class CameraManager:
             with state.lock:
                 frame = state.current_scheduled_frame
                 state.current_scheduled_frame = None
+                if frame is not None:
+                    # 保持 current_frame 兼容，让 get_frame 也能读到最新帧
+                    state.current_frame = frame
             if frame is not None:
                 if store_history:
                     state.frame_history.append((time.time(), frame.copy()))
-                # 保持 current_frame 兼容，让 get_frame 也能读到最新帧
-                state.current_frame = frame
                 return frame
         return None
 
@@ -457,15 +458,45 @@ class CameraManager:
         with self._lock:
             return list(self._cameras.keys())
 
+    def _set_decode_mode_unlocked(self, camera_id: str, mode: DecodeMode) -> bool:
+        """切换摄像头解码模式（不重启解码器），调用者必须已持有 _lock。"""
+        if camera_id not in self._cameras:
+            return False
+        state = self._cameras[camera_id]
+        old_mode = state.decode_mode
+        state.decode_mode = mode
+        # 切到 SCHEDULED 时清理事件，避免遗留请求
+        if mode == DecodeMode.SCHEDULED:
+            state.frame_request_event.clear()
+            state.frame_ready_event.clear()
+        # 切到 CONTINUOUS 时唤醒可能正在等待的 SCHEDULED 线程
+        if mode == DecodeMode.CONTINUOUS:
+            state.frame_request_event.set()
+        logger.info(f"Camera {camera_id} decode mode: {old_mode.value} -> {mode.value}")
+        return True
+
+    def set_decode_mode(self, camera_id: str, mode: DecodeMode) -> bool:
+        """切换摄像头解码模式（不重启解码器）"""
+        with self._lock:
+            return self._set_decode_mode_unlocked(camera_id, mode)
+
+    def get_enabled_camera_ids(self) -> List[str]:
+        """获取所有已启用的摄像头ID列表"""
+        with self._lock:
+            return [
+                cid for cid, state in self._cameras.items()
+                if state.config.enabled
+            ]
+
     def set_main_camera(self, camera_id: Optional[str]) -> Optional[str]:
         """设置主画面摄像头，旧主画面降级为按需解码，返回旧主画面 camera_id"""
         with self._lock:
             old_main = self._main_camera_id
             if old_main and old_main in self._cameras:
-                self.set_decode_mode(old_main, DecodeMode.SCHEDULED)
+                self._set_decode_mode_unlocked(old_main, DecodeMode.SCHEDULED)
 
             if camera_id and camera_id in self._cameras:
-                self.set_decode_mode(camera_id, DecodeMode.CONTINUOUS)
+                self._set_decode_mode_unlocked(camera_id, DecodeMode.CONTINUOUS)
                 self._main_camera_id = camera_id
                 logger.info(f"Main camera set to {camera_id}")
             else:
@@ -679,21 +710,6 @@ class CameraManager:
             "recording": state.recording,
             "record_path": state.record_path,
         }
-
-    def set_decode_mode(self, camera_id: str, mode: DecodeMode) -> bool:
-        """切换摄像头解码模式（不重启解码器）"""
-        with self._lock:
-            if camera_id not in self._cameras:
-                return False
-            state = self._cameras[camera_id]
-            old_mode = state.decode_mode
-            state.decode_mode = mode
-            # 切到 SCHEDULED 时清理事件，避免遗留请求
-            if mode == DecodeMode.SCHEDULED:
-                state.frame_request_event.clear()
-                state.frame_ready_event.clear()
-            logger.info(f"Camera {camera_id} decode mode: {old_mode.value} -> {mode.value}")
-            return True
 
     def _camera_loop(self, camera_id: str):
         """摄像头工作线程主循环"""

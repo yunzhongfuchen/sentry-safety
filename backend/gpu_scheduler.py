@@ -49,7 +49,7 @@ class ModelDetector:
 
     def predict(self, frames: List[np.ndarray], half: bool = False):
         """batch 推理，返回结果列表"""
-        return self.backend.predict_batch(frames, self.cfg.detection_type)
+        return self.backend.predict_batch(frames, self.cfg.detection_type, half=half)
 
 
 class QueueWorker(threading.Thread):
@@ -249,13 +249,13 @@ class GPUDynamicScheduler(threading.Thread):
             if not self._is_camera_enabled(cam_id):
                 continue
 
-            # 取帧时间作为帧年龄判断依据
-            frame_capture_time = time.time()
+            # 取帧并在返回后记录采集完成时间
             frame = self.camera_manager.request_frame(cam_id, timeout=1.0, store_history=True)
+            collected_at = time.time()
             if frame is None:
                 continue
 
-            frame_age = time.time() - frame_capture_time
+            frame_age = time.time() - collected_at
             if frame_age > self.MAX_FRAME_AGE:
                 logger.debug(f"Drop old frame from {cam_id}, age={frame_age:.2f}s")
                 continue
