@@ -196,6 +196,21 @@ def _convert_ultralytics_result(dtype: str, result) -> Optional[dict]:
     }
 
 
+def _pick_default_main_camera() -> Optional[str]:
+    """选择第一个启用的摄像头作为默认主画面"""
+    if camera_manager is None:
+        return None
+    cam_ids = camera_manager.get_camera_ids()
+    if not cam_ids:
+        return None
+    # 默认选第一个启用的摄像头
+    for cid in cam_ids:
+        state = camera_manager._cameras.get(cid)
+        if state and state.config.enabled:
+            return cid
+    return cam_ids[0]
+
+
 # ── 初始化 ──
 
 def init_components():
@@ -789,18 +804,27 @@ async def disable_camera(camera_id: str):
     """禁用摄像头"""
     if camera_manager is None:
         return JSONResponse({"error": "Camera manager not initialized"}, status_code=500)
-    
+
     # 更新配置中的 enabled 状态
     with camera_manager._lock:
         if camera_id in camera_manager._cameras:
             camera_manager._cameras[camera_id].config.enabled = False
-    
+
     camera_manager.stop_camera(camera_id)
-    
+
     # 保存配置到文件
     save_camera_configs()
-    
+
     return {"success": True, "camera_id": camera_id}
+
+
+@app.post("/cameras/{camera_id}/select")
+async def select_main_camera(camera_id: str):
+    """切换主画面摄像头"""
+    if camera_manager is None or camera_id not in camera_manager._cameras:
+        return JSONResponse({"error": "Camera not found"}, status_code=404)
+    set_main_camera(camera_id)
+    return {"success": True, "main_camera": camera_id}
 
 
 # ── 全局设置 API ──
@@ -1490,6 +1514,12 @@ async def startup():
 
         # 启动独立渲染线程（画框 + 送流，与检测解耦）
         start_overlay_thread()
+
+        # 设置默认主画面（第一个启用的摄像头）
+        main_id = _pick_default_main_camera()
+        if main_id:
+            set_main_camera(main_id)
+            log_message(f"Default main camera set to {main_id}")
 
         log_message(f"Sentry Safety Detection started on {app_config.API_HOST}:{app_config.API_PORT}")
         log_message(f"Access the multi-camera console at http://{app_config.API_HOST}:{app_config.API_PORT}/multi")
