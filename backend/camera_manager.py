@@ -926,6 +926,10 @@ class CameraManager:
                 if sleep_time > 0:
                     time.sleep(sleep_time)
 
+        cap.release()
+        with self._lock:
+            state.cap = None
+
 
 class CameraConfigLoader:
     """摄像头配置加载器"""
