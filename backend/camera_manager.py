@@ -619,6 +619,21 @@ class CameraManager:
             "record_path": state.record_path,
         }
 
+    def set_decode_mode(self, camera_id: str, mode: DecodeMode) -> bool:
+        """切换摄像头解码模式（不重启解码器）"""
+        with self._lock:
+            if camera_id not in self._cameras:
+                return False
+            state = self._cameras[camera_id]
+            old_mode = state.decode_mode
+            state.decode_mode = mode
+            # 切到 SCHEDULED 时清理事件，避免遗留请求
+            if mode == DecodeMode.SCHEDULED:
+                state.frame_request_event.clear()
+                state.frame_ready_event.clear()
+            logger.info(f"Camera {camera_id} decode mode: {old_mode.value} -> {mode.value}")
+            return True
+
     def _camera_loop(self, camera_id: str):
         """摄像头工作线程主循环"""
         while True:
@@ -740,35 +755,55 @@ class CameraManager:
         target_interval = 1.0 / (video_fps * 1.0) if is_video_file and video_fps > 0 else 0.0
 
         while True:
+            loop_start = time.perf_counter()
+
             with self._lock:
                 if not state.running:
                     break
+                mode = state.decode_mode
+
+            if mode == DecodeMode.SCHEDULED:
+                # 等待请求，避免空转
+                state.frame_request_event.wait(timeout=1.0)
+                if not state.running:
+                    break
+                if not state.frame_request_event.is_set():
+                    continue
+                state.frame_request_event.clear()
+
+            with self._lock:
                 pb = state.playback_state
 
             # 视频文件播放控制
             if is_video_file:
-                if not pb["playing"]:
-                    time.sleep(0.1)
-                    next_frame_time = time.perf_counter()
-                    continue
-                # 倍速控制
-                speed = pb.get("speed", 1.0)
-                target_interval = 1.0 / (video_fps * speed)
-                # seek 控制
-                target_idx = pb.get("current_frame_idx", 0)
-                current_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-                if abs(target_idx - current_idx) > 2:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, target_idx)
-                    next_frame_time = time.perf_counter()
+                if mode == DecodeMode.CONTINUOUS:
+                    if not pb["playing"]:
+                        time.sleep(0.1)
+                        next_frame_time = time.perf_counter()
+                        continue
+                    # 倍速控制
+                    speed = pb.get("speed", 1.0)
+                    target_interval = 1.0 / (video_fps * speed)
+                    # seek 控制
+                    target_idx = pb.get("current_frame_idx", 0)
+                    current_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+                    if abs(target_idx - current_idx) > 2:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, target_idx)
+                        next_frame_time = time.perf_counter()
 
-                # 等待到下一帧的目标时间点
-                now = time.perf_counter()
-                wait = next_frame_time - now
-                if wait > 0.001:
-                    time.sleep(wait)
-                elif wait < -target_interval * 2:
-                    # 如果落后太多（比如检测卡住导致），重置时间点避免连续跳帧
-                    next_frame_time = now + target_interval
+                    # 等待到下一帧的目标时间点
+                    now = time.perf_counter()
+                    wait = next_frame_time - now
+                    if wait > 0.001:
+                        time.sleep(wait)
+                    elif wait < -target_interval * 2:
+                        # 如果落后太多（比如检测卡住导致），重置时间点避免连续跳帧
+                        next_frame_time = now + target_interval
+                else:
+                    # SCHEDULED 模式下只取当前播放位置一帧
+                    if not pb.get("playing", True):
+                        time.sleep(0.1)
+                        continue
 
             ret, frame = cap.read()
 
@@ -859,9 +894,19 @@ class CameraManager:
                 frame_counter = 0
                 last_fps_time = current_time
                 # 保存当前帧到时间窗口缓冲区 (用于触发时提取前后多帧)
+                # CONTINUOUS 模式每 1 秒写一次；SCHEDULED 模式由 request_frame 写
+                if mode == DecodeMode.CONTINUOUS:
+                    with state.lock:
+                        if state.current_frame is not None:
+                            state.frame_history.append((current_time, state.current_frame.copy()))
+
+            # SCHEDULED 模式：保存到 current_scheduled_frame 并通知等待者
+            if mode == DecodeMode.SCHEDULED:
                 with state.lock:
-                    if state.current_frame is not None:
-                        state.frame_history.append((current_time, state.current_frame.copy()))
+                    state.current_scheduled_frame = frame
+                state.frame_ready_event.set()
+                # SCHEDULED 解完一帧后继续等待下一次请求
+                continue
 
             # 全局回调
             if self._global_frame_callback:
@@ -874,9 +919,12 @@ class CameraManager:
             if is_video_file and target_interval > 0:
                 next_frame_time += target_interval
 
-        cap.release()
-        with self._lock:
-            state.cap = None
+            # CONTINUOUS 模式：限制最大 25 FPS
+            if mode == DecodeMode.CONTINUOUS:
+                elapsed = time.perf_counter() - loop_start
+                sleep_time = max(0, 1.0 / 25 - elapsed)
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
 
 
 class CameraConfigLoader:
