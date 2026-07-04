@@ -389,6 +389,9 @@ class MultiDetector:
         """处理单个摄像头的检测循环（由策略线程调用）"""
         frame = self.camera_manager.get_frame(camera_id, allow_paused=False)
         if frame is None:
+            # SCHEDULED 模式下 get_frame 可能为空，主动请求一帧
+            frame = self.camera_manager.request_frame(camera_id, timeout=1.0, store_history=True)
+        if frame is None:
             return
 
         now = time.time()

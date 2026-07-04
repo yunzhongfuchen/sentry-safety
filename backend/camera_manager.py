@@ -140,6 +140,7 @@ class CameraManager:
         self._cameras: Dict[str, CameraState] = {}
         self._lock = threading.RLock()
         self._global_frame_callback: Optional[Callable[[str, np.ndarray], None]] = None
+        self._main_camera_id: Optional[str] = None
         
     def register_camera(self, config: CameraConfig) -> bool:
         """注册摄像头"""
@@ -455,6 +456,29 @@ class CameraManager:
         """获取所有摄像头ID列表"""
         with self._lock:
             return list(self._cameras.keys())
+
+    def set_main_camera(self, camera_id: Optional[str]) -> Optional[str]:
+        """设置主画面摄像头，旧主画面降级为按需解码，返回旧主画面 camera_id"""
+        with self._lock:
+            old_main = self._main_camera_id
+            if old_main and old_main in self._cameras:
+                self.set_decode_mode(old_main, DecodeMode.SCHEDULED)
+
+            if camera_id and camera_id in self._cameras:
+                self.set_decode_mode(camera_id, DecodeMode.CONTINUOUS)
+                self._main_camera_id = camera_id
+                logger.info(f"Main camera set to {camera_id}")
+            else:
+                self._main_camera_id = None
+                if camera_id:
+                    logger.warning(f"Cannot set main camera {camera_id}: not found")
+
+            return old_main
+
+    def get_main_camera(self) -> Optional[str]:
+        """获取当前主画面摄像头ID"""
+        with self._lock:
+            return self._main_camera_id
 
     def start_recording(self, camera_id: str, output_dir: Optional[str] = None) -> Optional[str]:
         """开始录制原始视频帧，返回高清录制文件路径。

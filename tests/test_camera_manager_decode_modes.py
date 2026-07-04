@@ -222,3 +222,52 @@ def test_request_frame_scheduled_triggers_decode_and_appends_history():
     frame = cm.request_frame("cam_01", timeout=0.1)
     assert frame is not None
     assert len(state.frame_history) == 1
+
+
+def test_camera_manager_set_main_camera():
+    cm = CameraManager()
+    cm.register_camera(CameraConfig(camera_id="old", source="0"))
+    cm.register_camera(CameraConfig(camera_id="new", source="0"))
+
+    cm.set_main_camera("old")
+    assert cm._cameras["old"].decode_mode == DecodeMode.CONTINUOUS
+
+    cm.set_main_camera("new")
+    assert cm._cameras["old"].decode_mode == DecodeMode.SCHEDULED
+    assert cm._cameras["new"].decode_mode == DecodeMode.CONTINUOUS
+    assert cm.get_main_camera() == "new"
+
+
+def test_set_main_camera_returns_old_main():
+    cm = CameraManager()
+    cm.register_camera(CameraConfig(camera_id="cam_a", source="0"))
+    cm.register_camera(CameraConfig(camera_id="cam_b", source="0"))
+
+    old = cm.set_main_camera("cam_a")
+    assert old is None
+
+    old = cm.set_main_camera("cam_b")
+    assert old == "cam_a"
+
+
+def test_set_main_camera_to_none_clears_main():
+    cm = CameraManager()
+    cm.register_camera(CameraConfig(camera_id="cam_1", source="0"))
+
+    cm.set_main_camera("cam_1")
+    assert cm.get_main_camera() == "cam_1"
+
+    cm.set_main_camera(None)
+    assert cm.get_main_camera() is None
+    assert cm._cameras["cam_1"].decode_mode == DecodeMode.SCHEDULED
+
+
+def test_set_main_camera_unknown_id_warns_and_clears():
+    cm = CameraManager()
+    cm.register_camera(CameraConfig(camera_id="cam_1", source="0"))
+    cm.set_main_camera("cam_1")
+
+    old = cm.set_main_camera("unknown")
+    assert old == "cam_1"
+    assert cm.get_main_camera() is None
+    assert cm._cameras["cam_1"].decode_mode == DecodeMode.SCHEDULED
