@@ -28,7 +28,7 @@ def test_scheduler_busy_flag_initialized_false():
         "helmet": ModelConfig(model_path="dummy.pt", detection_type="helmet", device="cpu")
     }
 
-    with patch("backend.gpu_scheduler.YOLO"):
+    with patch("backend.inference_backend.YOLO"):
         scheduler = GPUDynamicScheduler(cm, model_configs, num_queues=1, interval=0.1, warmup=False)
         assert scheduler._busy is False
         assert scheduler.MAX_FRAME_AGE == 0.5
@@ -51,7 +51,7 @@ def test_collect_due_frames_uses_request_frame():
         "helmet": ModelConfig(model_path="dummy.pt", detection_type="helmet", device="cpu")
     }
 
-    with patch("backend.gpu_scheduler.YOLO"):
+    with patch("backend.inference_backend.YOLO"):
         scheduler = GPUDynamicScheduler(cm, model_configs, num_queues=1, interval=0.1, warmup=False)
         now = time.time()
         tasks = scheduler._collect_due_frames(now)
@@ -79,7 +79,7 @@ def test_collect_due_frames_drops_none_frames():
         "helmet": ModelConfig(model_path="dummy.pt", detection_type="helmet", device="cpu")
     }
 
-    with patch("backend.gpu_scheduler.YOLO"):
+    with patch("backend.inference_backend.YOLO"):
         scheduler = GPUDynamicScheduler(cm, model_configs, num_queues=1, interval=0.1, warmup=False)
         now = time.time()
         tasks = scheduler._collect_due_frames(now)
@@ -111,7 +111,7 @@ def test_collect_due_frames_drops_old_frames():
         "helmet": ModelConfig(model_path="dummy.pt", detection_type="helmet", device="cpu")
     }
 
-    with patch("backend.gpu_scheduler.YOLO"):
+    with patch("backend.inference_backend.YOLO"):
         scheduler = GPUDynamicScheduler(cm, model_configs, num_queues=1, interval=0.1, warmup=False)
         now = time.time()
         tasks = scheduler._collect_due_frames(now)
@@ -136,7 +136,7 @@ def test_collect_due_frames_respects_interval():
         "helmet": ModelConfig(model_path="dummy.pt", detection_type="helmet", device="cpu")
     }
 
-    with patch("backend.gpu_scheduler.YOLO"):
+    with patch("backend.inference_backend.YOLO"):
         scheduler = GPUDynamicScheduler(cm, model_configs, num_queues=1, interval=0.1, warmup=False)
         # Set last_infer to now so interval has not elapsed
         now = time.time()

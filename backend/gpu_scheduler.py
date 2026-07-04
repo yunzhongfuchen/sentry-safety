@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-from ultralytics import YOLO
+
+from backend.inference_backend import InferenceBackend, YoloCudaBackend
 
 logger = logging.getLogger(__name__)
 
@@ -31,25 +32,24 @@ class ModelConfig:
 
 
 class ModelDetector:
-    """轻量模型包装，支持自定义 classes"""
+    """轻量模型包装，内部使用 InferenceBackend"""
 
-    def __init__(self, cfg: ModelConfig):
+    def __init__(self, cfg: ModelConfig, backend: InferenceBackend = None):
         self.cfg = cfg
-        self.model = YOLO(cfg.model_path)
         self.device = cfg.device
-        self.confidence = cfg.confidence
-        self.classes = cfg.classes if cfg.classes is not None else [0]
+        if backend is None:
+            self.backend = YoloCudaBackend(
+                model_path=cfg.model_path,
+                device=cfg.device,
+                confidence=cfg.confidence,
+                classes=cfg.classes,
+            )
+        else:
+            self.backend = backend
 
     def predict(self, frames: List[np.ndarray], half: bool = False):
-        """batch 推理，返回 ultralytics Results 列表"""
-        return self.model(
-            frames,
-            conf=self.confidence,
-            classes=self.classes,
-            device=self.device,
-            verbose=False,
-            half=half,
-        )
+        """batch 推理，返回结果列表"""
+        return self.backend.predict_batch(frames, self.cfg.detection_type)
 
 
 class QueueWorker(threading.Thread):
@@ -158,7 +158,13 @@ class GPUDynamicScheduler(threading.Thread):
         self.detectors: Dict[str, ModelDetector] = {}
         for dtype, cfg in model_configs.items():
             logger.info(f"加载模型 {dtype}: {cfg.model_path} ...")
-            d = ModelDetector(cfg)
+            backend = YoloCudaBackend(
+                model_path=cfg.model_path,
+                device=cfg.device,
+                confidence=cfg.confidence,
+                classes=cfg.classes,
+            )
+            d = ModelDetector(cfg, backend=backend)
             self.detectors[dtype] = d
             logger.info(f"  -> 完成，设备: {cfg.device}")
 
