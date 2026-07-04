@@ -190,3 +190,35 @@ class TestConnectAndStreamModes:
 
         # Should not have decoded any frames without a request
         assert decoded_count == 0
+
+
+def test_request_frame_continuous_returns_current_frame():
+    cm = CameraManager()
+    cfg = CameraConfig(camera_id="cam_01", source="0")
+    cm.register_camera(cfg)
+    cm.set_decode_mode("cam_01", DecodeMode.CONTINUOUS)
+
+    dummy = np.zeros((480, 640, 3), dtype=np.uint8)
+    cm._cameras["cam_01"].current_frame = dummy
+
+    frame = cm.request_frame("cam_01")
+    assert frame is not None
+    assert frame.shape == dummy.shape
+
+
+def test_request_frame_scheduled_triggers_decode_and_appends_history():
+    cm = CameraManager()
+    cfg = CameraConfig(camera_id="cam_01", source="0")
+    cm.register_camera(cfg)
+
+    # 模拟 SCHEDULED 模式下解码线程已准备好帧
+    state = cm._cameras["cam_01"]
+    dummy = np.zeros((480, 640, 3), dtype=np.uint8)
+    state.current_scheduled_frame = dummy
+
+    # 先 set event，再 request，模拟线程已解完帧
+    state.frame_ready_event.set()
+
+    frame = cm.request_frame("cam_01", timeout=0.1)
+    assert frame is not None
+    assert len(state.frame_history) == 1

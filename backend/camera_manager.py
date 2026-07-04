@@ -254,6 +254,43 @@ class CameraManager:
             with state.lock:
                 return state.current_frame.copy() if state.current_frame is not None else None
 
+    def request_frame(self, camera_id: str, timeout: float = 1.0,
+                      store_history: bool = True) -> Optional[np.ndarray]:
+        """
+        统一取帧入口。
+        - CONTINUOUS 模式：直接返回当前最新帧。
+        - SCHEDULED 模式：触发一帧解码并等待返回。
+        Args:
+            timeout: SCHEDULED 模式最大等待秒数。
+            store_history: 是否将取到的帧写入 frame_history（用于触发窗口回溯）。
+        """
+        with self._lock:
+            if camera_id not in self._cameras:
+                return None
+            state = self._cameras[camera_id]
+
+        if state.decode_mode == DecodeMode.CONTINUOUS:
+            with state.lock:
+                frame = state.current_frame
+                if frame is not None:
+                    return frame.copy()
+            return None
+
+        # SCHEDULED 模式：触发解码
+        state.frame_request_event.set()
+        if state.frame_ready_event.wait(timeout=timeout):
+            state.frame_ready_event.clear()
+            with state.lock:
+                frame = state.current_scheduled_frame
+                state.current_scheduled_frame = None
+            if frame is not None:
+                if store_history:
+                    state.frame_history.append((time.time(), frame.copy()))
+                # 保持 current_frame 兼容，让 get_frame 也能读到最新帧
+                state.current_frame = frame
+                return frame
+        return None
+
     def get_window_frames(self, camera_id: str, start_time: float, end_time: float) -> List[Tuple[float, np.ndarray]]:
         """
         获取指定摄像头在某个时间窗口内的历史帧
