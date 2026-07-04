@@ -1,0 +1,1 @@
+aarch64-linux-gnu-g++ -fPIC   -shared -Wl,-soname,libblank.so -o ../../../lib/libblank.so CMakeFiles/blank.dir/src/blank.cc.o   -L/workspace/sophon-stream-master/soc-sdk/lib  -Wl,-rpath,/workspace/sophon-stream-master/soc-sdk/lib -lbmlib -lbmrt -lbmcv -lyuv -fprofile-arcs -lgcov -lpthread 

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>阴影质感</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Noto Sans SC',sans-serif; background:#eef1f4; color:#1e293b; padding:32px; line-height:1.5; }
+  h1 { font-family:'Space Grotesk','Noto Sans SC'; font-size:22px; margin-bottom:4px; }
+  .sub { color:#64748b; font-size:14px; margin-bottom:28px; }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:22px; }
+  .col { cursor:pointer; border-radius:22px; padding:20px; transition:transform .15s; border:3px solid transparent; background:#eef1f4; }
+  .col:hover { transform:translateY(-4px); }
+  .col.sel { border-color:#2563eb; }
+  .name { font-family:'Space Grotesk'; font-weight:600; font-size:15px; margin-top:16px; color:#1e293b; }
+  .desc { font-size:12px; color:#64748b; margin-top:4px; min-height:48px; }
+
+  .card { background:rgba(255,255,255,.85); border-radius:16px; padding:16px; }
+  .card-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .card-title { font-weight:700; font-size:13px; }
+  .badge { font-size:10px; font-weight:600; padding:3px 9px; border-radius:20px; background:rgba(37,99,235,.12); color:#2563eb; }
+  .stat-row { display:flex; gap:10px; margin-bottom:12px; }
+  .stat { flex:1; border-radius:10px; padding:10px; }
+  .stat-v { font-family:'Space Grotesk'; font-weight:700; font-size:22px; line-height:1; color:#2563eb; }
+  .stat-l { font-size:10px; margin-top:4px; color:#64748b; }
+  .btn { font-size:12px; font-weight:600; padding:9px 16px; border-radius:10px; border:none; color:#fff; background:#2563eb; cursor:pointer; }
+
+  /* 1 — Crisp / flat-ish */
+  .s1 .card { box-shadow:0 1px 2px rgba(30,41,59,.06),0 4px 10px rgba(30,41,59,.05); border:1px solid rgba(30,41,59,.06); }
+  .s1 .stat { background:#f4f6f9; border:1px solid rgba(30,41,59,.05); }
+
+  /* 2 — Balanced glass-clay */
+  .s2 .card { box-shadow:0 1px 2px rgba(30,41,59,.05),0 10px 22px rgba(30,41,59,.07),inset 0 1px 0 rgba(255,255,255,.95); }
+  .s2 .stat { background:#eaeef3; box-shadow:inset 2px 2px 5px rgba(148,163,184,.35),inset -2px -2px 5px rgba(255,255,255,.95); }
+
+  /* 3 — Pronounced clay */
+  .s3 .card { box-shadow:6px 6px 16px rgba(148,163,184,.5),-6px -6px 16px rgba(255,255,255,.9),inset 0 1px 0 rgba(255,255,255,.9); }
+  .s3 .stat { background:#eaeef3; box-shadow:inset 4px 4px 8px rgba(148,163,184,.45),inset -4px -4px 8px rgba(255,255,255,.95); }
+  .s3 .btn { box-shadow:3px 3px 8px rgba(148,163,184,.5),-2px -2px 6px rgba(255,255,255,.7); }
+</style>
+</head>
+<body>
+  <h1>阴影质感三档（Cool Slate 配色）</h1>
+  <p class="sub">同一张卡片，三种阴影轻重。点标题选中你偏好的那一档。</p>
+  <div class="grid">
+
+    <div class="col s1" data-choice="light" onclick="pick(this)">
+      <div class="card">
+        <div class="card-top"><span class="card-title">1号摄像头</span><span class="badge">检测中</span></div>
+        <div class="stat-row"><div class="stat"><div class="stat-v">3</div><div class="stat-l">今日告警</div></div><div class="stat"><div class="stat-v">98%</div><div class="stat-l">在线率</div></div></div>
+        <button class="btn">查看记录</button>
+      </div>
+      <div class="name">① 清爽扁平 Crisp</div>
+      <div class="desc">几乎无拟态，细边框 + 极浅投影。最现代、最"SaaS 后台"，信息密度友好。</div>
+    </div>
+
+    <div class="col s2" data-choice="balanced" onclick="pick(this)">
+      <div class="card">
+        <div class="card-top"><span class="card-title">1号摄像头</span><span class="badge">检测中</span></div>
+        <div class="stat-row"><div class="stat"><div class="stat-v">3</div><div class="stat-l">今日告警</div></div><div class="stat"><div class="stat-v">98%</div><div class="stat-l">在线率</div></div></div>
+        <button class="btn">查看记录</button>
+      </div>
+      <div class="name">② 平衡玻璃黏土 Balanced</div>
+      <div class="desc">保留玻璃卡 + 内凹黏土小块，但投影收薄。质感与克制之间的平衡点（推荐）。</div>
+    </div>
+
+    <div class="col s3" data-choice="pronounced" onclick="pick(this)">
+      <div class="card">
+        <div class="card-top"><span class="card-title">1号摄像头</span><span class="badge">检测中</span></div>
+        <div class="stat-row"><div class="stat"><div class="stat-v">3</div><div class="stat-l">今日告警</div></div><div class="stat"><div class="stat-v">98%</div><div class="stat-l">在线率</div></div></div>
+        <button class="btn">查看记录</button>
+      </div>
+      <div class="name">③ 浓郁黏土 Pronounced</div>
+      <div class="desc">强双向黏土投影，柔软厚实、有捏出来的手感。个性强但信息密度高时略显吵。</div>
+    </div>
+
+  </div>
+<script>
+  function pick(el){
+    document.querySelectorAll('.col').forEach(c=>c.classList.remove('sel'));
+    el.classList.add('sel');
+    if(window.toggleSelect){/* keep helper happy */}
+    if(window.brainstorm&&window.brainstorm.send){window.brainstorm.send({type:'click',choice:el.dataset.choice,text:el.querySelector('.name').textContent});}
+  }
+</script>
+</body>
+</html>

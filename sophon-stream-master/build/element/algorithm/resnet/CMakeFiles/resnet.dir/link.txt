@@ -1,0 +1,1 @@
+aarch64-linux-gnu-g++ -fPIC   -shared -Wl,-soname,libresnet.so -o ../../../lib/libresnet.so CMakeFiles/resnet.dir/src/resnet_multitask.cc.o CMakeFiles/resnet.dir/src/resnet.cc.o   -L/workspace/sophon-stream-master/soc-sdk/lib  -Wl,-rpath,/workspace/sophon-stream-master/soc-sdk/lib -lbmlib -lbmrt -lbmcv -lyuv -fprofile-arcs -lgcov -lpthread 

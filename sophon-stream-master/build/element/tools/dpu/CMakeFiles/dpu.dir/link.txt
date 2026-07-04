@@ -1,0 +1,1 @@
+aarch64-linux-gnu-g++ -fPIC -g  -fprofile-arcs -g  -fprofile-arcs -ftest-coverage -g -rdynamic  -shared -Wl,-soname,libdpu.so -o ../../../lib/libdpu.so CMakeFiles/dpu.dir/src/dpu.cc.o   -L/workspace/sophon-stream-master/soc-sdk/lib  -Wl,-rpath,/workspace/sophon-stream-master/soc-sdk/lib -lbmlib -lbmrt -lbmcv -lyuv -fprofile-arcs -lgcov -lpthread 

@@ -1,0 +1,124 @@
+<h2>设置页设计（全局 + 检测类型默认值）</h2>
+<p class="subtitle">去掉全局 VLM 开关和 P0/P1 冷却，每类检测增加冷却时间</p>
+
+<div class="mockup">
+  <div class="mockup-header">⚙️ 全局配置</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;font-size:13px;">
+      <div>
+        <label style="display:block;color:#64748b;font-size:12px;margin-bottom:4px;">VLM 最大并发</label>
+        <input class="mock-input" value="3" style="width:100%;" />
+      </div>
+      <div>
+        <label style="display:block;color:#64748b;font-size:12px;margin-bottom:4px;">VLM 巡检间隔 (s, 0=关闭)</label>
+        <input class="mock-input" value="30" style="width:100%;" />
+      </div>
+      <div>
+        <label style="display:block;color:#64748b;font-size:12px;margin-bottom:4px;">最大记录数</label>
+        <input class="mock-input" value="100" style="width:100%;" />
+      </div>
+      <div>
+        <label style="display:block;color:#64748b;font-size:12px;margin-bottom:4px;">存储上限 (MB)</label>
+        <input class="mock-input" value="500" style="width:100%;" />
+      </div>
+      <div>
+        <label style="display:block;color:#64748b;font-size:12px;margin-bottom:4px;">快照质量</label>
+        <input class="mock-input" value="70" style="width:100%;" />
+      </div>
+      <div>
+        <label style="display:block;color:#64748b;font-size:12px;margin-bottom:4px;">帧质量</label>
+        <input class="mock-input" value="60" style="width:100%;" />
+      </div>
+    </div>
+    <div style="margin-top:12px;color:#94a3b8;font-size:12px;">注：已移除「启用 VLM 复核」全局开关和「P0/P1 告警冷却」。</div>
+    <div style="margin-top:12px;"><button class="mock-button">保存全局配置</button></div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:16px;">
+  <div class="mockup-header">🔍 检测类型默认值</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:80px repeat(6, 1fr);gap:8px;font-weight:600;color:#64748b;font-size:12px;margin-bottom:8px;">
+      <span>类型</span>
+      <span style="text-align:center;">启用</span>
+      <span style="text-align:center;">间隔(s)</span>
+      <span style="text-align:center;">阈值</span>
+      <span style="text-align:center;">连续</span>
+      <span style="text-align:center;">冷却(s)</span>
+      <span style="text-align:center;">VLM</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:80px repeat(6, 1fr);gap:8px;align-items:center;font-size:13px;border-bottom:1px solid #e2e8f0;padding:8px 0;">
+      <span style="color:#ef4444;font-weight:500;">明火</span>
+      <input type="checkbox" checked style="justify-self:center;" />
+      <input class="mock-input" value="1" style="text-align:center;" />
+      <input class="mock-input" value="0.6" style="text-align:center;" />
+      <input class="mock-input" value="2" style="text-align:center;" />
+      <input class="mock-input" value="10" style="text-align:center;" />
+      <input type="checkbox" checked style="justify-self:center;" />
+    </div>
+
+    <div style="display:grid;grid-template-columns:80px repeat(6, 1fr);gap:8px;align-items:center;font-size:13px;border-bottom:1px solid #e2e8f0;padding:8px 0;">
+      <span style="color:#f97316;font-weight:500;">烟雾</span>
+      <input type="checkbox" checked style="justify-self:center;" />
+      <input class="mock-input" value="1" style="text-align:center;" />
+      <input class="mock-input" value="0.55" style="text-align:center;" />
+      <input class="mock-input" value="2" style="text-align:center;" />
+      <input class="mock-input" value="10" style="text-align:center;" />
+      <input type="checkbox" checked style="justify-self:center;" />
+    </div>
+
+    <div style="display:grid;grid-template-columns:80px repeat(6, 1fr);gap:8px;align-items:center;font-size:13px;border-bottom:1px solid #e2e8f0;padding:8px 0;">
+      <span style="color:#22c55e;font-weight:500;">工服</span>
+      <input type="checkbox" style="justify-self:center;" />
+      <input class="mock-input" value="1" style="text-align:center;" />
+      <input class="mock-input" value="0.5" style="text-align:center;" />
+      <input class="mock-input" value="1" style="text-align:center;" />
+      <input class="mock-input" value="3" style="text-align:center;" />
+      <input type="checkbox" style="justify-self:center;" />
+    </div>
+
+    <div style="display:grid;grid-template-columns:80px repeat(6, 1fr);gap:8px;align-items:center;font-size:13px;border-bottom:1px solid #e2e8f0;padding:8px 0;">
+      <span style="color:#0ea5e9;font-weight:500;">口罩</span>
+      <input type="checkbox" style="justify-self:center;" />
+      <input class="mock-input" value="1" style="text-align:center;" />
+      <input class="mock-input" value="0.5" style="text-align:center;" />
+      <input class="mock-input" value="1" style="text-align:center;" />
+      <input class="mock-input" value="3" style="text-align:center;" />
+      <input type="checkbox" style="justify-self:center;" />
+    </div>
+
+    <div style="display:grid;grid-template-columns:80px repeat(6, 1fr);gap:8px;align-items:center;font-size:13px;border-bottom:1px solid #e2e8f0;padding:8px 0;">
+      <span style="color:#a855f7;font-weight:500;">吸烟</span>
+      <input type="checkbox" style="justify-self:center;" />
+      <input class="mock-input" value="1" style="text-align:center;" />
+      <input class="mock-input" value="0.5" style="text-align:center;" />
+      <input class="mock-input" value="1" style="text-align:center;" />
+      <input class="mock-input" value="3" style="text-align:center;" />
+      <input type="checkbox" style="justify-self:center;" />
+    </div>
+
+    <div style="display:grid;grid-template-columns:80px repeat(6, 1fr);gap:8px;align-items:center;font-size:13px;padding:8px 0;">
+      <span style="color:#eab308;font-weight:500;">睡岗</span>
+      <input type="checkbox" style="justify-self:center;" />
+      <input class="mock-input" value="60" style="text-align:center;" />
+      <input class="mock-input" value="0.7" style="text-align:center;" />
+      <input class="mock-input" value="3" style="text-align:center;" />
+      <input class="mock-input" value="30" style="text-align:center;" />
+      <input type="checkbox" style="justify-self:center;" />
+    </div>
+
+    <div style="margin-top:12px;"><button class="mock-button">保存检测默认值</button></div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>变更点</h3>
+  <ul>
+    <li>全局配置里移除「启用 VLM 复核」开关。</li>
+    <li>全局配置里移除「P0 告警冷却」「P1 告警冷却」。</li>
+    <li>检测类型默认值表格移除「级别」列（不再分 P0/P1）。</li>
+    <li>检测类型默认值表格新增「冷却(s)」列，每类单独配置。</li>
+    <li>摄像头编辑弹窗和批量配置弹窗里的类型表格同步上述变更。</li>
+  </ul>
+</div>

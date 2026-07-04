@@ -1,0 +1,90 @@
+<h2>记录列表页设计</h2>
+<p class="subtitle">顶部统计、过滤条件、记录表格</p>
+
+<div class="mockup">
+  <div class="mockup-header">📋 告警记录</div>
+  <div class="mockup-body">
+    <!-- Stats bar -->
+    <div style="display:flex;gap:12px;margin-bottom:16px;">
+      <div style="flex:1;background:#f8fafc;border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:#334155;">128</div>
+        <div style="font-size:12px;color:#64748b;">总记录</div>
+      </div>
+      <div style="flex:1;background:#fff7ed;border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:#f97316;">42</div>
+        <div style="font-size:12px;color:#64748b;">待确认</div>
+      </div>
+      <div style="flex:1;background:#fef2f2;border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:#ef4444;">56</div>
+        <div style="font-size:12px;color:#64748b;">已确认</div>
+      </div>
+      <div style="flex:1;background:#f0fdf4;border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:#22c55e;">30</div>
+        <div style="font-size:12px;color:#64748b;">误报</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+      <select class="mock-input" style="width:140px;"><option>全部摄像头</option><option>cam-01</option></select>
+      <select class="mock-input" style="width:120px;"><option>全部类型</option><option>明火</option><option>烟雾</option></select>
+      <select class="mock-input" style="width:140px;"><option>全部级别</option><option>小模型报警</option><option>大模型报警</option><option>大模型忽略</option></select>
+      <select class="mock-input" style="width:120px;"><option>全部状态</option><option>待确认</option><option>已确认</option><option>误报</option></select>
+      <button class="mock-button" style="margin-left:auto;">刷新</button>
+    </div>
+
+    <!-- Table -->
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="background:#f1f5f9;text-align:left;">
+          <th style="padding:8px;">ID</th>
+          <th style="padding:8px;">时间</th>
+          <th style="padding:8px;">摄像头</th>
+          <th style="padding:8px;">类型</th>
+          <th style="padding:8px;">级别</th>
+          <th style="padding:8px;">状态</th>
+          <th style="padding:8px;">置信度</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #e2e8f0;">
+          <td style="padding:8px;">a1b2c3d4</td>
+          <td style="padding:8px;">06/12 14:32</td>
+          <td style="padding:8px;">cam-01</td>
+          <td style="padding:8px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;margin-right:4px;"></span>明火</td>
+          <td style="padding:8px;"><span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px;font-size:12px;">小模型报警</span></td>
+          <td style="padding:8px;"><span style="background:#fff7ed;color:#9a3412;padding:2px 8px;border-radius:12px;font-size:12px;">待确认</span></td>
+          <td style="padding:8px;">87%</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e2e8f0;">
+          <td style="padding:8px;">e5f6g7h8</td>
+          <td style="padding:8px;">06/12 14:28</td>
+          <td style="padding:8px;">cam-02</td>
+          <td style="padding:8px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#a855f7;margin-right:4px;"></span>吸烟</td>
+          <td style="padding:8px;"><span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:12px;">大模型报警</span></td>
+          <td style="padding:8px;"><span style="background:#fff7ed;color:#9a3412;padding:2px 8px;border-radius:12px;font-size:12px;">待确认</span></td>
+          <td style="padding:8px;">92%</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e2e8f0;">
+          <td style="padding:8px;">i9j0k1l2</td>
+          <td style="padding:8px;">06/12 14:15</td>
+          <td style="padding:8px;">cam-01</td>
+          <td style="padding:8px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#0ea5e9;margin-right:4px;"></span>口罩</td>
+          <td style="padding:8px;"><span style="background:#f3f4f6;color:#374151;padding:2px 8px;border-radius:12px;font-size:12px;">大模型忽略</span></td>
+          <td style="padding:8px;"><span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:12px;font-size:12px;">误报</span></td>
+          <td style="padding:8px;">-</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>变更点</h3>
+  <ul>
+    <li>统计卡片：总记录 / 待确认 / 已确认 / 误报。</li>
+    <li>过滤条件「告警级别」选项改为：小模型报警 / 大模型报警 / 大模型忽略。</li>
+    <li>过滤条件「状态」选项改为：待确认 / 已确认 / 误报。</li>
+    <li>表格里「级别」列显示小模型报警/大模型报警/大模型忽略标签。</li>
+  </ul>
+</div>

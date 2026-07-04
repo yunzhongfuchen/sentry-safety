@@ -1398,6 +1398,10 @@ def set_main_camera(camera_id: Optional[str]):
     """切换主画面摄像头，同步更新流缓冲"""
     old_main = camera_manager.get_main_camera() if camera_manager else None
 
+    # 如果主画面没变，避免 unregister/register 抖动
+    if camera_id == old_main:
+        return
+
     if old_main:
         stream_server.unregister_camera(old_main)
 
@@ -1433,8 +1437,6 @@ def _overlay_loop():
 
             frame = camera_manager.get_frame(main_id)
             if frame is None:
-                frame = camera_manager.request_frame(main_id, timeout=0.05, store_history=False)
-            if frame is None:
                 time.sleep(0.02)
                 continue
 
@@ -1446,11 +1448,11 @@ def _overlay_loop():
                 types_to_draw = list(_overlay_config)
 
             if types_to_draw:
-                state = camera_manager._cameras.get(main_id)
+                cam_status = camera_manager.get_camera_status(main_id)
                 cam_enabled_types = set()
-                if state and state.config.detection_types:
+                if cam_status and cam_status.get("detection_types"):
                     cam_enabled_types = {
-                        k for k, v in state.config.detection_types.items()
+                        k for k, v in cam_status["detection_types"].items()
                         if v.get("enabled", False)
                     }
                 effective_types = [t for t in types_to_draw if t in cam_enabled_types]

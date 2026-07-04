@@ -1,0 +1,1 @@
+aarch64-linux-gnu-g++ -fPIC   -shared -Wl,-soname,libconverger.so -o ../../../lib/libconverger.so CMakeFiles/converger.dir/src/converger.cc.o   -L/workspace/sophon-stream-master/soc-sdk/lib  -Wl,-rpath,/workspace/sophon-stream-master/soc-sdk/lib -lbmlib -lbmrt -lbmcv -lyuv -fprofile-arcs -lgcov -lpthread 

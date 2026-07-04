@@ -1,0 +1,1 @@
+aarch64-linux-gnu-g++ -fPIC   -shared -Wl,-soname,libfilter.so -o ../../../lib/libfilter.so CMakeFiles/filter.dir/src/filter.cc.o   -L/workspace/sophon-stream-master/soc-sdk/lib  -Wl,-rpath,/workspace/sophon-stream-master/soc-sdk/lib -lbmlib -lbmrt -lbmcv -lyuv -fprofile-arcs -lgcov -lpthread 

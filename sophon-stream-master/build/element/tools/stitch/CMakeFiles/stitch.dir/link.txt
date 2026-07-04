@@ -1,0 +1,1 @@
+aarch64-linux-gnu-g++ -fPIC   -shared -Wl,-soname,libstitch.so -o ../../../lib/libstitch.so CMakeFiles/stitch.dir/src/stitch.cc.o   -L/workspace/sophon-stream-master/soc-sdk/lib  -Wl,-rpath,/workspace/sophon-stream-master/soc-sdk/lib -lbmlib -lbmrt -lbmcv -lyuv -fprofile-arcs -lgcov -lpthread 

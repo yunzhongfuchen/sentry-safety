@@ -274,7 +274,10 @@ class CameraManager:
             with state.lock:
                 frame = state.current_frame
                 if frame is not None:
-                    return frame.copy()
+                    frame_copy = frame.copy()
+                    if store_history:
+                        state.frame_history.append((time.time(), frame_copy))
+                    return frame_copy
             return None
 
         # SCHEDULED 模式：触发解码
@@ -286,11 +289,14 @@ class CameraManager:
                 state.current_scheduled_frame = None
                 if frame is not None:
                     # 保持 current_frame 兼容，让 get_frame 也能读到最新帧
-                    state.current_frame = frame
+                    frame_copy = frame.copy()
+                    state.current_frame = frame_copy
             if frame is not None:
                 if store_history:
-                    state.frame_history.append((time.time(), frame.copy()))
-                return frame
+                    state.frame_history.append((time.time(), frame_copy))
+                return frame_copy
+        # 超时：清理请求事件，避免残留
+        state.frame_request_event.clear()
         return None
 
     def get_window_frames(self, camera_id: str, start_time: float, end_time: float) -> List[Tuple[float, np.ndarray]]:

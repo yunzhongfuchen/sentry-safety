@@ -152,7 +152,6 @@ class GPUDynamicScheduler(threading.Thread):
         # (camera_id, detection_type) -> last_infer_timestamp
         self.last_infer: Dict[Tuple[str, str], float] = {}
         self._busy = False
-        self.MAX_FRAME_AGE = 0.5  # 帧最大年龄 0.5 秒
 
         # 加载所有模型
         self.detectors: Dict[str, ModelDetector] = {}
@@ -249,15 +248,9 @@ class GPUDynamicScheduler(threading.Thread):
             if not self._is_camera_enabled(cam_id):
                 continue
 
-            # 取帧并在返回后记录采集完成时间
+            # 取帧
             frame = self.camera_manager.request_frame(cam_id, timeout=1.0, store_history=True)
-            collected_at = time.time()
             if frame is None:
-                continue
-
-            frame_age = time.time() - collected_at
-            if frame_age > self.MAX_FRAME_AGE:
-                logger.debug(f"Drop old frame from {cam_id}, age={frame_age:.2f}s")
                 continue
 
             det_types = self._get_camera_detection_types(cam_id)

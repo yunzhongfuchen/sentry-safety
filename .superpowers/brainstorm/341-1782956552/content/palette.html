@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>配色方向</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Noto Sans SC',sans-serif; background:#e9ece7; color:#1a211c; padding:32px; line-height:1.5; }
+  h1 { font-family:'Space Grotesk','Noto Sans SC'; font-size:22px; margin-bottom:4px; }
+  .sub { color:#6b756c; font-size:14px; margin-bottom:28px; }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:22px; }
+  .col { cursor:pointer; border-radius:20px; padding:6px; transition:transform .15s, box-shadow .15s; border:3px solid transparent; }
+  .col:hover { transform:translateY(-4px); }
+  .col.sel { border-color:#111; }
+  .name { font-family:'Space Grotesk'; font-weight:600; font-size:15px; padding:10px 12px 4px; }
+  .desc { font-size:12px; color:#6b756c; padding:0 12px 12px; min-height:34px; }
+  .swatches { display:flex; gap:6px; padding:0 12px 12px; }
+  .sw { width:26px; height:26px; border-radius:7px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.06); }
+
+  /* mini mockup */
+  .demo { border-radius:16px; padding:16px; }
+  .card { border-radius:14px; padding:14px; margin-bottom:12px; }
+  .card-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .card-title { font-weight:700; font-size:13px; }
+  .badge { font-size:10px; font-weight:600; padding:3px 9px; border-radius:20px; }
+  .stat-row { display:flex; gap:10px; }
+  .stat { flex:1; border-radius:10px; padding:9px 10px; }
+  .stat-v { font-family:'Space Grotesk'; font-weight:700; font-size:20px; line-height:1; }
+  .stat-l { font-size:10px; margin-top:3px; opacity:.7; }
+  .btn { font-size:12px; font-weight:600; padding:8px 14px; border-radius:10px; border:none; color:#fff; margin-top:4px; cursor:pointer; }
+
+  /* A — Refined Ember (暖橙精修) */
+  .A .demo { background:#f0f2ee; }
+  .A .card { background:rgba(255,255,255,.82); box-shadow:0 1px 2px rgba(15,23,42,.04),0 10px 22px rgba(15,23,42,.05),inset 0 1px 0 rgba(255,255,255,.9); }
+  .A .card-title{color:#1a211c;} .A .badge{background:rgba(224,90,24,.12);color:#c44c12;}
+  .A .stat{background:#eef1ec;box-shadow:inset 2px 2px 5px rgba(181,189,177,.4),inset -2px -2px 5px rgba(255,255,255,.9);}
+  .A .stat-v{color:#d9531a;} .A .btn{background:#d9531a;}
+
+  /* B — Cool Slate (冷静蓝灰) */
+  .B .demo { background:#eef1f4; }
+  .B .card { background:rgba(255,255,255,.85); box-shadow:0 1px 2px rgba(30,41,59,.05),0 10px 22px rgba(30,41,59,.07),inset 0 1px 0 rgba(255,255,255,.95); }
+  .B .card-title{color:#1e293b;} .B .badge{background:rgba(37,99,235,.12);color:#2563eb;}
+  .B .stat{background:#eaeef3;box-shadow:inset 2px 2px 5px rgba(148,163,184,.35),inset -2px -2px 5px rgba(255,255,255,.95);}
+  .B .stat-v{color:#2563eb;} .B .btn{background:#2563eb;}
+
+  /* C — Guardian Teal (哨兵墨青) */
+  .C .demo { background:#eaf0ee; }
+  .C .card { background:rgba(255,255,255,.84); box-shadow:0 1px 2px rgba(6,44,38,.05),0 10px 22px rgba(6,44,38,.07),inset 0 1px 0 rgba(255,255,255,.92); }
+  .C .card-title{color:#12241f;} .C .badge{background:rgba(13,148,110,.13);color:#0b7d5c;}
+  .C .stat{background:#e6ece9;box-shadow:inset 2px 2px 5px rgba(150,178,168,.4),inset -2px -2px 5px rgba(255,255,255,.92);}
+  .C .stat-v{color:#0d9470;} .C .btn{background:#0d9470;}
+</style>
+</head>
+<body>
+  <h1>配色方向：保留 glass-clay，换一套底色 + 主色 + 阴影</h1>
+  <p class="sub">三个方向都是同一套玻璃+黏土质感，差别在冷暖底色、主色和阴影调性。点一个你偏好的（点标题即可选中）。</p>
+  <div class="grid">
+
+    <div class="col A" data-choice="A" onclick="pick(this)">
+      <div class="demo">
+        <div class="card">
+          <div class="card-top"><span class="card-title">1号摄像头 · 车间东</span><span class="badge">检测中</span></div>
+          <div class="stat-row">
+            <div class="stat"><div class="stat-v">3</div><div class="stat-l">今日告警</div></div>
+            <div class="stat"><div class="stat-v">98%</div><div class="stat-l">在线率</div></div>
+          </div>
+        </div>
+        <button class="btn">查看记录</button>
+      </div>
+      <div class="name">A · 暖橙精修 Refined Ember</div>
+      <div class="desc">现有方向的升级版：暖白底不变，橙色略降饱和更耐看，阴影收薄一档。</div>
+      <div class="swatches"><div class="sw" style="background:#f0f2ee"></div><div class="sw" style="background:#d9531a"></div><div class="sw" style="background:#0d9f6e"></div><div class="sw" style="background:#dc2626"></div><div class="sw" style="background:#1a211c"></div></div>
+    </div>
+
+    <div class="col B" data-choice="B" onclick="pick(this)">
+      <div class="demo">
+        <div class="card">
+          <div class="card-top"><span class="card-title">1号摄像头 · 车间东</span><span class="badge">检测中</span></div>
+          <div class="stat-row">
+            <div class="stat"><div class="stat-v">3</div><div class="stat-l">今日告警</div></div>
+            <div class="stat"><div class="stat-v">98%</div><div class="stat-l">在线率</div></div>
+          </div>
+        </div>
+        <button class="btn">查看记录</button>
+      </div>
+      <div class="name">B · 冷静蓝灰 Cool Slate</div>
+      <div class="desc">冷调中性底 + 蓝色主色，更像专业监控后台，阴影偏冷、更克制。</div>
+      <div class="swatches"><div class="sw" style="background:#eef1f4"></div><div class="sw" style="background:#2563eb"></div><div class="sw" style="background:#0d9488"></div><div class="sw" style="background:#dc2626"></div><div class="sw" style="background:#1e293b"></div></div>
+    </div>
+
+    <div class="col C" data-choice="C" onclick="pick(this)">
+      <div class="demo">
+        <div class="card">
+          <div class="card-top"><span class="card-title">1号摄像头 · 车间东</span><span class="badge">检测中</span></div>
+          <div class="stat-row">
+            <div class="stat"><div class="stat-v">3</div><div class="stat-l">今日告警</div></div>
+            <div class="stat"><div class="stat-v">98%</div><div class="stat-l">在线率</div></div>
+          </div>
+        </div>
+        <button class="btn">查看记录</button>
+      </div>
+      <div class="name">C · 哨兵墨青 Guardian Teal</div>
+      <div class="desc">墨绿青主色，契合"安全/哨兵"语义，沉稳专业，红色告警对比更醒目。</div>
+      <div class="swatches"><div class="sw" style="background:#eaf0ee"></div><div class="sw" style="background:#0d9470"></div><div class="sw" style="background:#e05a18"></div><div class="sw" style="background:#dc2626"></div><div class="sw" style="background:#12241f"></div></div>
+    </div>
+
+  </div>
+<script>
+  function pick(el){
+    document.querySelectorAll('.col').forEach(c=>c.classList.remove('sel'));
+    el.classList.add('sel');
+    if(window.__recordChoice) window.__recordChoice(el.dataset.choice, el.querySelector('.name').textContent);
+  }
+</script>
+</body>
+</html>
