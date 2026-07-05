@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from backend.inference_backend import InferenceBackend, YoloCudaBackend
+from inference_backend import InferenceBackend, YoloCudaBackend
 
 logger = logging.getLogger(__name__)
 
