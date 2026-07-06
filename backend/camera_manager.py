@@ -82,6 +82,9 @@ class CameraState:
     thread: Optional[threading.Thread] = None
     running: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
+    # 按需解码调度状态
+    last_decode_time: float = 0.0
+    decode_queued: bool = False
     # 统计信息
     fps_stats: List[float] = field(default_factory=list)
     # 视频文件播放状态
