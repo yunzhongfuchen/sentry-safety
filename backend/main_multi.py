@@ -232,7 +232,7 @@ def init_components():
             detection_types=cam_data.get("detection_types"),
         )
         camera_manager.register_camera(cfg)
-        stream_server.register_camera(cfg.camera_id)
+        # 不在此处注册所有流缓冲，只由 set_main_camera 注册主画面
 
     log_message(f"Registered {len(camera_configs_data)} cameras")
 
@@ -478,6 +478,38 @@ def init_components():
         _system_status["camera_count"] = len(camera_configs_data)
 
     log_message("All components initialized successfully")
+
+
+def _pick_default_main_camera() -> Optional[str]:
+    """选择第一个启用的摄像头作为默认主画面"""
+    if camera_manager is None:
+        return None
+    cam_ids = camera_manager.get_camera_ids()
+    if not cam_ids:
+        return None
+    for cid in cam_ids:
+        state = camera_manager._cameras.get(cid)
+        if state and state.config.enabled:
+            return cid
+    return cam_ids[0]
+
+
+def set_main_camera(camera_id: Optional[str]):
+    """切换主画面摄像头，同步更新解码频率和流缓冲"""
+    global stream_server
+
+    old_main = camera_manager.get_main_camera() if camera_manager else None
+
+    if old_main:
+        stream_server.unregister_camera(old_main)
+        log_message(f"Unregistered stream for old main camera {old_main}")
+
+    if camera_manager:
+        camera_manager.set_main_camera(camera_id)
+
+    if camera_id:
+        stream_server.register_camera(camera_id)
+        log_message(f"Registered stream for main camera {camera_id}")
 
 
 def _records_saver_loop():
@@ -1220,7 +1252,10 @@ async def add_camera(data: dict):
         if not success:
             return JSONResponse({"error": "Camera ID already exists"}, status_code=400)
 
-        stream_server.register_camera(cfg.camera_id)
+        # 不在这里注册流缓冲；只有主画面才注册
+        # 如果当前没有主画面，可以设为新主画面
+        if camera_manager.get_main_camera() is None:
+            set_main_camera(cfg.camera_id)
 
         if multi_detector and cfg.detection_types:
             multi_detector.register_camera(cfg.camera_id, cfg.detection_types)
@@ -1456,6 +1491,11 @@ async def startup():
         # 启动摄像头
         if camera_manager:
             camera_manager.start_all()
+
+        # 设置默认主画面
+        main_id = _pick_default_main_camera()
+        if main_id:
+            set_main_camera(main_id)
 
         # 启动检测器
         if gpu_scheduler:
