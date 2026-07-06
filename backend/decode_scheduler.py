@@ -68,10 +68,10 @@ class DecodeScheduler:
             return
         self._running.clear()
 
-        # 唤醒所有可能在 get 上阻塞的 worker
+        # 唤醒所有可能在 get 上阻塞的 worker；sentinel 优先级应低于真实解码任务
         for _ in range(self.num_workers):
             try:
-                self._queue.put_nowait((-1, next(self._counter), -1, None))
+                self._queue.put_nowait((2, next(self._counter), -1, None))
             except queue.Full:
                 pass
 
@@ -105,15 +105,15 @@ class DecodeScheduler:
             cameras = getattr(self.camera_manager, "_cameras", {})
             # 快照遍历，避免其他线程修改 _cameras 时触发 RuntimeError
             for cam_id, state in list(cameras.items()):
-                cap = getattr(state, "cap", None)
-                if not getattr(state, "running", False) or cap is None:
-                    continue
-
                 is_main = cam_id == self._main_camera
                 interval = 1.0 / 25 if is_main else 1.0
-                due_time = state.last_decode_time + interval
 
                 with state.lock:
+                    cap = getattr(state, "cap", None)
+                    if not getattr(state, "running", False) or cap is None:
+                        continue
+
+                    due_time = state.last_decode_time + interval
                     if now >= due_time and not state.decode_queued:
                         priority = 0 if is_main else 1
                         self._queue.put((priority, next(self._counter), due_time, cam_id))

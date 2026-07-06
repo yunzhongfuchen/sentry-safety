@@ -186,11 +186,46 @@ def test_worker_breaks_on_sentinel():
     scheduler = DecodeScheduler(cm, num_workers=1)
     scheduler._running.set()
 
-    # 放入一个 sentinel 任务
-    scheduler._queue.put((-1, 0, -1, None))
+    # 放入一个 sentinel 任务（优先级应低于真实解码任务）
+    scheduler._queue.put((2, 0, -1, None))
     scheduler._running.clear()
 
     # 手动运行 worker_loop：它应处理 sentinel 并退出循环
     scheduler._worker_loop()
 
+    assert scheduler._queue.empty() is True
+
+
+def test_worker_does_not_skip_real_work_for_sentinel():
+    cm = MagicMock()
+    cfg = MagicMock()
+    cfg.width = 640
+    cfg.height = 480
+
+    state = MagicMock()
+    state.running = True
+    state.cap = MagicMock()
+    state.cap.isOpened.return_value = True
+    state.cap.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
+    state.last_decode_time = 0.0
+    state.decode_queued = False
+    state.lock = MagicMock()
+    state.config = cfg
+    state.current_frame = None
+    state.frame_count = 0
+    state.frame_history = []
+    state.error_count = 0
+
+    cm._cameras = {"cam_01": state}
+    scheduler = DecodeScheduler(cm, num_workers=1)
+    scheduler._running.set()
+
+    # 先放入真实解码任务，再放入 sentinel；sentinel 优先级更低
+    now = time.time()
+    scheduler._queue.put((0, 0, now, "cam_01"))
+    scheduler._queue.put((2, 1, -1, None))
+
+    scheduler._worker_loop()
+
+    assert state.frame_count == 1
     assert scheduler._queue.empty() is True
