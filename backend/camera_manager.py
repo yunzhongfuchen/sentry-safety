@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 
 import gpu_decoder
+from decode_scheduler import DecodeScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,8 @@ class CameraManager:
         self._cameras: Dict[str, CameraState] = {}
         self._lock = threading.RLock()
         self._global_frame_callback: Optional[Callable[[str, np.ndarray], None]] = None
-        
+        self._main_camera_id: Optional[str] = None
+        self.decode_scheduler = DecodeScheduler(self, num_workers=4)
     def register_camera(self, config: CameraConfig) -> bool:
         """注册摄像头"""
         with self._lock:
@@ -169,22 +171,33 @@ class CameraManager:
             if camera_id not in self._cameras:
                 logger.error(f"Camera {camera_id} not found")
                 return False
-            
+
             state = self._cameras[camera_id]
             if state.running:
                 logger.warning(f"Camera {camera_id} already running")
                 return True
-            
+
             state.running = True
-            state.thread = threading.Thread(
-                target=self._camera_loop,
-                args=(camera_id,),
-                name=f"camera-{camera_id}",
-                daemon=True
-            )
-            state.thread.start()
-            logger.info(f"Camera {camera_id} started")
-            return True
+            state.error_count = 0
+            state.reconnect_attempts = 0
+            state.last_decode_time = 0.0
+
+            # 启动 DecodeScheduler（首次启动时）
+            if not self.decode_scheduler._running.is_set():
+                self.decode_scheduler.start()
+
+        # 在锁外打开视频源
+        def _open_and_retry():
+            try:
+                self._open_capture(camera_id)
+            except Exception as e:
+                logger.error(f"Camera {camera_id} open failed: {e}")
+                # 重连逻辑交给 DecodeScheduler 的 decode 失败计数
+
+        threading.Thread(target=_open_and_retry, daemon=True, name=f"open-{camera_id}").start()
+
+        logger.info(f"Camera {camera_id} started")
+        return True
     
     def stop_camera(self, camera_id: str) -> bool:
         """停止指定摄像头"""
@@ -194,12 +207,8 @@ class CameraManager:
 
             state = self._cameras[camera_id]
             state.running = False
-            thread = state.thread
 
-        # 在锁外等待线程结束，让线程能及时获取锁检查 running 状态
-        if thread and thread.is_alive():
-            thread.join(timeout=5)
-
+        # 不在这里 join 解码线程，因为 DecodeScheduler 是统一调度
         with self._lock:
             if camera_id not in self._cameras:
                 return True
@@ -210,7 +219,6 @@ class CameraManager:
                 state.cap = None
 
             state.status = CameraStatus.IDLE
-            state.thread = None
             logger.info(f"Camera {camera_id} stopped")
             return True
     
@@ -223,6 +231,7 @@ class CameraManager:
     
     def stop_all(self):
         """停止所有摄像头"""
+        self.decode_scheduler.stop()
         with self._lock:
             camera_ids = list(self._cameras.keys())
         for camera_id in camera_ids:
@@ -245,6 +254,34 @@ class CameraManager:
 
             with state.lock:
                 return state.current_frame.copy() if state.current_frame is not None else None
+
+    def get_latest_frame(self, camera_id: str) -> Optional[np.ndarray]:
+        """获取指定摄像头的最新帧"""
+        with self._lock:
+            if camera_id not in self._cameras:
+                return None
+            state = self._cameras[camera_id]
+            with state.lock:
+                return state.current_frame.copy() if state.current_frame is not None else None
+
+    def set_main_camera(self, camera_id: Optional[str]) -> bool:
+        """设置主画面摄像头"""
+        with self._lock:
+            if camera_id is not None and camera_id not in self._cameras:
+                logger.warning(f"Cannot set main camera {camera_id}: not found")
+                self._main_camera_id = None
+                self.decode_scheduler.set_main_camera(None)
+                return False
+
+            self._main_camera_id = camera_id
+            self.decode_scheduler.set_main_camera(camera_id)
+            logger.info(f"Main camera set to {camera_id}")
+            return True
+
+    def get_main_camera(self) -> Optional[str]:
+        """获取当前主画面摄像头 ID"""
+        with self._lock:
+            return self._main_camera_id
 
     def get_window_frames(self, camera_id: str, start_time: float, end_time: float) -> List[Tuple[float, np.ndarray]]:
         """
@@ -599,46 +636,14 @@ class CameraManager:
             "record_path": state.record_path,
         }
 
-    def _camera_loop(self, camera_id: str):
-        """摄像头工作线程主循环"""
-        while True:
-            with self._lock:
-                if camera_id not in self._cameras:
-                    return
-                state = self._cameras[camera_id]
-                if not state.running:
-                    return
-            
-            try:
-                self._connect_and_stream(camera_id)
-            except Exception as e:
-                logger.error(f"Camera {camera_id} loop error: {e}")
-            
-            # 重连等待（指数退避，避免日志刷屏）
-            with self._lock:
-                if camera_id not in self._cameras:
-                    return
-                state = self._cameras[camera_id]
-                if not state.running:
-                    return
-                state.status = CameraStatus.RECONNECTING
-                state.reconnect_attempts += 1
-
-                if state.reconnect_attempts > state.config.max_reconnect_attempts:
-                    logger.error(f"Camera {camera_id} max reconnect attempts reached")
-                    state.status = CameraStatus.ERROR
-                    state.running = False
-                    return
-
-            time.sleep(state.config.reconnect_interval)
-    
-    def _connect_and_stream(self, camera_id: str):
-        """连接并开始视频流"""
+    def _open_capture(self, camera_id: str):
+        """打开视频源并初始化 cap"""
         with self._lock:
+            if camera_id not in self._cameras:
+                return
             state = self._cameras[camera_id]
             state.status = CameraStatus.CONNECTING
-        
-        # 解析视频源
+
         source = state.config.source
         if source.isdigit():
             source = int(source)
@@ -662,18 +667,10 @@ class CameraManager:
         if not cap.isOpened():
             raise RuntimeError(f"Failed to open video source: {source}")
 
-        # 设置视频参数（GPU 读取器 set() 返回 False，不影响）
         cap.set(cv2.CAP_PROP_BUFFERSIZE, state.config.buffer_size)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
         cap.set(cv2.CAP_PROP_FPS, state.config.fps)
-        
-        with self._lock:
-            state.cap = cap
-            state.status = CameraStatus.CONNECTED
-            state.reconnect_attempts = 0
-        
-        logger.info(f"Camera {camera_id} connected")
 
         # 视频文件：获取总帧数
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -681,8 +678,6 @@ class CameraManager:
             with self._lock:
                 state.playback_state["total_frames"] = total_frames
 
-        last_fps_time = time.time()
-        frame_counter = 0
         is_video_file = state.config.is_video_source()
 
         # 视频文件：连接成功后先读取第一帧作为静态预览，方便用户在不点击播放时也能看到画面、画 ROI
@@ -705,156 +700,32 @@ class CameraManager:
                     state.playback_state["current_frame_idx"] = 0
                 logger.info(f"Camera {camera_id} video first frame loaded as preview")
 
-        # 视频文件：获取原始帧率用于限速播放
-        video_fps = cap.get(cv2.CAP_PROP_FPS)
-        if is_video_file and video_fps <= 0:
-            video_fps = 25.0
-            logger.warning(f"Camera {camera_id} video FPS unreadable, fallback to {video_fps:.2f}")
-        elif is_video_file:
-            logger.info(f"Camera {camera_id} video FPS: {video_fps:.2f}")
-
-        # 使用高精度计时器，基于目标时间点做帧率控制
-        next_frame_time = time.perf_counter()
-        target_interval = 1.0 / (video_fps * 1.0) if is_video_file and video_fps > 0 else 0.0
-
-        while True:
-            with self._lock:
-                if not state.running:
-                    break
-                pb = state.playback_state
-
-            # 视频文件播放控制
-            if is_video_file:
-                if not pb["playing"]:
-                    time.sleep(0.1)
-                    next_frame_time = time.perf_counter()
-                    continue
-                # 倍速控制
-                speed = pb.get("speed", 1.0)
-                target_interval = 1.0 / (video_fps * speed)
-                # seek 控制
-                target_idx = pb.get("current_frame_idx", 0)
-                current_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-                if abs(target_idx - current_idx) > 2:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, target_idx)
-                    next_frame_time = time.perf_counter()
-
-                # 等待到下一帧的目标时间点
-                now = time.perf_counter()
-                wait = next_frame_time - now
-                if wait > 0.001:
-                    time.sleep(wait)
-                elif wait < -target_interval * 2:
-                    # 如果落后太多（比如检测卡住导致），重置时间点避免连续跳帧
-                    next_frame_time = now + target_interval
-
-            ret, frame = cap.read()
-
-            if not ret or frame is None:
-                if is_video_file and pb.get("loop", True):
-                    # 重新打开视频文件，避免某些编码 seek(0) 后非必现地返回旧帧
-                    # 先把当前帧置空，防止 reopen 期间取到旧帧混入新 buffer
-                    with state.lock:
-                        state.current_frame = None
-                    cap.release()
-                    new_cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-                    if not new_cap.isOpened():
-                        new_cap = cv2.VideoCapture(source)
-                    if not new_cap.isOpened():
-                        logger.warning(f"Camera {camera_id} video loop reopen failed, reconnecting")
-                        break
-                    new_cap.set(cv2.CAP_PROP_BUFFERSIZE, state.config.buffer_size)
-                    new_cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
-                    new_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
-                    new_cap.set(cv2.CAP_PROP_FPS, state.config.fps)
-                    cap = new_cap
-                    with self._lock:
-                        state.cap = cap
-                        state.playback_state["current_frame_idx"] = 0
-                    logger.info(f"Camera {camera_id} video looped (reopened)")
-                    next_frame_time = time.perf_counter()
-                    ret, frame = cap.read()
-                    if not ret or frame is None:
-                        logger.warning(f"Camera {camera_id} video loop first frame read failed, reconnecting")
-                        break
-                elif is_video_file and not pb.get("loop", True):
-                    # 视频文件不循环且播放到末尾：暂停，保持在最后一帧
-                    with self._lock:
-                        state.playback_state["playing"] = False
-                    state.error_count = 0
-                    time.sleep(0.1)
-                    continue
-                else:
-                    state.error_count += 1
-                    if state.error_count > 30:
-                        logger.warning(f"Camera {camera_id} too many read errors")
-                        break
-                    time.sleep(0.01)
-                    continue
-
-            state.error_count = 0
-            frame_counter += 1
-            if is_video_file:
-                with self._lock:
-                    state.playback_state["current_frame_idx"] = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-
-            # 录制原始帧（缩放/裁剪之前）—— 推入后台队列，不阻塞主循环
-            if state.recording and state.record_queue is not None:
-                try:
-                    state.record_queue.put_nowait(frame.copy())
-                except queue.Full:
-                    # 队列满时丢弃该帧，保证播放流畅
-                    pass
-            if state.recording and state.record_preview_queue is not None:
-                try:
-                    state.record_preview_queue.put_nowait(frame.copy())
-                except queue.Full:
-                    pass
-
-            # 等比例缩放：保持宽高比，最长边不超过配置尺寸，小图不放大
-            src_h, src_w = frame.shape[:2]
-            max_w = state.config.width
-            max_h = state.config.height
-            if src_w > max_w or src_h > max_h:
-                scale = min(max_w / src_w, max_h / src_h)
-                new_w = int(src_w * scale)
-                new_h = int(src_h * scale)
-                frame = cv2.resize(frame, (new_w, new_h))
-
-            # 更新状态（保存完整帧，ROI 过滤由消费者端处理）
-            current_time = time.time()
-            with state.lock:
-                state.current_frame = frame
-                state.last_frame_time = current_time
-                state.frame_count += 1
-
-            # FPS统计 + 每秒保存一帧到历史缓冲区
-            if current_time - last_fps_time >= 1.0:
-                fps = frame_counter / (current_time - last_fps_time)
-                state.fps_stats.append(fps)
-                if len(state.fps_stats) > 10:
-                    state.fps_stats.pop(0)
-                frame_counter = 0
-                last_fps_time = current_time
-                # 保存当前帧到时间窗口缓冲区 (用于触发时提取前后多帧)
-                with state.lock:
-                    if state.current_frame is not None:
-                        state.frame_history.append((current_time, state.current_frame.copy()))
-
-            # 全局回调
-            if self._global_frame_callback:
-                try:
-                    self._global_frame_callback(camera_id, frame)
-                except Exception as e:
-                    logger.error(f"Frame callback error: {e}")
-
-            # 视频文件：计算下一帧的目标时间点
-            if is_video_file and target_interval > 0:
-                next_frame_time += target_interval
-
-        cap.release()
         with self._lock:
-            state.cap = None
+            state.cap = cap
+            state.status = CameraStatus.CONNECTED
+            state.reconnect_attempts = 0
+
+        logger.info(f"Camera {camera_id} connected")
+
+    def _reopen_capture(self, camera_id: str):
+        """重新打开视频源"""
+        with self._lock:
+            if camera_id not in self._cameras:
+                return
+            state = self._cameras[camera_id]
+            state.status = CameraStatus.RECONNECTING
+            state.reconnect_attempts += 1
+            if state.cap:
+                try:
+                    state.cap.release()
+                except Exception:
+                    pass
+                state.cap = None
+
+        try:
+            self._open_capture(camera_id)
+        except Exception as e:
+            logger.error(f"Camera {camera_id} reopen failed: {e}")
 
 
 class CameraConfigLoader:

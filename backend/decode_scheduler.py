@@ -157,14 +157,57 @@ class DecodeScheduler:
                 state.last_decode_time = due_time
             return
 
+        pb = getattr(state, "playback_state", None)
+        is_video = isinstance(pb, dict) and state.config.is_video_source()
+
+        if is_video:
+            if not pb.get("playing", True):
+                # 暂停状态：不解码，等待下一次调度
+                with state.lock:
+                    state.decode_queued = False
+                    state.last_decode_time = due_time
+                return
+
+            # seek 控制
+            target_idx = pb.get("current_frame_idx", 0)
+            current_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+            if abs(target_idx - current_idx) > 2:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, target_idx)
+
         ret, frame = cap.read()
 
         if not ret or frame is None:
             with state.lock:
                 state.decode_queued = False
                 state.last_decode_time = due_time
-                state.error_count += 1
+                if is_video:
+                    if pb.get("loop", True):
+                        # 循环播放：重新打开视频源
+                        reopen = getattr(self.camera_manager, "_reopen_capture", None)
+                        if reopen:
+                            reopen(cam_id)
+                    else:
+                        # 不循环：暂停在最后一帧
+                        pb["playing"] = False
+                else:
+                    state.error_count += 1
+                    if state.error_count > 30:
+                        logger.warning(f"Camera {cam_id} too many read errors, reopening")
+                        reopen = getattr(self.camera_manager, "_reopen_capture", None)
+                        if reopen:
+                            reopen(cam_id)
+                        state.error_count = 0
             return
+
+        # 视频文件：按倍速控制 advance
+        if is_video:
+            speed = pb.get("speed", 1.0)
+            if speed > 1.0:
+                extra = int(round(speed)) - 1
+                for _ in range(extra):
+                    cap.grab()
+            with state.lock:
+                pb["current_frame_idx"] = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
 
         # 等比例缩放（在锁外执行，减少锁竞争）
         src_h, src_w = frame.shape[:2]
@@ -175,6 +218,22 @@ class DecodeScheduler:
             new_w = int(src_w * scale)
             new_h = int(src_h * scale)
             frame = cv2.resize(frame, (new_w, new_h))
+
+        # 录制原始帧（缩放/裁剪之前）—— 推入后台队列，不阻塞主循环
+        recording = getattr(state, "recording", False)
+        record_queue = getattr(state, "record_queue", None)
+        record_preview_queue = getattr(state, "record_preview_queue", None)
+        if recording:
+            if isinstance(record_queue, queue.Queue):
+                try:
+                    record_queue.put_nowait(frame.copy())
+                except queue.Full:
+                    pass
+            if isinstance(record_preview_queue, queue.Queue):
+                try:
+                    record_preview_queue.put_nowait(frame.copy())
+                except queue.Full:
+                    pass
 
         current_time = time.time()
         with state.lock:
@@ -189,6 +248,19 @@ class DecodeScheduler:
                 # 限制历史长度，防止内存无限增长
                 while len(state.frame_history) > _MAX_FRAME_HISTORY:
                     state.frame_history.pop(0)
+
+            # FPS 统计（每秒一次）
+            fps_stats = getattr(state, "fps_stats", None)
+            last_fps_time = getattr(state, "last_fps_time", 0)
+            last_frame_count = getattr(state, "last_frame_count", 0)
+            if isinstance(fps_stats, list) and isinstance(last_fps_time, (int, float)) and isinstance(last_frame_count, int):
+                if current_time - last_fps_time >= 1.0:
+                    fps = (state.frame_count - last_frame_count) / (current_time - last_fps_time)
+                    fps_stats.append(fps)
+                    if len(fps_stats) > 10:
+                        fps_stats.pop(0)
+                    state.last_fps_time = current_time
+                    state.last_frame_count = state.frame_count
 
         # 全局回调使用帧副本，避免回调修改 state.current_frame
         global_callback = getattr(self.camera_manager, "_global_frame_callback", None)
