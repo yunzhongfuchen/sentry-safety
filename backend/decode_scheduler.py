@@ -152,69 +152,113 @@ class DecodeScheduler:
 
         cap = getattr(state, "cap", None)
         if cap is None or not getattr(cap, "isOpened", lambda: False)():
+            needs_reopen = False
             with state.lock:
                 state.decode_queued = False
                 state.last_decode_time = due_time
+                if not state.running:
+                    return
                 state.error_count += 1
                 if state.error_count > 30:
                     logger.warning(f"Camera {cam_id} cap not opened, too many errors, reopening")
-                    reopen = getattr(self.camera_manager, "_reopen_capture", None)
-                    if reopen:
-                        reopen(cam_id)
                     state.error_count = 0
+                    needs_reopen = True
+            # 在锁外调用 _reopen_capture，避免与 stop_camera 的加锁顺序（self._lock -> state.lock）形成死锁
+            if needs_reopen:
+                reopen = getattr(self.camera_manager, "_reopen_capture", None)
+                if reopen:
+                    reopen(cam_id)
             return
 
-        pb = getattr(state, "playback_state", None)
-        is_video = isinstance(pb, dict) and state.config.is_video_source()
+        # 安全读取 playback_state：CameraManager 在 _open_capture / control_playback 中持有 _lock 修改它
+        with self.camera_manager._lock:
+            if cam_id not in cameras:
+                return
+            state = cameras[cam_id]
+            pb = getattr(state, "playback_state", None)
+            is_video = isinstance(pb, dict) and state.config.is_video_source()
+            if is_video:
+                playing = pb.get("playing", True)
+                loop = pb.get("loop", True)
+                target_idx = pb.get("current_frame_idx", 0)
+                speed = pb.get("speed", 1.0)
+            else:
+                playing = True
+                loop = True
+                target_idx = 0
+                speed = 1.0
+
+        if is_video and not playing:
+            with state.lock:
+                state.decode_queued = False
+                state.last_decode_time = due_time
+            return
 
         if is_video:
-            if not pb.get("playing", True):
-                # 暂停状态：不解码，等待下一次调度
-                with state.lock:
-                    state.decode_queued = False
-                    state.last_decode_time = due_time
-                return
-
-            # seek 控制
-            target_idx = pb.get("current_frame_idx", 0)
-            current_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-            if abs(target_idx - current_idx) > 2:
+            if abs(target_idx - int(cap.get(cv2.CAP_PROP_POS_FRAMES))) > 2:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, target_idx)
+
+        # 在使用 cap 前再检查一次 running，降低 stop_camera 释放 cap 后的 use-after-release 风险
+        with state.lock:
+            if not state.running:
+                state.decode_queued = False
+                state.last_decode_time = due_time
+                return
+            # 保持对当前 cap 对象的引用
+            cap = state.cap
 
         ret, frame = cap.read()
 
         if not ret or frame is None:
+            needs_reopen = False
+            needs_loop_reopen = False
+            pause_video = False
             with state.lock:
                 state.decode_queued = False
                 state.last_decode_time = due_time
                 if is_video:
-                    if pb.get("loop", True):
-                        # 循环播放：重新打开视频源
-                        reopen = getattr(self.camera_manager, "_reopen_capture", None)
-                        if reopen:
-                            reopen(cam_id)
+                    if loop:
+                        needs_loop_reopen = True
                     else:
-                        # 不循环：暂停在最后一帧
-                        pb["playing"] = False
+                        pause_video = True
                 else:
                     state.error_count += 1
                     if state.error_count > 30:
                         logger.warning(f"Camera {cam_id} too many read errors, reopening")
-                        reopen = getattr(self.camera_manager, "_reopen_capture", None)
-                        if reopen:
-                            reopen(cam_id)
                         state.error_count = 0
+                        needs_reopen = True
+
+            if pause_video:
+                with self.camera_manager._lock:
+                    if cam_id in cameras:
+                        cameras[cam_id].playback_state["playing"] = False
+
+            # 循环播放单独 reopen，不计入 reconnect_attempts
+            if needs_loop_reopen:
+                reopen_loop = getattr(self.camera_manager, "_reopen_for_loop", None)
+                if reopen_loop:
+                    reopen_loop(cam_id)
+            elif needs_reopen:
+                reopen = getattr(self.camera_manager, "_reopen_capture", None)
+                if reopen:
+                    reopen(cam_id)
+            return
+
+        if not cap.isOpened():
+            with state.lock:
+                state.decode_queued = False
+                state.last_decode_time = due_time
             return
 
         # 视频文件：按倍速控制 advance
         if is_video:
-            speed = pb.get("speed", 1.0)
             if speed > 1.0:
                 extra = int(round(speed)) - 1
                 for _ in range(extra):
                     cap.grab()
-            with state.lock:
-                pb["current_frame_idx"] = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+            with self.camera_manager._lock:
+                if cam_id in cameras:
+                    cameras[cam_id].playback_state["current_frame_idx"] = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
 
         # 等比例缩放（在锁外执行，减少锁竞争）
         src_h, src_w = frame.shape[:2]

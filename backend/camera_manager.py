@@ -184,6 +184,7 @@ class CameraManager:
             state.frame_count = 0
             state.last_frame_count = 0
             state.last_fps_time = 0.0
+            state.fps_stats.clear()
 
             # 启动 DecodeScheduler（首次启动时）
             if not self.decode_scheduler._running.is_set():
@@ -746,6 +747,24 @@ class CameraManager:
             self._open_capture(camera_id)
         except Exception as e:
             logger.error(f"Camera {camera_id} reopen failed: {e}")
+
+    def _reopen_for_loop(self, camera_id: str):
+        """视频文件循环播放时重新打开源，不计入 reconnect_attempts"""
+        with self._lock:
+            if camera_id not in self._cameras:
+                return
+            state = self._cameras[camera_id]
+            if state.cap:
+                try:
+                    state.cap.release()
+                except Exception:
+                    pass
+                state.cap = None
+
+        try:
+            self._open_capture(camera_id)
+        except Exception as e:
+            logger.error(f"Camera {camera_id} loop reopen failed: {e}")
 
 
 class CameraConfigLoader:

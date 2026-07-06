@@ -97,3 +97,27 @@ def test_main_camera_writes_frame_history():
     assert len(state.frame_history) == 1
     ts, hist_frame = state.frame_history[0]
     assert np.array_equal(hist_frame, frame)
+
+
+def test_video_loop_reopen_does_not_count_as_reconnect():
+    cm = CameraManager()
+    cm.register_camera(
+        CameraConfig(camera_id="cam_01", source="dummy.mp4", source_type="video", video_loop=True)
+    )
+    state = cm._cameras["cam_01"]
+    state.running = True
+    state.playback_state["playing"] = True
+    state.playback_state["loop"] = True
+
+    cap = MagicMock()
+    cap.isOpened.return_value = True
+    cap.read.return_value = (False, None)
+    cap.get.return_value = 0
+    state.cap = cap
+
+    with patch.object(cm, "_open_capture"):
+        scheduler = cm.decode_scheduler
+        scheduler._decode_one_frame("cam_01", time.time())
+
+    assert state.reconnect_attempts == 0
+    assert state.error_count == 0
