@@ -162,6 +162,9 @@ class CameraManager:
 
         with self._lock:
             self._cameras.pop(camera_id, None)
+            if self._main_camera_id == camera_id:
+                self._main_camera_id = None
+                self.decode_scheduler.set_main_camera(None)
         logger.info(f"Camera {camera_id} unregistered")
         return True
     
@@ -264,12 +267,7 @@ class CameraManager:
 
     def get_latest_frame(self, camera_id: str) -> Optional[np.ndarray]:
         """获取指定摄像头的最新帧"""
-        with self._lock:
-            if camera_id not in self._cameras:
-                return None
-            state = self._cameras[camera_id]
-            with state.lock:
-                return state.current_frame.copy() if state.current_frame is not None else None
+        return self.get_frame(camera_id, allow_paused=True)
 
     def set_main_camera(self, camera_id: Optional[str]) -> bool:
         """设置主画面摄像头"""

@@ -1336,11 +1336,17 @@ async def delete_camera(camera_id: str):
     
     # 从管理器注销
     success = camera_manager.unregister_camera(camera_id)
-    
+
+    # 如果删除的是主画面，自动选择新的默认主画面
+    if success and camera_manager.get_main_camera() is None:
+        new_main = _pick_default_main_camera()
+        if new_main:
+            set_main_camera(new_main)
+
     if success:
         # 保存配置到文件
         save_camera_configs()
-        
+
         log_message(f"Camera {camera_id} deleted")
         return {"success": True}
     else:

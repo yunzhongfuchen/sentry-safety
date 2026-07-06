@@ -408,7 +408,6 @@ class MultiDetector:
 
         now = time.time()
         due_types = self._get_due_types(camera_id, now)
-        display_frame = frame.copy()
         results = {}
 
         if due_types:
@@ -461,10 +460,6 @@ class MultiDetector:
                         self._handle_sleep_detection(camera_id, frame, result, schedule)
                     else:
                         self._handle_standard_detection(camera_id, dtype, frame, result, schedule)
-
-        # 使用缓存的检测结果画框，保证框持续显示直到被新结果覆盖
-        cached_results = self._latest_results.get(camera_id, {})
-        display_frame = self._annotate_frame(display_frame, cached_results, camera_id, due_types)
 
         # 注：视频流渲染已拆分到独立 overlay 线程，此处不再送流
 
