@@ -149,6 +149,7 @@ class GPUDynamicScheduler(threading.Thread):
         self.half = half
         self.warmup = warmup
         self.running = True
+        self._busy = False
         # (camera_id, detection_type) -> last_infer_timestamp
         self.last_infer: Dict[Tuple[str, str], float] = {}
 
@@ -239,71 +240,84 @@ class GPUDynamicScheduler(threading.Thread):
             f"interval={self.interval}s"
         )
         while self.running:
+            if self._busy:
+                time.sleep(0.05)
+                continue
+
             t0 = time.time()
-            now = time.time()
+            self._busy = True
+            collected_keys = []
+            try:
+                now = time.time()
 
-            # 收集到期任务: {detection_type: [(cam_id, frame), ...]}
-            tasks: Dict[str, List[Tuple[str, np.ndarray]]] = {}
+                # 收集到期任务: {detection_type: [(cam_id, frame), ...]}
+                tasks: Dict[str, List[Tuple[str, np.ndarray]]] = {}
 
-            for cam_id in self._get_active_cameras():
-                if not self._is_camera_enabled(cam_id):
-                    continue
-
-                frame = self.camera_manager.get_frame(cam_id, allow_paused=False)
-                if frame is None:
-                    continue
-
-                det_types = self._get_camera_detection_types(cam_id)
-                for dtype, cfg in det_types.items():
-                    if dtype not in self.model_configs:
+                for cam_id in self._get_active_cameras():
+                    if not self._is_camera_enabled(cam_id):
                         continue
 
-                    enabled = cfg.get("enabled", False) if isinstance(cfg, dict) else getattr(cfg, "enabled", False)
-                    if not enabled:
+                    frame = self.camera_manager.get_latest_frame(cam_id)
+                    if frame is None:
                         continue
 
-                    interval = (
-                        cfg.get("interval", 1.0)
-                        if isinstance(cfg, dict)
-                        else getattr(cfg, "interval", 1.0)
-                    )
-                    key = (cam_id, dtype)
-                    last = self.last_infer.get(key, 0.0)
-                    if now - last >= interval:
-                        tasks.setdefault(dtype, []).append((cam_id, frame.copy()))
-                        self.last_infer[key] = now
+                    det_types = self._get_camera_detection_types(cam_id)
+                    for dtype, cfg in det_types.items():
+                        if dtype not in self.model_configs:
+                            continue
 
-            # 提交任务到各队列并等待完成
-            if tasks:
-                active_queues: set = set()
-                for dtype, cam_frames in tasks.items():
-                    cam_ids, frames = zip(*cam_frames)
-                    qid = self.dtype_to_queue[dtype]
-                    self.queues[qid].set_frames(list(frames), list(cam_ids))
-                    active_queues.add(qid)
+                        enabled = cfg.get("enabled", False) if isinstance(cfg, dict) else getattr(cfg, "enabled", False)
+                        if not enabled:
+                            continue
 
-                for qid in active_queues:
-                    self.queues[qid].done_event.wait()
-                    self.queues[qid].done_event.clear()
+                        interval = (
+                            cfg.get("interval", 1.0)
+                            if isinstance(cfg, dict)
+                            else getattr(cfg, "interval", 1.0)
+                        )
+                        key = (cam_id, dtype)
+                        last = self.last_infer.get(key, 0.0)
+                        if now - last >= interval:
+                            tasks.setdefault(dtype, []).append((cam_id, frame.copy()))
+                            collected_keys.append(key)
 
-                # 回调结果
-                if self.on_result:
+                # 提交任务到各队列并等待完成
+                if tasks:
+                    active_queues: set = set()
                     for dtype, cam_frames in tasks.items():
-                        cam_ids, _ = zip(*cam_frames)
+                        cam_ids, frames = zip(*cam_frames)
                         qid = self.dtype_to_queue[dtype]
-                        idx = self.dtype_to_idx[dtype]
-                        results = self.queues[qid].results
-                        if results is None or idx >= len(results):
-                            continue
-                        model_results = results[idx]
-                        if model_results is None:
-                            continue
-                        # ultralytics batch 推理返回 List[Results]
-                        for cam_id, result in zip(cam_ids, model_results):
-                            try:
-                                self.on_result(cam_id, dtype, result)
-                            except Exception as e:
-                                logger.error(f"回调出错 [{cam_id}/{dtype}]: {e}")
+                        self.queues[qid].set_frames(list(frames), list(cam_ids))
+                        active_queues.add(qid)
+
+                    for qid in active_queues:
+                        self.queues[qid].done_event.wait()
+                        self.queues[qid].done_event.clear()
+
+                    # 回调结果
+                    if self.on_result:
+                        for dtype, cam_frames in tasks.items():
+                            cam_ids, _ = zip(*cam_frames)
+                            qid = self.dtype_to_queue[dtype]
+                            idx = self.dtype_to_idx[dtype]
+                            results = self.queues[qid].results
+                            if results is None or idx >= len(results):
+                                continue
+                            model_results = results[idx]
+                            if model_results is None:
+                                continue
+                            for cam_id, result in zip(cam_ids, model_results):
+                                try:
+                                    self.on_result(cam_id, dtype, result)
+                                except Exception as e:
+                                    logger.error(f"回调出错 [{cam_id}/{dtype}]: {e}")
+
+                    # last_infer 按推理完成时间更新
+                    completed_at = time.time()
+                    for key in collected_keys:
+                        self.last_infer[key] = completed_at
+            finally:
+                self._busy = False
 
             sleep_time = self.interval - (time.time() - t0)
             if sleep_time > 0:
