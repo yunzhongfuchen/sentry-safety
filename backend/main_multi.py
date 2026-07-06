@@ -613,6 +613,15 @@ async def list_cameras():
     return {"cameras": status_list}
 
 
+@app.post("/cameras/{camera_id}/select")
+async def select_main_camera(camera_id: str):
+    """切换主画面摄像头"""
+    if camera_manager is None or camera_id not in camera_manager._cameras:
+        return JSONResponse({"error": "Camera not found"}, status_code=404)
+    set_main_camera(camera_id)
+    return {"success": True, "main_camera": camera_id}
+
+
 @app.get("/cameras/{camera_id}/stream")
 async def camera_stream(camera_id: str, raw: bool = False):
     """单摄像头视频流
