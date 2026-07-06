@@ -195,6 +195,10 @@
 
                     <!-- Detection Tab -->
                     <div v-if="tab === 'detection'">
+                        <div v-if="!settings.default_detection_types" style="color: var(--text-muted); padding: 40px; text-align: center;">
+                            加载中...
+                        </div>
+                        <template v-else>
                         <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 16px;">VLM 配置</div>
                         <div class="gc-form-grid">
                             <div class="gc-form-field">
@@ -231,6 +235,7 @@
                             </div>
                         </div>
                         <button class="clay-button primary" @click="saveDefaultTypes">保存检测默认值</button>
+                        </template>
                     </div>
 
                     <!-- System Tab -->
