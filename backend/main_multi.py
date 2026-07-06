@@ -1409,9 +1409,7 @@ _overlay_thread: Optional[threading.Thread] = None
 
 
 def _overlay_loop():
-    """独立渲染线程：定期从 camera_manager 取帧 + 按需叠加检测结果画框 + 送 stream_server
-    同时推送原始帧和标注帧到双缓冲区，支持主画面画框 / 副画面原图
-    """
+    """独立渲染线程：只给主画面推送原始帧和标注帧"""
     global _overlay_running
     log_message("Overlay render thread started")
     while _overlay_running:
@@ -1420,47 +1418,44 @@ def _overlay_loop():
                 time.sleep(0.1)
                 continue
 
-            cam_ids = camera_manager.get_camera_ids()
-            for cam_id in cam_ids:
-                if not _overlay_running:
-                    break
-                frame = camera_manager.get_frame(cam_id)
-                if frame is None:
-                    continue
+            main_id = camera_manager.get_main_camera()
+            if main_id is None:
+                time.sleep(0.1)
+                continue
 
-                # 先推送原始帧到 raw 缓冲区（副画面使用）
-                stream_server.update_frame(cam_id, frame, raw=True)
+            frame = camera_manager.get_latest_frame(main_id)
+            if frame is None:
+                time.sleep(0.02)
+                continue
 
-                # 获取全局要画的类型
-                with _overlay_config_lock:
-                    types_to_draw = list(_overlay_config)
+            # 推送原始帧
+            stream_server.update_frame(main_id, frame, raw=True)
 
-                if types_to_draw:
-                    # 获取缓存的检测结果并过滤（只画启用的类型）
-                    results = multi_detector._latest_results.get(cam_id, {})
-                    # 进一步过滤：只画当前摄像头启用的检测类型
-                    cam_enabled_types = set()
-                    state = camera_manager._cameras.get(cam_id)
-                    if state and state.config.detection_types:
-                        cam_enabled_types = {
-                            k for k, v in state.config.detection_types.items()
-                            if v.get("enabled", False)
-                        }
-                    effective_types = [t for t in types_to_draw if t in cam_enabled_types]
-                    filtered = {k: v for k, v in results.items() if k in effective_types}
-                    annotated = MultiDetector._annotate_frame(
-                        frame, filtered, cam_id, []
-                    )
-                else:
-                    # 全关：直接推原始帧
-                    annotated = frame
+            # 获取全局要画的类型
+            with _overlay_config_lock:
+                types_to_draw = list(_overlay_config)
 
-                # 推送标注帧到 annotated 缓冲区（主画面使用）
-                stream_server.update_frame(cam_id, annotated, raw=False)
+            if types_to_draw:
+                results = multi_detector._latest_results.get(main_id, {})
+                state = camera_manager._cameras.get(main_id)
+                cam_enabled_types = set()
+                if state and state.config.detection_types:
+                    cam_enabled_types = {
+                        k for k, v in state.config.detection_types.items()
+                        if v.get("enabled", False)
+                    }
+                effective_types = [t for t in types_to_draw if t in cam_enabled_types]
+                filtered = {k: v for k, v in results.items() if k in effective_types}
+                annotated = MultiDetector._annotate_frame(frame, filtered, main_id, [])
+            else:
+                annotated = frame
+
+            # 推送标注帧
+            stream_server.update_frame(main_id, annotated, raw=False)
         except Exception as e:
             logger.error(f"Overlay loop error: {e}")
-        # 25fps 渲染间隔（与常见视频帧率匹配）
-        time.sleep(0.04)
+
+        time.sleep(0.04)  # 25 FPS 上限
     log_message("Overlay render thread stopped")
 
 
