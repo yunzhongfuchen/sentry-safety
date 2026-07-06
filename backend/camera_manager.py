@@ -181,6 +181,9 @@ class CameraManager:
             state.error_count = 0
             state.reconnect_attempts = 0
             state.last_decode_time = 0.0
+            state.frame_count = 0
+            state.last_frame_count = 0
+            state.last_fps_time = 0.0
 
             # 启动 DecodeScheduler（首次启动时）
             if not self.decode_scheduler._running.is_set():
@@ -208,15 +211,18 @@ class CameraManager:
             state = self._cameras[camera_id]
             state.running = False
 
-        # 不在这里 join 解码线程，因为 DecodeScheduler 是统一调度
+        # 给 DecodeScheduler worker 留出时间完成当前 cap.read()
+        time.sleep(0.15)
+
         with self._lock:
             if camera_id not in self._cameras:
                 return True
 
             state = self._cameras[camera_id]
-            if state.cap:
-                state.cap.release()
-                state.cap = None
+            with state.lock:
+                if state.cap:
+                    state.cap.release()
+                    state.cap = None
 
             state.status = CameraStatus.IDLE
             logger.info(f"Camera {camera_id} stopped")
@@ -715,6 +721,20 @@ class CameraManager:
             state = self._cameras[camera_id]
             state.status = CameraStatus.RECONNECTING
             state.reconnect_attempts += 1
+
+            max_attempts = state.config.max_reconnect_attempts
+            if max_attempts > 0 and state.reconnect_attempts > max_attempts:
+                logger.error(f"Camera {camera_id} max reconnect attempts reached")
+                state.status = CameraStatus.ERROR
+                state.running = False
+                if state.cap:
+                    try:
+                        state.cap.release()
+                    except Exception:
+                        pass
+                    state.cap = None
+                return
+
             if state.cap:
                 try:
                     state.cap.release()

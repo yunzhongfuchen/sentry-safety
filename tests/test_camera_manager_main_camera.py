@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock
+import time
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -60,3 +61,39 @@ def test_get_latest_frame_copy_is_independent():
     latest[0, 0, 0] = 255
 
     assert cm._cameras["cam_01"].current_frame[0, 0, 0] == 0
+
+
+def test_decode_scheduler_cap_none_increments_error_count():
+    cm = CameraManager()
+    cm.register_camera(CameraConfig(camera_id="cam_01", source="0"))
+    state = cm._cameras["cam_01"]
+    state.running = True
+
+    with patch.object(cm, "_open_capture"):
+        scheduler = cm.decode_scheduler
+        for _ in range(31):
+            scheduler._decode_one_frame("cam_01", time.time())
+
+    assert state.error_count == 0  # reset after threshold triggers reopen
+    assert state.reconnect_attempts == 1  # _reopen_capture was called once
+
+
+def test_main_camera_writes_frame_history():
+    cm = CameraManager()
+    cm.register_camera(CameraConfig(camera_id="cam_01", source="0"))
+    cm.set_main_camera("cam_01")
+    state = cm._cameras["cam_01"]
+    state.running = True
+
+    frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    cap = MagicMock()
+    cap.isOpened.return_value = True
+    cap.read.return_value = (True, frame.copy())
+    state.cap = cap
+
+    scheduler = cm.decode_scheduler
+    scheduler._decode_one_frame("cam_01", time.time())
+
+    assert len(state.frame_history) == 1
+    ts, hist_frame = state.frame_history[0]
+    assert np.array_equal(hist_frame, frame)

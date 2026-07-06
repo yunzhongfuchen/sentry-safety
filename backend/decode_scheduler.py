@@ -155,6 +155,13 @@ class DecodeScheduler:
             with state.lock:
                 state.decode_queued = False
                 state.last_decode_time = due_time
+                state.error_count += 1
+                if state.error_count > 30:
+                    logger.warning(f"Camera {cam_id} cap not opened, too many errors, reopening")
+                    reopen = getattr(self.camera_manager, "_reopen_capture", None)
+                    if reopen:
+                        reopen(cam_id)
+                    state.error_count = 0
             return
 
         pb = getattr(state, "playback_state", None)
@@ -243,11 +250,10 @@ class DecodeScheduler:
             state.current_frame = frame
             state.last_frame_time = current_time
             state.frame_count += 1
-            if cam_id != self._main_camera:
-                state.frame_history.append((current_time, frame.copy()))
-                # 限制历史长度，防止内存无限增长
-                while len(state.frame_history) > _MAX_FRAME_HISTORY:
-                    state.frame_history.pop(0)
+            state.frame_history.append((current_time, frame.copy()))
+            # 限制历史长度，防止内存无限增长
+            while len(state.frame_history) > _MAX_FRAME_HISTORY:
+                state.frame_history.pop(0)
 
             # FPS 统计（每秒一次）
             fps_stats = getattr(state, "fps_stats", None)
