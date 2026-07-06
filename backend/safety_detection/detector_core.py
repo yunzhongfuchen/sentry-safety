@@ -38,6 +38,8 @@ class TypeSchedule:
     compliance_window_start: Optional[float] = None
     vest_detected_in_window: bool = False
     use_vlm: bool = False
+    # 当存在外部调度器（如 GPU scheduler）接管该类型推理时设为 True
+    externally_managed: bool = False
     # sleep 专用
     history_frames: deque = field(default_factory=lambda: deque(maxlen=10))
 
@@ -257,6 +259,15 @@ class MultiDetector:
                 self._schedules[camera_id][dtype] = schedule
             logger.info(f"Camera {camera_id} registered with {len(self._schedules[camera_id])} types")
 
+    def mark_externally_managed(self, camera_id: str, dtypes: List[str]) -> None:
+        """标记指定检测类型由外部调度器接管，本 Detector 不再对其运行推理"""
+        with self._lock:
+            schedules = self._schedules.get(camera_id, {})
+            for dtype in dtypes:
+                if dtype in schedules:
+                    schedules[dtype].externally_managed = True
+                    logger.info(f"Camera {camera_id} type {dtype} marked as externally managed")
+
     def unregister_camera(self, camera_id: str) -> None:
         """注销摄像头，清理内存"""
         with self._lock:
@@ -457,10 +468,10 @@ class MultiDetector:
         # 注：视频流渲染已拆分到独立 overlay 线程，此处不再送流
 
     def _get_due_types(self, camera_id: str, now: float) -> List[str]:
-        """获取当前到期的检测类型"""
+        """获取当前到期的检测类型（跳过由外部调度器管理的类型）"""
         with self._lock:
             schedules = self._schedules.get(camera_id, {})
-            return [dtype for dtype, s in schedules.items() if s.is_due(now)]
+            return [dtype for dtype, s in schedules.items() if not s.externally_managed and s.is_due(now)]
 
     # ------------------------------------------------------------------
     # 标准检测处理（fire / smoke / mask / cigarette）

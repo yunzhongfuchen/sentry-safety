@@ -31,7 +31,7 @@ logger.setLevel(logging.INFO)
 app = FastAPI(title="Sentry API")
 
 # 挂载前端静态文件
-frontend_path = Path(__file__).parent.parent / "frontend"
+frontend_path = Path(__file__).parent.parent / "frontend" / "safety_detection"
 if frontend_path.exists():
     app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
 
@@ -623,7 +623,7 @@ async def list_cameras():
 
 @app.get("/")
 async def root():
-    fp = Path(__file__).parent.parent / "frontend" / "index.html"
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "monitor.html"
     if fp.exists():
         return HTMLResponse(fp.read_text(encoding="utf-8"))
     return {"message": "Sentry API", "status": "running"}
@@ -631,7 +631,7 @@ async def root():
 
 @app.get("/records.html")
 async def records_page():
-    fp = Path(__file__).parent.parent / "frontend" / "records.html"
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "records.html"
     if fp.exists():
         return HTMLResponse(fp.read_text(encoding="utf-8"))
     return {"error": "Records page not found"}
@@ -655,15 +655,6 @@ async def update_prompt(data: dict):
     if success:
         return {"success": True, "message": "提示词已保存"}
     return {"success": False, "message": "保存失败"}
-
-
-@app.get("/prompt.html")
-async def prompt_page():
-    """提示词编辑页面"""
-    fp = Path(__file__).parent.parent / "frontend" / "prompt.html"
-    if fp.exists():
-        return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "Prompt page not found"}
 
 
 @app.on_event("startup")

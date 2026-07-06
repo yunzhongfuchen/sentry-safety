@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安全哨兵 监控中心</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles/glass-clay.css">
+    <script src="/static/vue3.global.prod.js"></script>
+    <script src="/static/shared.js"></script>
+    <style>
+        .monitor-layout {
+            height: calc(100vh - 64px);
+            display: grid;
+            grid-template-columns: 1fr 280px;
+            grid-template-rows: 1fr 160px;
+            grid-template-areas:
+                "main sidebar"
+                "alerts alerts";
+            gap: 18px;
+            padding: 18px;
+        }
+
+        .main-area {
+            grid-area: main;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .video-card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .video-header {
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--glass-edge);
+        }
+
+        .video-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .video-body {
+            flex: 1;
+            position: relative;
+            background: #0f1210;
+            min-height: 0;
+        }
+
+        .video-body img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .video-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            gap: 10px;
+        }
+
+        .video-controls {
+            position: absolute;
+            bottom: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+
+        .sidebar-area {
+            grid-area: sidebar;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .cam-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .cam-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: var(--radius-md);
+            background: var(--bg-soft);
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .cam-item:hover {
+            border-color: var(--accent);
+            box-shadow: var(--clay-shadow);
+        }
+
+        .cam-item.active {
+            border-color: var(--accent);
+            background: var(--accent-soft);
+        }
+
+        .cam-name {
+            flex: 1;
+            font-weight: 500;
+            font-size: 14px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .cam-types {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .cam-type-mini {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+        }
+
+        .alerts-area {
+            grid-area: alerts;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .alerts-list {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(5, minmax(220px, 1fr));
+            gap: 14px;
+            overflow-x: auto;
+            padding: 4px 2px 6px;
+            align-items: stretch;
+        }
+
+        .alert-card {
+            min-width: 220px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .alert-time {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .alert-main {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .alert-camera {
+            font-weight: 600;
+            font-size: 14px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .stat-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: var(--bg-soft);
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .nav-stats {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        @media (max-width: 1100px) {
+            .monitor-layout {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 200px 160px;
+                grid-template-areas:
+                    "main"
+                    "sidebar"
+                    "alerts";
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="app-shell">
+        <div id="sidebar-root"></div>
+        <main class="app-main">
+            <div class="nav-header">
+                <div class="nav-brand">
+                    <div class="logo">S</div>
+                    <span>监控</span>
+                </div>
+                <div class="nav-stats">
+                    <div class="stat-pill">
+                        <span class="status-dot online"></span>
+                        在线 {{ onlineCount }} / {{ cameras.length }}
+                    </div>
+                    <div class="stat-pill">
+                        <span class="status-dot alert"></span>
+                        告警 {{ alertCount }}
+                    </div>
+                    <div class="stat-pill" style="font-family: var(--font-mono);">
+                        {{ utcTime }}
+                    </div>
+                </div>
+            </div>
+
+            <div class="monitor-layout">
+            <!-- Main video -->
+            <div class="main-area">
+                <div class="glass-card video-card">
+                    <div class="video-header">
+                        <div class="video-title">
+                            <span :class="['status-dot', mainCameraStatus === 'connected' ? 'online' : 'offline']"></span>
+                            {{ mainCameraName }}
+                        </div>
+                        <span v-if="mainAlertType" class="type-badge" :class="mainAlertType">
+                            {{ getTypeLabel(mainAlertType) }}
+                        </span>
+                    </div>
+                    <div class="video-body">
+                        <img v-if="mainCameraId && mainCameraStatus === 'connected' && streamVisible[mainCameraId] !== false"
+                             :src="`/cameras/${mainCameraId}/stream`"
+                             @error="onVideoError(mainCameraId)" />
+                        <div v-else class="video-placeholder">
+                            <div style="font-size: 32px; opacity: 0.4;">📷</div>
+                            <div>{{ mainCameraId ? getStatusText(mainCameraStatus) : '无可用摄像头' }}</div>
+                        </div>
+
+                        <div class="video-controls" v-if="playbackStatus.is_video_file">
+                            <button class="clay-button" @click="controlPlayback(playbackStatus.playing ? 'pause' : 'play')">
+                                {{ playbackStatus.playing ? '⏸ 暂停' : '▶ 播放' }}
+                            </button>
+                            <button class="clay-button" @click="controlPlayback('loop', { loop: !playbackStatus.loop })">
+                                {{ playbackStatus.loop ? '🔁 循环' : '➡️ 单次' }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar camera list -->
+            <div class="sidebar-area">
+                <div class="glass-card" style="flex: 1; display: flex; flex-direction: column; padding: 16px;">
+                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">
+                        摄像头列表
+                    </div>
+                    <div class="cam-list">
+                        <div v-for="cam in cameras" :key="cam.camera_id"
+                             :class="['cam-item', cam.camera_id === mainCameraId ? 'active' : '']"
+                             @click="selectCamera(cam.camera_id)">
+                            <span :class="['status-dot', cam.status === 'connected' ? 'online' : 'offline']"></span>
+                            <span class="cam-name">{{ cam.name || cam.camera_id }}</span>
+                            <div class="cam-types">
+                                <template v-for="(cfg, type) in cam.detection_types" :key="type">
+                                    <span v-if="cfg.enabled" class="cam-type-mini">
+                                        {{ getTypeLabel(type) }}
+                                    </span>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom alerts -->
+            <div class="alerts-area">
+                <div class="glass-card" style="flex: 1; display: flex; flex-direction: column; padding: 16px;">
+                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">
+                        最近告警
+                    </div>
+                    <div class="alerts-list">
+                        <div v-for="alert in recentAlerts" :key="alert.id" class="alert-card glass-card">
+                            <div class="alert-time">{{ alert.time }}</div>
+                            <div class="alert-main">
+                                <span class="alert-camera">{{ alert.cameraName }}</span>
+                                <span class="type-badge" :class="alert.detection_type">{{ getTypeLabel(alert.detection_type) }}</span>
+                            </div>
+                            <div style="font-size: 12px; color: var(--text-secondary);">
+                                级别: {{ getLevelLabel(alert.level) }}
+                            </div>
+                        </div>
+                        <div v-if="!recentAlerts.length" style="color: var(--text-muted); padding: 20px;">
+                            暂无告警
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, watch, onMounted, onUnmounted } = Vue;
+
+        createApp({
+            setup() {
+                const sidebar = ref(getSidebarContext());
+                const cameras = ref([]);
+                const cameraOrder = ref([]);
+                const recentAlerts = ref([]);
+                const overlayTypes = ref([]);
+                const playbackStatus = ref({});
+                const streamVisible = ref({});
+                const utcTime = ref('--:--:--');
+                let refreshTimer = null;
+                let utcTimer = null;
+
+                const mainCameraId = computed(() => cameraOrder.value[0] || null);
+                const mainCameraObj = computed(() => cameras.value.find(c => c.camera_id === mainCameraId.value));
+                const mainCameraName = computed(() => mainCameraObj.value?.name || mainCameraId.value || '未选择');
+                const mainCameraStatus = computed(() => mainCameraObj.value?.status || 'idle');
+
+                const onlineCount = computed(() => cameras.value.filter(c => c.status === 'connected').length);
+                const alertCount = computed(() => recentAlerts.value.filter(a =>
+                    a.level === 'small_model_alarm' || a.level === 'vlm_alarm' || a.level === 'P0'
+                ).length);
+
+                const mainAlertType = computed(() => {
+                    const cam = mainCameraObj.value;
+                    if (!cam || !cam.detection) return null;
+                    for (const t of DETECTION_TYPES.map(x => x.key)) {
+                        if (cam.detection[t]?.alert) return t;
+                    }
+                    return null;
+                });
+
+                function getStatusText(status) {
+                    const map = { idle: '空闲', connecting: '连接中', connected: '已连接', error: '错误', reconnecting: '重连中' };
+                    return map[status] || status;
+                }
+
+                function toggleSettingsNav() {
+                    sidebar.value.settingsExpanded = !sidebar.value.settingsExpanded;
+                }
+
+                function selectCamera(cid) {
+                    const idx = cameraOrder.value.indexOf(cid);
+                    if (idx > 0) {
+                        const newOrder = [...cameraOrder.value];
+                        [newOrder[0], newOrder[idx]] = [newOrder[idx], newOrder[0]];
+                        cameraOrder.value = newOrder;
+                    } else if (idx === -1) {
+                        cameraOrder.value = [cid, ...cameraOrder.value.filter(id => id !== cid)];
+                    }
+                    updateUrl();
+                }
+
+                function updateUrl() {
+                    if (!mainCameraId.value) return;
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('camera', mainCameraId.value);
+                    window.history.replaceState({}, '', url);
+                }
+
+                function onVideoError(cid) {
+                    streamVisible.value[cid] = false;
+                    setTimeout(() => { streamVisible.value[cid] = true; }, 3000);
+                }
+
+                async function fetchCameras() {
+                    try {
+                        const data = await safeFetch('/cameras');
+                        if (data.cameras) {
+                            cameras.value = data.cameras;
+                            const enabledIds = data.cameras.filter(c => c.enabled !== false).map(c => c.camera_id);
+                            const url = new URL(window.location.href);
+                            const urlCam = url.searchParams.get('camera');
+
+                            let newOrder;
+                            if (cameraOrder.value.length === 0) {
+                                newOrder = urlCam && enabledIds.includes(urlCam)
+                                    ? [urlCam, ...enabledIds.filter(id => id !== urlCam)]
+                                    : [...enabledIds];
+                            } else {
+                                const existing = new Set(cameraOrder.value);
+                                const newIds = enabledIds.filter(id => !existing.has(id));
+                                newOrder = cameraOrder.value.filter(id => enabledIds.includes(id));
+                                newOrder.push(...newIds);
+                            }
+                            cameraOrder.value = newOrder;
+                        }
+                    } catch (e) { console.error('获取摄像头失败:', e); }
+                }
+
+                async function fetchStatus() {
+                    try {
+                        const data = await safeFetch('/status');
+                        if (data.recent_records) {
+                            recentAlerts.value = data.recent_records.slice(0, 5).map(r => {
+                                const cam = cameras.value.find(c => c.camera_id === r.camera_id);
+                                return {
+                                    id: r.id,
+                                    time: formatDateTime(r.time),
+                                    cameraName: cam?.name || r.camera_id,
+                                    detection_type: r.detection_type || r.action,
+                                    level: r.level || 'small_model_alarm',
+                                };
+                            });
+                        }
+                    } catch (e) { console.error('获取状态失败:', e); }
+                }
+
+                async function fetchOverlay() {
+                    try {
+                        const data = await safeFetch('/overlay');
+                        if (data.overlay_types) overlayTypes.value = data.overlay_types;
+                    } catch (e) { console.error('获取画框配置失败:', e); }
+                }
+
+                async function fetchPlaybackStatus() {
+                    if (!mainCameraId.value) return;
+                    try {
+                        const data = await safeFetch(`/cameras/${mainCameraId.value}/playback/status`);
+                        playbackStatus.value = data || {};
+                    } catch (e) { playbackStatus.value = {}; }
+                }
+
+                async function controlPlayback(action, extra = {}) {
+                    if (!mainCameraId.value) return;
+                    try {
+                        const data = await safeFetch(`/cameras/${mainCameraId.value}/playback/control`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action, ...extra })
+                        });
+                        if (data.status) playbackStatus.value = data.status;
+                    } catch (e) { console.error('播放控制失败:', e); }
+                }
+
+                function updateUtc() {
+                    utcTime.value = new Date().toISOString().slice(11, 19);
+                }
+
+                watch(mainCameraId, () => {
+                    playbackStatus.value = {};
+                    fetchPlaybackStatus();
+                    updateUrl();
+                });
+
+                window.toggleSettingsNav = toggleSettingsNav;
+
+                onMounted(() => {
+                    const root = document.getElementById('sidebar-root');
+                    if (root) renderSidebar(root, sidebar.value);
+                    fetchCameras();
+                    fetchStatus();
+                    fetchOverlay();
+                    fetchPlaybackStatus();
+                    updateUtc();
+                    refreshTimer = setInterval(() => { fetchCameras(); fetchStatus(); fetchPlaybackStatus(); }, 2000);
+                    utcTimer = setInterval(updateUtc, 1000);
+                });
+
+                onUnmounted(() => {
+                    if (refreshTimer) clearInterval(refreshTimer);
+                    if (utcTimer) clearInterval(utcTimer);
+                });
+
+                return {
+                    sidebar, cameras, recentAlerts, overlayTypes, playbackStatus, streamVisible, utcTime,
+                    mainCameraId, mainCameraName, mainCameraStatus, mainAlertType,
+                    onlineCount, alertCount,
+                    getTypeLabel, getLevelLabel, getStatusText,
+                    toggleSettingsNav, selectCamera, onVideoError, controlPlayback
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

@@ -42,3 +42,6 @@ uploads/videos/
 
 # Claude Code
 .claude/
+
+# Superpowers brainstorm artifacts
+.superpowers/

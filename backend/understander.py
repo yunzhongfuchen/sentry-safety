@@ -109,7 +109,7 @@ class VideoUnderstander:
         else:
             self.provider = "ark"
             self.api_key = config.ARK_API_KEY
-            self.model = config.VLM_ENDPOINT
+            self.model = config.ARK_MODEL
             self.endpoint = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
         self._initialized = False
 

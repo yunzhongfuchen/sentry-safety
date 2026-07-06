@@ -444,6 +444,12 @@ def init_components():
                 half=_global_settings.get("gpu_scheduler_half", app_config.GPU_SCHEDULER_HALF),
             )
             log_message(f"GPU scheduler initialized: {len(model_configs)} models, {gpu_scheduler.num_queues} queues")
+
+            # 让 MultiDetector 跳过已由 GPU scheduler 推理的类型，避免重复检测
+            scheduler_types = list(model_configs.keys())
+            for cam_data in camera_configs_data:
+                camera_id = cam_data["camera_id"]
+                multi_detector.mark_externally_managed(camera_id, scheduler_types)
         except Exception as e:
             log_message(f"GPU scheduler init failed: {e}", "error")
             gpu_scheduler = None
@@ -535,8 +541,8 @@ def generate_multi_view():
 
 @app.get("/")
 async def root():
-    """根路径 - 重定向到多摄像头控制台"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "multi.html"
+    """根路径 - 返回监控中心"""
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "monitor.html"
     if fp.exists():
         return HTMLResponse(fp.read_text(encoding="utf-8"))
     return {
@@ -544,39 +550,22 @@ async def root():
         "version": "2.0",
         "cameras": len(camera_manager._cameras) if camera_manager else 0,
         "endpoints": [
-            "/multi - 多摄像头控制台",
+            "/monitor - 监控中心",
+            "/records.html - 检测记录",
+            "/settings.html - 系统设置",
             "/cameras - 摄像头列表",
-            "/stream - 多画面视频流",
             "/status - 系统状态",
         ]
     }
 
 
-@app.get("/multi")
-async def multi_view():
-    """多摄像头控制台页面"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "multi.html"
+@app.get("/monitor")
+async def monitor_view():
+    """Glass-clay 风格监控中心"""
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "monitor.html"
     if fp.exists():
         return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "Multi-camera page not found"}
-
-
-@app.get("/hud")
-async def hud_view():
-    """HUD 风格监控中心"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "hud.html"
-    if fp.exists():
-        return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "HUD page not found"}
-
-
-@app.get("/console")
-async def console_view():
-    """Surveillance Pro 风格监控中心"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "console.html"
-    if fp.exists():
-        return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "Console page not found"}
+    return {"error": "Monitor page not found"}
 
 
 @app.get("/cameras")
@@ -889,6 +878,8 @@ async def get_alerts(
     level: Optional[str] = None,
     type: Optional[str] = None,
     status: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
 ):
@@ -896,6 +887,7 @@ async def get_alerts(
     records, total = storage.get_records_paginated(
         page=page, page_size=page_size,
         camera_id=camera_id, level=level, dtype=type, status=status,
+        date_from=date_from, date_to=date_to,
     )
     return {"records": records, "total": total, "page": page, "page_size": page_size}
 
@@ -917,12 +909,17 @@ async def confirm_alert(record_id: str):
     """标记告警为已确认"""
     global detection_records
     with _records_lock:
+        found = False
         for r in detection_records:
             if r.get("id") == record_id:
                 confirm_alarm(r)
-                mark_records_dirty()
-                return {"success": True}
-    return JSONResponse({"error": "Record not found"}, status_code=404)
+                found = True
+                break
+        if not found:
+            return JSONResponse({"error": "Record not found"}, status_code=404)
+        data = list(detection_records)
+    storage.save_records(data)
+    return {"success": True}
 
 
 @app.post("/alerts/{record_id}/ignore")
@@ -930,12 +927,17 @@ async def ignore_alert(record_id: str):
     """标记告警为误报"""
     global detection_records
     with _records_lock:
+        found = False
         for r in detection_records:
             if r.get("id") == record_id:
                 confirm_false_positive(r)
-                mark_records_dirty()
-                return {"success": True}
-    return JSONResponse({"error": "Record not found"}, status_code=404)
+                found = True
+                break
+        if not found:
+            return JSONResponse({"error": "Record not found"}, status_code=404)
+        data = list(detection_records)
+    storage.save_records(data)
+    return {"success": True}
 
 
 @app.get("/overlay")
@@ -1318,15 +1320,6 @@ async def delete_camera(camera_id: str):
         return JSONResponse({"error": "Camera not found"}, status_code=404)
 
 
-@app.get("/legacy")
-async def legacy_view():
-    """旧版单摄像头页面"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "index.html"
-    if fp.exists():
-        return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "Legacy page not found"}
-
-
 @app.get("/records.html")
 async def records_page():
     """记录页面"""
@@ -1523,7 +1516,7 @@ async def startup():
         start_overlay_thread()
 
         log_message(f"Sentry Safety Detection started on {app_config.API_HOST}:{app_config.API_PORT}")
-        log_message(f"Access the multi-camera console at http://{app_config.API_HOST}:{app_config.API_PORT}/multi")
+        log_message(f"Access the monitoring center at http://{app_config.API_HOST}:{app_config.API_PORT}/monitor")
 
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _do_startup)
