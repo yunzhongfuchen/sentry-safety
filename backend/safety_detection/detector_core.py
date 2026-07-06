@@ -398,7 +398,11 @@ class MultiDetector:
 
     def _process_camera(self, camera_id: str, core_id: int) -> None:
         """处理单个摄像头的检测循环（由策略线程调用）"""
-        frame = self.camera_manager.get_frame(camera_id, allow_paused=False)
+        state = self.camera_manager._cameras.get(camera_id)
+        if state and state.config.is_video_source() and not state.playback_state.get("playing", True):
+            return
+
+        frame = self.camera_manager.get_latest_frame(camera_id)
         if frame is None:
             return
 
