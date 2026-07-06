@@ -628,6 +628,10 @@ async def camera_stream(camera_id: str, raw: bool = False):
     Args:
         raw: True 返回原始帧（无画框），False 返回标注帧（带画框）
     """
+    if camera_manager is None or camera_id not in camera_manager._cameras:
+        return JSONResponse({"error": "Camera not found"}, status_code=404)
+    if camera_id != camera_manager.get_main_camera():
+        return JSONResponse({"error": "Camera is not the main stream"}, status_code=404)
     return StreamingResponse(
         generate_camera_frames(camera_id, raw=raw),
         media_type="multipart/x-mixed-replace; boundary=frame"

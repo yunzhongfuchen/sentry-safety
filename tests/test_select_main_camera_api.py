@@ -26,3 +26,31 @@ def test_select_main_camera_not_found():
         assert response.status_code == 404
         assert response.json()["error"] == "Camera not found"
         set_main.assert_not_called()
+
+
+def test_main_camera_stream():
+    with patch("backend.main_multi.camera_manager") as cm, \
+         patch("backend.main_multi.stream_server") as ss, \
+         patch("backend.main_multi.generate_camera_frames") as gen:
+        cm._cameras = {"cam_01": MagicMock(), "cam_02": MagicMock()}
+        cm.get_main_camera.return_value = "cam_01"
+        gen.return_value = iter([])
+        from backend.main_multi import app
+        client = TestClient(app)
+        response = client.get("/cameras/cam_01/stream")
+        assert response.status_code == 200
+        gen.assert_called_once_with("cam_01", raw=False)
+
+
+def test_non_main_camera_stream():
+    with patch("backend.main_multi.camera_manager") as cm, \
+         patch("backend.main_multi.stream_server") as ss, \
+         patch("backend.main_multi.generate_camera_frames") as gen:
+        cm._cameras = {"cam_01": MagicMock(), "cam_02": MagicMock()}
+        cm.get_main_camera.return_value = "cam_01"
+        from backend.main_multi import app
+        client = TestClient(app)
+        response = client.get("/cameras/cam_02/stream")
+        assert response.status_code == 404
+        assert response.json()["error"] == "Camera is not the main stream"
+        gen.assert_not_called()
