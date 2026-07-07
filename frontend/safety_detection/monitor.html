@@ -388,6 +388,8 @@
                         cameraOrder.value = [cid, ...cameraOrder.value.filter(id => id !== cid)];
                     }
                     updateUrl();
+                    // 通知后端切换主画面
+                    safeFetch(`/cameras/${cid}/select`, { method: 'POST' }).catch(e => console.error('select camera failed', e));
                 }
 
                 function updateUrl() {
