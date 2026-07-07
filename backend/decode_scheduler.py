@@ -98,6 +98,24 @@ class DecodeScheduler:
             self._schedule_loop_single()
             time.sleep(0.01)
 
+    def _get_video_interval(self, state) -> Optional[float]:
+        """主画面本地视频：按视频原 FPS 和倍速计算调度间隔。"""
+        if not state.config.is_video_source():
+            return None
+        cap = getattr(state, "cap", None)
+        if cap is None or not getattr(cap, "isOpened", lambda: False)():
+            return None
+        try:
+            video_fps = cap.get(cv2.CAP_PROP_FPS)
+            if not isinstance(video_fps, (int, float)) or video_fps <= 0:
+                video_fps = 25.0
+        except Exception:
+            video_fps = 25.0
+        with self.camera_manager._lock:
+            pb = getattr(state, "playback_state", {})
+            speed = pb.get("speed", 1.0) if isinstance(pb, dict) else 1.0
+        return 1.0 / (video_fps * speed)
+
     def _schedule_loop_single(self):
         """执行一轮调度，便于单元测试"""
         now = time.time()
@@ -106,7 +124,14 @@ class DecodeScheduler:
             # 快照遍历，避免其他线程修改 _cameras 时触发 RuntimeError
             for cam_id, state in list(cameras.items()):
                 is_main = cam_id == self._main_camera
-                interval = 1.0 / 25 if is_main else 1.0
+                is_video = state.config.is_video_source()
+
+                if is_main and is_video:
+                    interval = self._get_video_interval(state) or (1.0 / 25)
+                elif is_main:
+                    interval = 1.0 / 25
+                else:
+                    interval = 1.0
 
                 with state.lock:
                     cap = getattr(state, "cap", None)
@@ -250,12 +275,8 @@ class DecodeScheduler:
                 state.last_decode_time = due_time
             return
 
-        # 视频文件：按倍速控制 advance
+        # 视频文件：更新 current_frame_idx
         if is_video:
-            if speed > 1.0:
-                extra = int(round(speed)) - 1
-                for _ in range(extra):
-                    cap.grab()
             with self.camera_manager._lock:
                 if cam_id in cameras:
                     cameras[cam_id].playback_state["current_frame_idx"] = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
