@@ -226,12 +226,6 @@
                                     <div class="type-card-field"><label>连续</label><input type="number" v-model.number="settings.default_detection_types[t.key].consecutive_required" /></div>
                                     <div class="type-card-field"><label>冷却</label><input type="number" v-model.number="settings.default_detection_types[t.key].cooldown" min="0" /></div>
                                 </div>
-                                <div v-if="t.key === 'uniform'" class="type-card-grid" style="margin-top: 10px;">
-                                    <div class="type-card-field" style="grid-column: span 2;">
-                                        <label>合规窗口 (s)</label>
-                                        <input type="number" v-model.number="settings.default_detection_types[t.key].compliance_window_seconds" />
-                                    </div>
-                                </div>
                             </div>
                         </div>
                         <button class="clay-button primary" @click="saveDefaultTypes">保存检测默认值</button>
@@ -324,17 +318,13 @@
                         <div class="gc-form-field"><label>名称</label><input class="clay-input" v-model="cameraDialog.name" /></div>
                         <div class="gc-form-field" style="grid-column: span 2;">
                             <label>源地址</label>
-                            <input class="clay-input" v-model="cameraDialog.source" placeholder="rtsp://... 或 /path/to/video.mp4" />
-                            <input type="file" accept="video/*" style="display: none;" ref="videoFileInput" @change="onVideoFileSelected" />
-                            <button class="clay-button" style="margin-top: 8px;" @click="$refs.videoFileInput.click()">上传本地视频</button>
-                            <span v-if="uploading" style="font-size: 12px; color: var(--text-secondary); margin-left: 8px;">上传中...</span>
+                            <input class="clay-input" v-model="cameraDialog.source" placeholder="rtsp://... 或 http://..." />
                         </div>
                         <div class="gc-form-field">
                             <label>源类型</label>
                             <select class="clay-select" v-model="cameraDialog.source_type">
                                 <option value="auto">自动</option>
                                 <option value="rtsp">RTSP</option>
-                                <option value="video">视频文件</option>
                                 <option value="camera">摄像头</option>
                             </select>
                         </div>
@@ -437,7 +427,6 @@
                 const batchDialog = ref(false);
                 const batchTypes = ref(defaultDetectionTypes());
                 const toast = ref(null);
-                const uploading = ref(false);
                 const logs = ref([]);
                 const systemMode = ref('');
                 let logTimer = null;
@@ -650,24 +639,6 @@
                     selectedCameras.value = e.target.checked ? cameras.value.map(c => c.camera_id) : [];
                 }
 
-                async function onVideoFileSelected(event) {
-                    const file = event.target.files[0];
-                    if (!file) return;
-                    uploading.value = true;
-                    try {
-                        const formData = new FormData();
-                        formData.append('file', file);
-                        const res = await fetch('/upload/video', { method: 'POST', body: formData });
-                        const data = await res.json();
-                        if (data.success) {
-                            cameraDialog.value.source = data.path;
-                            cameraDialog.value.source_type = 'video';
-                            showToast('上传成功: ' + data.filename);
-                        } else showToast(data.error || '上传失败', 'error');
-                    } catch (e) { showToast('上传失败', 'error'); }
-                    finally { uploading.value = false; event.target.value = ''; }
-                }
-
                 async function restartSystem() {
                     if (!confirm('确定重启检测服务？')) return;
                     try {
@@ -715,13 +686,13 @@
 
                 return {
                     tab, sidebar, cameras, settings, models, detectorInfo, selectedCameras,
-                    cameraDialog, batchDialog, batchTypes, toast, uploading, logs, systemMode,
+                    cameraDialog, batchDialog, batchTypes, toast, logs, systemMode,
                     DETECTION_TYPES,
                     loadCameras, loadSettings, loadModels,
                     saveVlmSettings, saveDefaultTypes, saveSystemSettings,
                     openCameraDialog, resetCameraTypes, saveCamera, deleteCamera,
                     openBatchDialog, saveBatchConfig, toggleSelectAll,
-                    onVideoFileSelected, restartSystem, toggleSettingsNav
+                    restartSystem, toggleSettingsNav
                 };
             }
         }).mount('#app');

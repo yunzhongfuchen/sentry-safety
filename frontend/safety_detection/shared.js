@@ -121,12 +121,12 @@ function getStatusLabel(status) {
 // Default detection type configuration structure
 function defaultDetectionTypes() {
     return {
-        fire: { enabled: false, interval: 1, threshold: 0.6, consecutive_required: 2, cooldown: 10, use_vlm: false },
-        smoke: { enabled: false, interval: 1, threshold: 0.55, consecutive_required: 2, cooldown: 10, use_vlm: false },
-        uniform: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, compliance_window_seconds: 30, cooldown: 3, use_vlm: false },
-        mask: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, cooldown: 3, use_vlm: false },
-        cigarette: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 1, cooldown: 3, use_vlm: false },
-        sleep: { enabled: false, interval: 60, threshold: 0.7, consecutive_required: 3, cooldown: 30, use_vlm: false },
+        fire: { enabled: false, interval: 1, threshold: 0.6, consecutive_required: 3, cooldown: 60, use_vlm: false },
+        smoke: { enabled: false, interval: 1, threshold: 0.55, consecutive_required: 3, cooldown: 60, use_vlm: false },
+        uniform: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 3, compliance_window_seconds: 30, cooldown: 60, use_vlm: false },
+        mask: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 3, cooldown: 60, use_vlm: false },
+        cigarette: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 3, cooldown: 60, use_vlm: false },
+        sleep: { enabled: false, interval: 60, threshold: 0.7, consecutive_required: 3, cooldown: 60, use_vlm: false },
     };
 }
 

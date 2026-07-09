@@ -53,6 +53,30 @@
             display: flex;
             flex-direction: column;
             gap: 6px;
+            flex: 1 1 140px;
+            min-width: 140px;
+        }
+
+        .filter-field input,
+        .filter-field select {
+            width: 100%;
+        }
+
+        .date-inputs {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .date-inputs input {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .date-inputs span {
+            color: var(--text-secondary);
+            font-size: 12px;
+            white-space: nowrap;
         }
 
         .filter-field label {
@@ -61,11 +85,40 @@
             color: var(--text-secondary);
         }
 
+        .filter-field.date-range {
+            flex: 2 1 220px;
+            min-width: 220px;
+        }
+
+        .filter-field.filter-actions {
+            flex: 0 0 auto;
+            min-width: auto;
+        }
+
+        .filter-actions button {
+            width: auto;
+            white-space: nowrap;
+            padding: 12px 20px;
+            font-size: 14px;
+            align-self: flex-start;
+        }
+
         .type-distribution {
             display: flex;
             gap: 10px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
             margin-bottom: 24px;
+        }
+
+        .type-distribution .type-badge {
+            flex: 1;
+            justify-content: center;
+            padding: 12px 16px;
+            font-size: 14px;
+            border-radius: var(--radius-md);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .pagination {
@@ -195,16 +248,20 @@
 
             <!-- Type distribution -->
             <div class="type-distribution">
-                <span v-for="(count, type) in typeDistribution" :key="type" class="type-badge" :class="type">
-                    {{ getTypeLabel(type) }} {{ count }}
+                <span v-for="t in DETECTION_TYPES" :key="t.key" class="type-badge" :class="t.key">
+                    {{ t.label }} {{ typeDistribution[t.key] || 0 }}
                 </span>
             </div>
 
             <!-- Filters -->
             <div class="glass-card filter-bar">
-                <div class="filter-field">
-                    <label>日期</label>
-                    <input type="date" class="clay-input" v-model="filters.date" />
+                <div class="filter-field date-range">
+                    <label>日期范围</label>
+                    <div class="date-inputs">
+                        <input type="date" class="clay-input" v-model="filters.date_from" />
+                        <span>~</span>
+                        <input type="date" class="clay-input" v-model="filters.date_to" />
+                    </div>
                 </div>
                 <div class="filter-field">
                     <label>摄像头</label>
@@ -248,7 +305,10 @@
                         <option :value="50">50</option>
                     </select>
                 </div>
-                <button class="clay-button primary" @click="loadRecords">刷新</button>
+                <div class="filter-field filter-actions">
+                    <label>&nbsp;</label>
+                    <button class="clay-button primary" @click="loadRecords">刷新</button>
+                </div>
             </div>
 
             <!-- Table -->
@@ -367,7 +427,7 @@
                 const stats = ref({ total: 0, pending: 0, confirmed: 0, false_positive: 0 });
                 const typeDistribution = ref({});
                 const loading = ref(false);
-                const filters = ref({ date: '', camera_id: '', detection_type: '', level: '', status: '' });
+                const filters = ref({ date_from: '', date_to: '', camera_id: '', detection_type: '', level: '', status: '' });
                 const pagination = ref({ page: 1, page_size: 20, total: 0 });
                 const detail = ref(null);
                 const snapshot = ref('');
@@ -417,10 +477,8 @@
                         if (filters.value.detection_type) params.append('type', filters.value.detection_type);
                         if (filters.value.level) params.append('level', filters.value.level);
                         if (filters.value.status) params.append('status', filters.value.status);
-                        if (filters.value.date) {
-                            params.append('date_from', filters.value.date);
-                            params.append('date_to', filters.value.date);
-                        }
+                        if (filters.value.date_from) params.append('date_from', filters.value.date_from);
+                        if (filters.value.date_to) params.append('date_to', filters.value.date_to);
 
                         const data = await safeFetch(`/alerts?${params}`);
                         records.value = (data.records || []).map(r => ({
@@ -520,6 +578,11 @@
                 }
 
                 window.toggleSettingsNav = toggleSettingsNav;
+
+                watch(sidebar, (value) => {
+                    const root = document.getElementById('sidebar-root');
+                    if (root) renderSidebar(root, value);
+                }, { deep: true });
 
                 onMounted(() => {
                     const root = document.getElementById('sidebar-root');

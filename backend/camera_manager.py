@@ -37,7 +37,7 @@ class CameraStatus(Enum):
 class CameraConfig:
     """摄像头配置"""
     camera_id: str
-    source: str  # 摄像头索引、RTSP地址或视频文件路径
+    source: str  # 摄像头索引、RTSP地址或视频流URL
     name: str = ""  # 摄像头显示名称
     enabled: bool = True
     # 视频流配置
@@ -45,10 +45,8 @@ class CameraConfig:
     height: int = 480
     fps: int = 15
     buffer_size: int = 1
-    # 视频源类型与播放控制
-    source_type: str = "auto"  # "camera" | "rtsp" | "video" | "auto"
-    video_loop: bool = False      # 视频文件是否循环播放
-    video_playback_speed: float = 1.0  # 播放倍速
+    # 视频源类型
+    source_type: str = "auto"  # "camera" | "rtsp" | "auto"
     # 重连配置
     reconnect_interval: int = 5
     max_reconnect_attempts: int = 0  # 0 = 无限重连（生产环境摄像头检修/网络抖动常见）
@@ -59,14 +57,6 @@ class CameraConfig:
     # NPU配置 (RK3588)
     use_npu: bool = False
     npu_core: int = 0  # 0-2, RK3588有3个NPU核心
-
-    def is_video_source(self) -> bool:
-        """判断当前源是否为本地视频文件（非摄像头索引、非 RTSP 流）"""
-        if self.source_type == "video":
-            return True
-        if self.source_type == "auto":
-            return not str(self.source).isdigit() and not str(self.source).startswith("rtsp")
-        return False
 
 
 @dataclass
@@ -88,14 +78,6 @@ class CameraState:
     decode_queued: bool = False
     # 统计信息
     fps_stats: List[float] = field(default_factory=list)
-    # 视频文件播放状态
-    playback_state: dict = field(default_factory=lambda: {
-        "playing": True,
-        "current_frame_idx": 0,
-        "total_frames": 0,
-        "loop": False,
-        "speed": 1.0,
-    })
     # 时间窗口帧历史 (用于触发时保存前5秒帧)
     frame_history: deque = field(default_factory=lambda: deque(maxlen=10))
     # 录制状态
@@ -110,15 +92,6 @@ class CameraState:
     record_preview_path: Optional[str] = None
     record_preview_queue: Optional[queue.Queue] = None
     record_preview_thread: Optional[threading.Thread] = None
-
-    def __post_init__(self):
-        # 让 playback_state 的初始 loop/speed 与 config 保持一致
-        self.playback_state["loop"] = self.config.video_loop
-        self.playback_state["speed"] = self.config.video_playback_speed
-        # 本地视频文件默认暂停、不循环，等待前端点击播放
-        is_video = self.config.is_video_source()
-        if is_video:
-            self.playback_state["playing"] = False
 
     def get_avg_fps(self) -> float:
         """计算平均FPS"""
@@ -248,20 +221,12 @@ class CameraManager:
             self.stop_camera(camera_id)
     
     def get_frame(self, camera_id: str, allow_paused: bool = True) -> Optional[np.ndarray]:
-        """获取指定摄像头的当前帧。
-        allow_paused=False 时，若本地视频处于暂停状态则返回 None，
-        用于检测器跳过暂停视频，避免对静止画面重复检测。
-        """
+        """获取指定摄像头的当前帧。"""
         with self._lock:
             if camera_id not in self._cameras:
                 return None
 
             state = self._cameras[camera_id]
-            if not allow_paused:
-                is_video_file = state.config.is_video_source()
-                if is_video_file and not state.playback_state.get("playing", True):
-                    return None
-
             with state.lock:
                 return state.current_frame.copy() if state.current_frame is not None else None
 
@@ -322,7 +287,6 @@ class CameraManager:
                 return None
 
             state = self._cameras[camera_id]
-            is_video_file = state.config.is_video_source()
             # 判断解码后端
             decoder_backend = "cpu"
             if state.cap is not None:
@@ -346,7 +310,6 @@ class CameraManager:
                 "frame_count": state.frame_count,
                 "error_count": state.error_count,
                 "reconnect_attempts": state.reconnect_attempts,
-                "is_video_file": is_video_file,
                 "decoder_backend": decoder_backend,
             }
     
@@ -363,7 +326,7 @@ class CameraManager:
         self._global_frame_callback = callback
 
     def set_camera_source(self, camera_id: str, source: str, source_type: str = "auto") -> bool:
-        """动态切换视频源（支持实时切换到视频文件）"""
+        """动态切换视频源"""
         with self._lock:
             if camera_id not in self._cameras:
                 return False
@@ -379,64 +342,11 @@ class CameraManager:
             state = self._cameras[camera_id]
             state.config.source = source
             state.config.source_type = source_type
-            is_video = state.config.is_video_source()
-            state.playback_state = {
-                "playing": not is_video,  # 视频文件默认暂停，等待用户手动开始
-                "current_frame_idx": 0,
-                "total_frames": 0,
-                "loop": state.config.video_loop,
-                "speed": state.config.video_playback_speed,
-            }
-            logger.info(f"Camera {camera_id} source switched to {source} (type={source_type}, playing={state.playback_state['playing']})")
+            logger.info(f"Camera {camera_id} source switched to {source} (type={source_type})")
 
         if was_running:
             self.start_camera(camera_id)
         return True
-
-    def control_playback(self, camera_id: str, action: str, **kwargs) -> Optional[dict]:
-        """视频播放控制：play / pause / seek / speed / loop"""
-        with self._lock:
-            if camera_id not in self._cameras:
-                return None
-            state = self._cameras[camera_id]
-            pb = state.playback_state
-
-            if action == "play":
-                pb["playing"] = True
-                # 如果已经播放到末尾，重头开始
-                total = pb.get("total_frames", 0)
-                current = pb.get("current_frame_idx", 0)
-                if total > 0 and current >= total - 1:
-                    pb["current_frame_idx"] = 0
-                    # 先置空当前帧，防止 reopen/seek 空档期内取到旧帧
-                    with state.lock:
-                        state.current_frame = None
-            elif action == "pause":
-                pb["playing"] = False
-            elif action == "seek":
-                frame_idx = kwargs.get("frame_idx", 0)
-                pb["current_frame_idx"] = max(0, min(frame_idx, pb["total_frames"] - 1))
-            elif action == "speed":
-                pb["speed"] = max(0.5, min(kwargs.get("speed", 1.0), 2.0))
-                state.config.video_playback_speed = pb["speed"]
-            elif action == "loop":
-                pb["loop"] = kwargs.get("loop", True)
-                state.config.video_loop = pb["loop"]
-
-            result = dict(pb)
-            result["is_video_file"] = state.config.is_video_source()
-            return result
-
-    def get_playback_status(self, camera_id: str) -> Optional[dict]:
-        """获取视频播放状态"""
-        with self._lock:
-            if camera_id not in self._cameras:
-                return None
-            state = self._cameras[camera_id]
-            is_video_file = state.config.is_video_source()
-            result = dict(state.playback_state)
-            result["is_video_file"] = is_video_file
-            return result
 
     def get_camera_ids(self) -> List[str]:
         """获取所有摄像头ID列表"""
@@ -453,12 +363,6 @@ class CameraManager:
 
         if state.recording:
             return state.record_path
-
-        # 如果是本地视频且已暂停（播放到末尾），先恢复播放/回退到开头
-        pb = state.playback_state
-        is_video_file = state.config.is_video_source()
-        if is_video_file and not pb.get("playing", True):
-            self.control_playback(camera_id, "play")
 
         # 默认输出目录
         if output_dir is None:
@@ -677,34 +581,6 @@ class CameraManager:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
         cap.set(cv2.CAP_PROP_FPS, state.config.fps)
 
-        # 视频文件：获取总帧数
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if total_frames > 0:
-            with self._lock:
-                state.playback_state["total_frames"] = total_frames
-
-        is_video_file = state.config.is_video_source()
-
-        # 视频文件：连接成功后先读取第一帧作为静态预览，方便用户在不点击播放时也能看到画面、画 ROI
-        if is_video_file:
-            ret_preview, preview_frame = cap.read()
-            if ret_preview and preview_frame is not None:
-                src_h, src_w = preview_frame.shape[:2]
-                max_w = state.config.width
-                max_h = state.config.height
-                if src_w > max_w or src_h > max_h:
-                    scale = min(max_w / src_w, max_h / src_h)
-                    new_w = int(src_w * scale)
-                    new_h = int(src_h * scale)
-                    preview_frame = cv2.resize(preview_frame, (new_w, new_h))
-                with state.lock:
-                    state.current_frame = preview_frame
-                # 重置到第一帧，等用户点击 play 后再正常播放
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                with self._lock:
-                    state.playback_state["current_frame_idx"] = 0
-                logger.info(f"Camera {camera_id} video first frame loaded as preview")
-
         with self._lock:
             state.cap = cap
             state.status = CameraStatus.CONNECTED
@@ -745,24 +621,6 @@ class CameraManager:
             self._open_capture(camera_id)
         except Exception as e:
             logger.error(f"Camera {camera_id} reopen failed: {e}")
-
-    def _reopen_for_loop(self, camera_id: str):
-        """视频文件循环播放时重新打开源，不计入 reconnect_attempts"""
-        with self._lock:
-            if camera_id not in self._cameras:
-                return
-            state = self._cameras[camera_id]
-            if state.cap:
-                try:
-                    state.cap.release()
-                except Exception:
-                    pass
-                state.cap = None
-
-        try:
-            self._open_capture(camera_id)
-        except Exception as e:
-            logger.error(f"Camera {camera_id} loop reopen failed: {e}")
 
 
 class CameraConfigLoader:
@@ -819,8 +677,6 @@ class CameraConfigLoader:
                 height=item.get("height", 480),
                 fps=item.get("fps", 15),
                 source_type=item.get("source_type", "auto"),
-                video_loop=item.get("video_loop", False),
-                video_playback_speed=item.get("video_playback_speed", 1.0),
                 detection_enabled=item.get("detection_enabled", True),
                 detection_types=item.get("detection_types"),
                 detection_roi=roi,

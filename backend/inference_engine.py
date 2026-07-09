@@ -128,6 +128,8 @@ MODEL_PATHS = {
 # YOLOv8 自定义模型目标类别（逗号分隔 class id，默认 0）
 MASK_TARGET_CLASSES = [int(x) for x in os.getenv("MASK_TARGET_CLASSES", "0").split(",") if x.strip()] or [0]
 CIGARETTE_TARGET_CLASSES = [int(x) for x in os.getenv("CIGARETTE_TARGET_CLASSES", "0").split(",") if x.strip()] or [0]
+# 工服检测：默认 class 1 表示未穿工服/反光背心（class 0 表示已穿），可通过环境变量调整
+UNIFORM_TARGET_CLASSES = [int(x) for x in os.getenv("UNIFORM_TARGET_CLASSES", "1").split(",") if x.strip()] or [1]
 
 def detect_npu_cores() -> int:
     """检测可用的 NPU 核心数（RK3588 为 3）。
@@ -297,8 +299,50 @@ class SafetyDetector:
                     logger.warning("Fire CPU model not found")
 
     def _load_uniform_model(self, device: str = None) -> None:
-        """加载工服检测模型（占位：复用 person 模型）"""
-        self._load_person_model(device)
+        """加载工服检测模型（YOLOv8 自训练模型）"""
+        if device is None:
+            device = self.device
+        dtype = "uniform"
+        if device == "npu" and self._npu_cores > 0:
+            if dtype not in self._npu_models:
+                path = _resolve_model_path(dtype, use_npu=True)
+                if path and RKNN_AVAILABLE:
+                    self._npu_models[dtype] = {}
+                    for core_id in range(self._npu_cores):
+                        rknn = RKNNLite(verbose=False)
+                        ret = rknn.load_rknn(path)
+                        if ret != 0:
+                            logger.error(f"Failed to load uniform RKNN for core {core_id}")
+                            continue
+                        ret = rknn.init_runtime(core_mask=self.CORE_MASKS[core_id])
+                        if ret != 0:
+                            logger.error(f"Failed to init uniform RKNN runtime for core {core_id}")
+                            continue
+                        self._npu_models[dtype][core_id] = rknn
+                        logger.info(f"Uniform RKNN loaded on core {core_id}")
+                else:
+                    logger.warning("Uniform RKNN model not found, falling back to CPU/GPU")
+        elif device == "gpu":
+            if dtype not in self._cpu_models:
+                path = _resolve_model_path(dtype, use_npu=False)
+                if path and ULTRALYTICS_AVAILABLE:
+                    model = YOLO(path)
+                    try:
+                        model = model.to("cuda")
+                        logger.info(f"Uniform GPU model loaded from {path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to move uniform model to GPU, using CPU: {e}")
+                    self._cpu_models[dtype] = model
+                else:
+                    logger.warning("Uniform GPU model not found")
+        else:
+            if dtype not in self._cpu_models:
+                path = _resolve_model_path(dtype, use_npu=False)
+                if path and ULTRALYTICS_AVAILABLE:
+                    self._cpu_models[dtype] = YOLO(path)
+                    logger.info(f"Uniform CPU model loaded from {path}")
+                else:
+                    logger.warning("Uniform CPU model not found")
 
     def _load_person_model(self, device: str = None) -> None:
         """加载通用人员检测模型（yolov8n.pt / yolov8n.rknn），按 gpu>npu>cpu 自动适应"""
@@ -502,7 +546,7 @@ class SafetyDetector:
                 results["fire"] = fire_res
                 results["smoke"] = smoke_res
             elif dtype == "uniform":
-                results[dtype] = self._detect_uniform(frame)
+                results[dtype] = self._detect_uniform(frame, core_id)
             elif dtype == "mask":
                 results[dtype] = self._detect_mask(frame, core_id)
             elif dtype == "cigarette":
@@ -607,17 +651,46 @@ class SafetyDetector:
             logger.error(f"Person detection error: {e}")
             return []
 
-    def _detect_uniform(self, frame: np.ndarray) -> dict:
-        """工服检测（占位：当前仅做人员检测，检测到人员即显示框，不触发告警）"""
-        boxes = self._detect_persons(frame)
-        scores = [b["confidence"] for b in boxes]
-        return {
-            "detected": False,
-            "boxes": [b["xyxy"] for b in boxes],
-            "scores": scores,
-            "max_confidence": max(scores) if scores else 0.0,
-            "missing_vest": False,
-        }
+    def _detect_uniform(self, frame: np.ndarray, core_id: int = 0) -> dict:
+        """工服检测：检测未穿工服/反光背心的人员"""
+        result = {"detected": False, "boxes": [], "scores": [], "missing_vest": False}
+        model = None
+        use_npu = False
+        with self._model_lock:
+            if "uniform" in self._npu_models and core_id in self._npu_models["uniform"]:
+                model = self._npu_models["uniform"][core_id]
+                use_npu = True
+            elif "uniform" in self._cpu_models:
+                model = self._cpu_models["uniform"]
+
+        if model is None:
+            logger.warning("Uniform model not loaded")
+            return result
+
+        try:
+            if use_npu:
+                input_frame = self._preprocess(frame)
+                outputs = model.inference(inputs=[input_frame])
+                boxes = self._postprocess_rknn(outputs, frame.shape[:2])
+                for box in boxes:
+                    if box.get("class_id") not in UNIFORM_TARGET_CLASSES:
+                        continue
+                    result["boxes"].append(box["xyxy"])
+                    result["scores"].append(box["confidence"])
+            else:
+                pred = model.predict(frame, classes=UNIFORM_TARGET_CLASSES, verbose=False)
+                if pred and pred[0].boxes is not None:
+                    for b in pred[0].boxes:
+                        x1, y1, x2, y2 = map(int, b.xyxy[0])
+                        score = float(b.conf[0])
+                        result["boxes"].append([x1, y1, x2, y2])
+                        result["scores"].append(score)
+            result["detected"] = len(result["boxes"]) > 0
+            result["missing_vest"] = result["detected"]
+            result["max_confidence"] = max(result["scores"]) if result["scores"] else 0.0
+        except Exception as e:
+            logger.error(f"Uniform detection error: {e}")
+        return result
 
     def _detect_mask(self, frame: np.ndarray, core_id: int = 0) -> dict:
         """口罩检测（YOLOv8 自训练模型）"""

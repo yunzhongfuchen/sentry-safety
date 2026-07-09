@@ -33,10 +33,6 @@ class TypeSchedule:
     consecutive_count: int = 0
     last_run: float = 0.0
     pending_vlm: bool = False
-    # uniform 专用
-    compliance_window_seconds: float = 30.0
-    compliance_window_start: Optional[float] = None
-    vest_detected_in_window: bool = False
     use_vlm: bool = False
     # 当存在外部调度器（如 GPU scheduler）接管该类型推理时设为 True
     externally_managed: bool = False
@@ -251,9 +247,8 @@ class MultiDetector:
                     enabled=True,
                     interval=cfg.get("interval", 1.0),
                     threshold=cfg.get("threshold", 0.5),
-                    cooldown=cfg.get("cooldown", 3.0),
-                    consecutive_required=cfg.get("consecutive_required", 1),
-                    compliance_window_seconds=cfg.get("compliance_window_seconds", 30.0),
+                    cooldown=cfg.get("cooldown", 60.0),
+                    consecutive_required=cfg.get("consecutive_required", 3),
                     use_vlm=cfg.get("use_vlm", False),
                 )
                 self._schedules[camera_id][dtype] = schedule
@@ -398,10 +393,6 @@ class MultiDetector:
 
     def _process_camera(self, camera_id: str, core_id: int) -> None:
         """处理单个摄像头的检测循环（由策略线程调用）"""
-        state = self.camera_manager._cameras.get(camera_id)
-        if state and state.config.is_video_source() and not state.playback_state.get("playing", True):
-            return
-
         frame = self.camera_manager.get_latest_frame(camera_id)
         if frame is None:
             return
@@ -455,7 +446,9 @@ class MultiDetector:
                     result = results.get(dtype, {"detected": False})
 
                     if dtype == "uniform":
-                        self._handle_uniform_window(camera_id, frame, result, schedule)
+                        if result.get("detected") and not result.get("reason"):
+                            result["reason"] = "检测到未穿工服/反光背心的人员"
+                        self._handle_standard_detection(camera_id, dtype, frame, result, schedule)
                     elif dtype == "sleep":
                         self._handle_sleep_detection(camera_id, frame, result, schedule)
                     else:
@@ -524,57 +517,6 @@ class MultiDetector:
                 self.trigger_callback(camera_id, dtype, frame, result)
             except Exception as e:
                 logger.error(f"Trigger callback error: {e}")
-
-    # ------------------------------------------------------------------
-    # 工服合规窗口
-    # ------------------------------------------------------------------
-
-    def _handle_uniform_window(
-        self, camera_id: str, frame: Optional[np.ndarray], result: dict, schedule: TypeSchedule
-    ) -> None:
-        detected = result.get("detected", False)
-        now = time.time()
-
-        if detected:
-            # 检测到未穿工服
-            if schedule.compliance_window_start is None:
-                # 开启观察窗口
-                schedule.compliance_window_start = now
-                schedule.vest_detected_in_window = False
-                logger.info(f"{camera_id} uniform window started")
-            else:
-                # 检查窗口是否过期
-                elapsed = now - schedule.compliance_window_start
-                if elapsed >= schedule.compliance_window_seconds:
-                    if not schedule.vest_detected_in_window:
-                        # 窗口内始终未合规 → 触发告警
-                        if not self.is_in_cooldown(camera_id, "uniform", now):
-                            self._cooldowns[camera_id]["uniform"] = now
-                            result["level"] = "small_model_alarm"
-                            if not result.get("reason"):
-                                result["reason"] = "工服合规窗口过期，未检测到反光背心"
-                            self._alert_states[camera_id]["uniform"] = {"active": True, "time": now, "level": "small_model_alarm"}
-                            if schedule.use_vlm:
-                                # 告警记录会在 trigger_callback 中立即创建；VLM 复核结果通过 vlm_result_callback 更新同一条记录。
-                                schedule.pending_vlm = True
-                                result["pending_vlm_review"] = True
-                                logger.info(f"{camera_id} uniform window expired, submitting VLM confirm")
-                                self._submit_vlm_confirm(camera_id, "uniform", frame, schedule, result)
-                            logger.info(f"{camera_id} uniform window expired, alerting")
-                            if self.trigger_callback:
-                                try:
-                                    self.trigger_callback(camera_id, "uniform", frame, result)
-                                except Exception as e:
-                                    logger.error(f"Trigger callback error: {e}")
-                    # 无论是否告警，关闭窗口
-                    schedule.compliance_window_start = None
-                    schedule.vest_detected_in_window = False
-        else:
-            # 检测到穿了工服
-            if schedule.compliance_window_start is not None:
-                schedule.vest_detected_in_window = True
-                # 不立即关闭窗口，继续观察直到自然结束
-                # 这样可以在窗口内多次确认合规
 
     # ------------------------------------------------------------------
     # 睡岗检测状态机
@@ -766,9 +708,7 @@ class MultiDetector:
                 simulated_result["vlm_pre_confirmed"] = True
 
             # 作为普通检测处理
-            if dtype == "uniform":
-                self._handle_uniform_window(camera_id, simulated_result, schedule)
-            elif dtype == "sleep":
+            if dtype == "sleep":
                 # 巡检不缩短 60s 间隔，仅作为一次独立命中
                 simulated_result["skip_interval_check"] = True
                 # TODO: 需要 frame 参数
@@ -779,6 +719,8 @@ class MultiDetector:
                 self._alert_states[camera_id][dtype] = {
                     "active": True, "time": now, "level": "small_model_alarm", "source": "vlm_inspection"
                 }
+                if dtype == "uniform" and not simulated_result.get("reason"):
+                    simulated_result["reason"] = "VLM 巡检发现未穿工服/反光背心的人员"
                 logger.info(f"Injected {dtype} detection for {camera_id} from VLM inspection")
 
     # ------------------------------------------------------------------

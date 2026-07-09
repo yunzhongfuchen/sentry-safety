@@ -17,6 +17,10 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# 主画面/非主画面调度间隔
+_MAIN_CAMERA_INTERVAL = 1.0 / 25.0
+_BACKGROUND_CAMERA_INTERVAL = 1.0
+
 # 非主画面摄像头帧历史最大长度（1 FPS 时约 1 分钟）
 _MAX_FRAME_HISTORY = 60
 
@@ -98,24 +102,6 @@ class DecodeScheduler:
             self._schedule_loop_single()
             time.sleep(0.01)
 
-    def _get_video_interval(self, state) -> Optional[float]:
-        """主画面本地视频：按视频原 FPS 和倍速计算调度间隔。"""
-        if not state.config.is_video_source():
-            return None
-        cap = getattr(state, "cap", None)
-        if cap is None or not getattr(cap, "isOpened", lambda: False)():
-            return None
-        try:
-            video_fps = cap.get(cv2.CAP_PROP_FPS)
-            if not isinstance(video_fps, (int, float)) or video_fps <= 0:
-                video_fps = 25.0
-        except Exception:
-            video_fps = 25.0
-        with self.camera_manager._lock:
-            pb = getattr(state, "playback_state", {})
-            speed = pb.get("speed", 1.0) if isinstance(pb, dict) else 1.0
-        return 1.0 / (video_fps * speed)
-
     def _schedule_loop_single(self):
         """执行一轮调度，便于单元测试"""
         now = time.time()
@@ -123,15 +109,11 @@ class DecodeScheduler:
             cameras = getattr(self.camera_manager, "_cameras", {})
             # 快照遍历，避免其他线程修改 _cameras 时触发 RuntimeError
             for cam_id, state in list(cameras.items()):
-                is_main = cam_id == self._main_camera
-                is_video = state.config.is_video_source()
-
-                if is_main and is_video:
-                    interval = self._get_video_interval(state) or (1.0 / 25)
-                elif is_main:
-                    interval = 1.0 / 25
-                else:
-                    interval = 1.0
+                interval = (
+                    _MAIN_CAMERA_INTERVAL
+                    if cam_id == self._main_camera
+                    else _BACKGROUND_CAMERA_INTERVAL
+                )
 
                 with state.lock:
                     cap = getattr(state, "cap", None)
@@ -140,7 +122,7 @@ class DecodeScheduler:
 
                     due_time = state.last_decode_time + interval
                     if now >= due_time and not state.decode_queued:
-                        priority = 0 if is_main else 1
+                        priority = 1
                         self._queue.put((priority, next(self._counter), due_time, cam_id))
                         state.decode_queued = True
         except Exception as e:
@@ -195,34 +177,6 @@ class DecodeScheduler:
                     reopen(cam_id)
             return
 
-        # 安全读取 playback_state：CameraManager 在 _open_capture / control_playback 中持有 _lock 修改它
-        with self.camera_manager._lock:
-            if cam_id not in cameras:
-                return
-            state = cameras[cam_id]
-            pb = getattr(state, "playback_state", None)
-            is_video = isinstance(pb, dict) and state.config.is_video_source()
-            if is_video:
-                playing = pb.get("playing", True)
-                loop = pb.get("loop", True)
-                target_idx = pb.get("current_frame_idx", 0)
-                speed = pb.get("speed", 1.0)
-            else:
-                playing = True
-                loop = True
-                target_idx = 0
-                speed = 1.0
-
-        if is_video and not playing:
-            with state.lock:
-                state.decode_queued = False
-                state.last_decode_time = due_time
-            return
-
-        if is_video:
-            if abs(target_idx - int(cap.get(cv2.CAP_PROP_POS_FRAMES))) > 2:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, target_idx)
-
         # 在使用 cap 前再检查一次 running，降低 stop_camera 释放 cap 后的 use-after-release 风险
         with state.lock:
             if not state.running:
@@ -236,34 +190,16 @@ class DecodeScheduler:
 
         if not ret or frame is None:
             needs_reopen = False
-            needs_loop_reopen = False
-            pause_video = False
             with state.lock:
                 state.decode_queued = False
                 state.last_decode_time = due_time
-                if is_video:
-                    if loop:
-                        needs_loop_reopen = True
-                    else:
-                        pause_video = True
-                else:
-                    state.error_count += 1
-                    if state.error_count > 30:
-                        logger.warning(f"Camera {cam_id} too many read errors, reopening")
-                        state.error_count = 0
-                        needs_reopen = True
+                state.error_count += 1
+                if state.error_count > 30:
+                    logger.warning(f"Camera {cam_id} too many read errors, reopening")
+                    state.error_count = 0
+                    needs_reopen = True
 
-            if pause_video:
-                with self.camera_manager._lock:
-                    if cam_id in cameras:
-                        cameras[cam_id].playback_state["playing"] = False
-
-            # 循环播放单独 reopen，不计入 reconnect_attempts
-            if needs_loop_reopen:
-                reopen_loop = getattr(self.camera_manager, "_reopen_for_loop", None)
-                if reopen_loop:
-                    reopen_loop(cam_id)
-            elif needs_reopen:
+            if needs_reopen:
                 reopen = getattr(self.camera_manager, "_reopen_capture", None)
                 if reopen:
                     reopen(cam_id)
@@ -274,12 +210,6 @@ class DecodeScheduler:
                 state.decode_queued = False
                 state.last_decode_time = due_time
             return
-
-        # 视频文件：更新 current_frame_idx
-        if is_video:
-            with self.camera_manager._lock:
-                if cam_id in cameras:
-                    cameras[cam_id].playback_state["current_frame_idx"] = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
 
         # 等比例缩放（在锁外执行，减少锁竞争）
         src_h, src_w = frame.shape[:2]
