@@ -1511,7 +1511,7 @@ class SelectedCameraDisplay:
         log_message("SelectedCameraDisplay reader loop stopped")
 
     def _open_capture(self, camera_id: str) -> bool:
-        """为指定摄像头打开独立 capture"""
+        """为指定摄像头打开独立 capture。网络流强制使用 FFMPEG，避免回退到错误的 images 后端。"""
         state = self.camera_manager._cameras.get(camera_id)
         if state is None:
             return False
@@ -1520,8 +1520,12 @@ class SelectedCameraDisplay:
         if isinstance(source, str) and source.isdigit():
             source = int(source)
 
+        source_str = str(source)
+        is_network = source_str.startswith(("http://", "https://", "rtsp://"))
+
         cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-        if not cap.isOpened():
+        if not cap.isOpened() and not is_network:
+            # 只有本地摄像头才允许回退到默认后端
             cap = cv2.VideoCapture(source)
         if not cap.isOpened():
             logger.error(f"SelectedCameraDisplay failed to open {camera_id}: {source}")

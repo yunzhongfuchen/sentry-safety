@@ -557,7 +557,9 @@ class CameraManager:
         if source.isdigit():
             source = int(source)
 
-        is_rtsp = str(source).startswith("rtsp")
+        source_str = str(source)
+        is_network = source_str.startswith(("http://", "https://", "rtsp://"))
+        is_rtsp = source_str.startswith("rtsp://")
         cap = None
 
         # RTSP 流优先尝试 GPU 硬件解码
@@ -567,10 +569,10 @@ class CameraManager:
                 cap = gpu_reader
                 logger.info(f"Camera {camera_id} using GPU decoder")
 
-        # 回退到 OpenCV CPU 解码
+        # 回退到 OpenCV CPU 解码：网络流强制用 FFMPEG，本地摄像头可回退
         if cap is None:
             cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-            if not cap.isOpened():
+            if not cap.isOpened() and not is_network:
                 cap = cv2.VideoCapture(source)
 
         if not cap.isOpened():
