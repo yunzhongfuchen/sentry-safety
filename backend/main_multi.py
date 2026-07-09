@@ -1398,13 +1398,12 @@ class SelectedCameraDisplay:
         return value
 
     def set_selected_camera(self, camera_id: Optional[str]):
-        """切换当前选中的摄像头"""
+        """切换当前选中的摄像头。旧 capture 保持运行，新 capture 在后台异步打开，避免黑屏。"""
         with self._lock:
             if self._selected_camera_id == camera_id:
                 return
             self._selected_camera_id = camera_id
-            self._close_capture()
-            self._latest_frame = None
+            # 不清空 _latest_frame：继续显示旧画面直到新 capture 有帧，避免切换黑屏
             self._last_detection_results = {}
             self._overlay_expires_at = 0.0
 
@@ -1580,11 +1579,19 @@ class SelectedCameraDisplay:
                 pass
 
             with self._lock:
+                old_cap = self._cap
                 self._cap = cap
                 self._cap_source = str(state.config.source)
                 self._cap_camera_id = camera_id
                 self._last_open_fail_time = 0.0
                 self._opening_capture = False
+
+            # 新 capture 就绪后再释放旧 capture，避免切换黑屏
+            if old_cap is not None and old_cap is not cap:
+                try:
+                    old_cap.release()
+                except Exception:
+                    pass
             return True
         except Exception as e:
             logger.error(f"SelectedCameraDisplay _open_capture error: {e}")

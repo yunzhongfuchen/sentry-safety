@@ -50,19 +50,21 @@ def test_selected_camera_display_reader_uses_private_capture(mock_videocap, _moc
 
 
 @patch("backend.main_multi.DisplayDetectionWorker")
-def test_selected_camera_display_switch_clears_cached_frames_and_overlay(_mock_worker_cls):
+def test_selected_camera_display_switch_clears_overlay_not_frame(_mock_worker_cls):
     camera_manager = MagicMock()
     stream_server = MagicMock()
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
 
-    display._latest_frame = np.ones((8, 8, 3), dtype=np.uint8)
+    old_frame = np.ones((8, 8, 3), dtype=np.uint8)
+    display._latest_frame = old_frame
     display._last_detection_results = {"fire": {"boxes": [[1, 1, 2, 2]]}}
     display._overlay_expires_at = 123.0
 
     display.set_selected_camera("cam_02")
 
     assert display._selected_camera_id == "cam_02"
-    assert display._latest_frame is None
+    # 切换时不清空帧，避免黑屏，等新 capture 有帧后再替换
+    assert np.array_equal(display._latest_frame, old_frame)
     assert display._last_detection_results == {}
     assert display._overlay_expires_at == 0.0
     assert display._opening_capture is False
