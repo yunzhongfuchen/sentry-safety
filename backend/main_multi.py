@@ -1376,6 +1376,8 @@ class SelectedCameraDisplay:
         self._cap: Optional[cv2.VideoCapture] = None
         self._cap_source: Optional[str] = None
         self._cap_camera_id: Optional[str] = None
+        self._opening_capture: bool = False
+        self._last_open_fail_time: float = 0.0
         self._latest_frame: Optional[np.ndarray] = None
         self._frame_timestamp: float = 0.0
         self._last_detection_results: Dict[str, dict] = {}
@@ -1480,6 +1482,8 @@ class SelectedCameraDisplay:
                 self._cap = None
             self._cap_source = None
             self._cap_camera_id = None
+            self._opening_capture = False
+            self._last_open_fail_time = 0.0
 
     def _reader_loop(self):
         """读取线程：独立 capture 并按源帧率读取最新帧，避免阻塞显示推流"""
@@ -1512,41 +1516,53 @@ class SelectedCameraDisplay:
 
     def _open_capture(self, camera_id: str) -> bool:
         """为指定摄像头打开独立 capture。网络流强制使用 FFMPEG，避免回退到错误的 images 后端。"""
-        state = self.camera_manager._cameras.get(camera_id)
-        if state is None:
-            return False
-
-        source = state.config.source
-        if isinstance(source, str) and source.isdigit():
-            source = int(source)
-
-        source_str = str(source)
-        is_network = source_str.startswith(("http://", "https://", "rtsp://"))
-
-        cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-        if not cap.isOpened() and not is_network:
-            # 只有本地摄像头才允许回退到默认后端
-            cap = cv2.VideoCapture(source)
-        if not cap.isOpened():
-            logger.error(f"SelectedCameraDisplay failed to open {camera_id}: {source}")
-            return False
-
         try:
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
-            cap.set(cv2.CAP_PROP_FPS, state.config.fps)
-        except Exception:
-            pass
+            state = self.camera_manager._cameras.get(camera_id)
+            if state is None:
+                return False
 
-        with self._lock:
-            self._cap = cap
-            self._cap_source = str(state.config.source)
-            self._cap_camera_id = camera_id
-        return True
+            source = state.config.source
+            if isinstance(source, str) and source.isdigit():
+                source = int(source)
+
+            source_str = str(source)
+            is_network = source_str.startswith(("http://", "https://", "rtsp://"))
+
+            cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+            if not cap.isOpened() and not is_network:
+                # 只有本地摄像头才允许回退到默认后端
+                cap = cv2.VideoCapture(source)
+            if not cap.isOpened():
+                logger.error(f"SelectedCameraDisplay failed to open {camera_id}: {source}")
+                with self._lock:
+                    self._last_open_fail_time = time.time()
+                    self._opening_capture = False
+                return False
+
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
+                cap.set(cv2.CAP_PROP_FPS, state.config.fps)
+            except Exception:
+                pass
+
+            with self._lock:
+                self._cap = cap
+                self._cap_source = str(state.config.source)
+                self._cap_camera_id = camera_id
+                self._last_open_fail_time = 0.0
+                self._opening_capture = False
+            return True
+        except Exception as e:
+            logger.error(f"SelectedCameraDisplay _open_capture error: {e}")
+            with self._lock:
+                self._last_open_fail_time = time.time()
+                self._opening_capture = False
+            return False
 
     def _ensure_capture(self) -> Optional[cv2.VideoCapture]:
-        """确保 capture 已打开并返回"""
+        """确保 capture 已打开并返回。打开操作在独立线程异步执行，避免阻塞 reader_loop。"""
         with self._lock:
             camera_id = self._selected_camera_id
 
@@ -1564,11 +1580,23 @@ class SelectedCameraDisplay:
                 if state is not None and str(state.config.source) != self._cap_source:
                     need_open = True
 
-        if need_open and not self._open_capture(camera_id):
-            return None
+            if not need_open:
+                return self._cap
+            if self._opening_capture:
+                return None
+            # 打开失败后冷却 2 秒，避免 reader_loop 被频繁阻塞
+            if self._last_open_fail_time and time.time() - self._last_open_fail_time < 2.0:
+                return None
 
-        with self._lock:
-            return self._cap
+            self._opening_capture = True
+
+        threading.Thread(
+            target=self._open_capture,
+            args=(camera_id,),
+            daemon=True,
+            name="selected-camera-open",
+        ).start()
+        return None
 
     def _scale_for_display(self, frame: np.ndarray, camera_id: str) -> np.ndarray:
         """按摄像头配置的最大分辨率等比例缩放，降低推流编码压力（不改变检测分辨率）。"""

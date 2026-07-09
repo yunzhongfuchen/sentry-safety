@@ -1,13 +1,15 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import time
 
 from backend.main_multi import SelectedCameraDisplay
 
 
+@patch("backend.main_multi.threading.Thread")
 @patch("backend.main_multi.DisplayDetectionWorker")
 @patch("backend.main_multi.cv2.VideoCapture")
-def test_selected_camera_display_reader_uses_private_capture(mock_videocap, _mock_worker_cls):
+def test_selected_camera_display_reader_uses_private_capture(mock_videocap, _mock_worker_cls, mock_thread):
     frame = np.ones((16, 16, 3), dtype=np.uint8)
     cap = MagicMock()
     cap.isOpened.return_value = True
@@ -21,6 +23,15 @@ def test_selected_camera_display_reader_uses_private_capture(mock_videocap, _moc
     state.config.fps = 25
     camera_manager._cameras = {"cam_01": state}
     stream_server = MagicMock()
+
+    # 让 _ensure_capture 中启动的打开线程同步执行，便于测试
+    def run_thread_target(*args, **kwargs):
+        target = kwargs.get("target")
+        if target:
+            target(*kwargs.get("args", ()))
+        return MagicMock()
+
+    mock_thread.side_effect = run_thread_target
 
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
     display._running = True
@@ -54,6 +65,7 @@ def test_selected_camera_display_switch_clears_cached_frames_and_overlay(_mock_w
     assert display._latest_frame is None
     assert display._last_detection_results == {}
     assert display._overlay_expires_at == 0.0
+    assert display._opening_capture is False
 
 
 @patch("backend.main_multi.DisplayDetectionWorker")
@@ -297,6 +309,36 @@ def test_result_loop_filters_disabled_types(_mock_worker_cls):
     display._result_loop()
 
     assert display._last_detection_results == {"fire": {"boxes": [[1, 1, 2, 2]]}}
+
+
+@patch("backend.main_multi.threading.Thread")
+@patch("backend.main_multi.DisplayDetectionWorker")
+def test_ensure_capture_opens_asynchronously(_mock_worker, mock_thread):
+    camera_manager = MagicMock()
+    stream_server = MagicMock()
+    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
+
+    display._selected_camera_id = "cam_01"
+
+    # _ensure_capture 应该启动一个线程去打开，而不是同步阻塞
+    result = display._ensure_capture()
+    assert result is None
+    mock_thread.assert_called_once()
+    assert display._opening_capture is True
+
+
+@patch("backend.main_multi.DisplayDetectionWorker")
+def test_ensure_capture_honors_fail_cooldown(_mock_worker):
+    camera_manager = MagicMock()
+    stream_server = MagicMock()
+    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
+
+    display._selected_camera_id = "cam_01"
+    display._last_open_fail_time = time.time()
+
+    result = display._ensure_capture()
+    assert result is None
+    assert display._opening_capture is False
 
 
 @patch("backend.main_multi.DisplayDetectionWorker")
