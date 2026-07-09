@@ -1546,7 +1546,21 @@ class SelectedCameraDisplay:
             source_str = str(source)
             is_network = source_str.startswith(("http://", "https://", "rtsp://"))
 
-            cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+            # 对网络流设置 FFMPEG 连接/读取超时（微秒），避免异常流无限阻塞 open/read
+            ffmpeg_options = None
+            if is_network:
+                ffmpeg_options = os.environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS")
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "stimeout;3000000|timeout;3000000"
+
+            try:
+                cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+            finally:
+                if is_network:
+                    if ffmpeg_options is None:
+                        os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
+                    else:
+                        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ffmpeg_options
+
             if not cap.isOpened() and not is_network:
                 # 只有本地摄像头才允许回退到默认后端
                 cap = cv2.VideoCapture(source)
@@ -1559,8 +1573,6 @@ class SelectedCameraDisplay:
 
             try:
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
-                cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000)
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
                 cap.set(cv2.CAP_PROP_FPS, state.config.fps)
