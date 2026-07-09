@@ -1486,7 +1486,7 @@ class SelectedCameraDisplay:
             self._last_open_fail_time = 0.0
 
     def _reader_loop(self):
-        """读取线程：独立 capture 并按源帧率读取最新帧，避免阻塞显示推流"""
+        """读取线程：独立 capture 并按源帧率读取最新帧，避免阻塞显示推流。"""
         log_message("SelectedCameraDisplay reader loop started")
         while self._running:
             try:
@@ -1495,9 +1495,27 @@ class SelectedCameraDisplay:
                     time.sleep(0.1)
                     continue
 
-                ret, frame = cap.read()
+                # 在独立线程中执行 cap.read()，避免网络流断开后无限阻塞
+                read_result = [None]
+
+                def _read_once():
+                    try:
+                        read_result[0] = cap.read()
+                    except Exception as e:
+                        logger.warning(f"SelectedCameraDisplay read thread error: {e}")
+                        read_result[0] = (False, None)
+
+                read_thread = threading.Thread(
+                    target=_read_once, daemon=True, name="selected-camera-read-once"
+                )
+                read_thread.start()
+                read_thread.join(timeout=3.0)
+
+                ret, frame = read_result[0] if read_result[0] is not None else (False, None)
                 if not ret or frame is None:
-                    logger.warning(f"SelectedCameraDisplay read failed for {self._selected_camera_id}, re-opening")
+                    logger.warning(
+                        f"SelectedCameraDisplay read failed or timeout for {self._selected_camera_id}, re-opening"
+                    )
                     self._close_capture()
                     time.sleep(0.1)
                     continue
