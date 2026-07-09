@@ -12,11 +12,11 @@
         .monitor-layout {
             height: calc(100vh - 64px);
             display: grid;
-            grid-template-columns: 1fr 280px;
+            grid-template-columns: 1fr 200px 280px;
             grid-template-rows: 1fr 160px;
             grid-template-areas:
-                "main sidebar"
-                "alerts alerts";
+                "main switches sidebar"
+                "alerts alerts alerts";
             gap: 18px;
             padding: 18px;
         }
@@ -26,6 +26,77 @@
             display: flex;
             flex-direction: column;
             min-width: 0;
+        }
+
+        .switches-area {
+            grid-area: switches;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .type-switch-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow-y: auto;
+        }
+
+        .type-switch-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: var(--radius-md);
+            background: var(--bg-soft);
+            border: 1px solid var(--glass-edge);
+            transition: all 0.2s ease;
+            min-height: 40px;
+        }
+
+        .type-switch-item.active {
+            border-color: var(--accent);
+            background: var(--accent-soft);
+        }
+
+        .type-switch-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .type-switch-toggle {
+            position: relative;
+            width: 36px;
+            height: 20px;
+            border-radius: 10px;
+            background: var(--bg-elevated);
+            cursor: pointer;
+            transition: background 0.2s ease;
+            flex-shrink: 0;
+            border: 1px solid var(--glass-edge);
+        }
+
+        .type-switch-toggle.active {
+            background: var(--accent);
+        }
+
+        .type-switch-toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: white;
+            transition: transform 0.2s ease;
+        }
+
+        .type-switch-toggle.active::after {
+            transform: translateX(16px);
         }
 
         .video-card {
@@ -214,12 +285,13 @@
             gap: 16px;
         }
 
-        @media (max-width: 1100px) {
+        @media (max-width: 1200px) {
             .monitor-layout {
                 grid-template-columns: 1fr;
-                grid-template-rows: 1fr 200px 160px;
+                grid-template-rows: 1fr 160px 200px 160px;
                 grid-template-areas:
                     "main"
+                    "switches"
                     "sidebar"
                     "alerts";
             }
@@ -271,15 +343,30 @@
                             <div style="font-size: 32px; opacity: 0.4;">📷</div>
                             <div>{{ mainCameraId ? getStatusText(mainCameraStatus) : '无可用摄像头' }}</div>
                         </div>
+                    </div>
+                </div>
+            </div>
 
-                        <div class="video-controls" v-if="playbackStatus.is_video_file">
-                            <button class="clay-button" @click="controlPlayback(playbackStatus.playing ? 'pause' : 'play')">
-                                {{ playbackStatus.playing ? '⏸ 暂停' : '▶ 播放' }}
-                            </button>
-                            <button class="clay-button" @click="controlPlayback('loop', { loop: !playbackStatus.loop })">
-                                {{ playbackStatus.loop ? '🔁 循环' : '➡️ 单次' }}
-                            </button>
+            <!-- Type switches -->
+            <div class="switches-area">
+                <div class="glass-card" style="flex: 1; display: flex; flex-direction: column; padding: 16px;">
+                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">
+                        显示检测类型
+                    </div>
+                    <div class="type-switch-panel">
+                        <div v-for="t in detectionTypes" :key="t.key"
+                             :class="['type-switch-item', displayTypes[t.key] ? 'active' : '']">
+                            <span class="type-switch-label">{{ t.label }}</span>
+                            <div :class="['type-switch-toggle', displayTypes[t.key] ? 'active' : '']"
+                                 @click="toggleDisplayType(t.key)"></div>
                         </div>
+                    </div>
+                    <div style="margin-top: 12px;">
+                        <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">刷新频率（秒）</label>
+                        <input type="number" step="0.1" min="0.1" max="10"
+                               v-model.number="displayInterval"
+                               @change="saveDisplayConfig"
+                               style="width: 100%; padding: 8px 10px; border-radius: var(--radius-md); background: var(--bg-elevated); border: 1px solid var(--glass-edge); color: var(--text-primary); font-family: var(--font-mono);" />
                     </div>
                 </div>
             </div>
@@ -343,8 +430,9 @@
                 const cameras = ref([]);
                 const cameraOrder = ref([]);
                 const recentAlerts = ref([]);
-                const overlayTypes = ref([]);
-                const playbackStatus = ref({});
+                const displayTypes = ref({});
+                const displayInterval = ref(1.0);
+                const detectionTypes = ref(typeof DETECTION_TYPES !== 'undefined' ? DETECTION_TYPES : []);
                 const streamVisible = ref({});
                 const utcTime = ref('--:--:--');
                 let refreshTimer = null;
@@ -447,31 +535,41 @@
                     } catch (e) { console.error('获取状态失败:', e); }
                 }
 
-                async function fetchOverlay() {
+                async function fetchDisplayTypes() {
                     try {
-                        const data = await safeFetch('/overlay');
-                        if (data.overlay_types) overlayTypes.value = data.overlay_types;
-                    } catch (e) { console.error('获取画框配置失败:', e); }
+                        const data = await safeFetch('/display-types');
+                        if (data) {
+                            if (data.display_detection_types) displayTypes.value = data.display_detection_types;
+                            if (typeof data.display_detection_interval === 'number') {
+                                displayInterval.value = data.display_detection_interval;
+                            }
+                        }
+                    } catch (e) { console.error('获取显示类型失败:', e); }
                 }
 
-                async function fetchPlaybackStatus() {
-                    if (!mainCameraId.value) return;
+                async function saveDisplayConfig() {
                     try {
-                        const data = await safeFetch(`/cameras/${mainCameraId.value}/playback/status`);
-                        playbackStatus.value = data || {};
-                    } catch (e) { playbackStatus.value = {}; }
-                }
-
-                async function controlPlayback(action, extra = {}) {
-                    if (!mainCameraId.value) return;
-                    try {
-                        const data = await safeFetch(`/cameras/${mainCameraId.value}/playback/control`, {
+                        const data = await safeFetch('/display-types', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ action, ...extra })
+                            body: JSON.stringify({
+                                display_detection_types: displayTypes.value,
+                                display_detection_interval: displayInterval.value
+                            })
                         });
-                        if (data.status) playbackStatus.value = data.status;
-                    } catch (e) { console.error('播放控制失败:', e); }
+                        if (data && typeof data.display_detection_interval === 'number') {
+                            displayInterval.value = data.display_detection_interval;
+                        }
+                    } catch (e) {
+                        console.error('更新显示配置失败:', e);
+                        fetchDisplayTypes();
+                    }
+                }
+
+                async function toggleDisplayType(type) {
+                    const newTypes = { ...displayTypes.value, [type]: !displayTypes.value[type] };
+                    displayTypes.value = newTypes;
+                    await saveDisplayConfig();
                 }
 
                 function updateUtc() {
@@ -479,10 +577,13 @@
                 }
 
                 watch(mainCameraId, () => {
-                    playbackStatus.value = {};
-                    fetchPlaybackStatus();
                     updateUrl();
                 });
+
+                watch(sidebar, (value) => {
+                    const root = document.getElementById('sidebar-root');
+                    if (root) renderSidebar(root, value);
+                }, { deep: true });
 
                 window.toggleSettingsNav = toggleSettingsNav;
 
@@ -491,10 +592,9 @@
                     if (root) renderSidebar(root, sidebar.value);
                     fetchCameras();
                     fetchStatus();
-                    fetchOverlay();
-                    fetchPlaybackStatus();
+                    fetchDisplayTypes();
                     updateUtc();
-                    refreshTimer = setInterval(() => { fetchCameras(); fetchStatus(); fetchPlaybackStatus(); }, 2000);
+                    refreshTimer = setInterval(() => { fetchCameras(); fetchStatus(); }, 2000);
                     utcTimer = setInterval(updateUtc, 1000);
                 });
 
@@ -504,11 +604,11 @@
                 });
 
                 return {
-                    sidebar, cameras, recentAlerts, overlayTypes, playbackStatus, streamVisible, utcTime,
+                    sidebar, cameras, recentAlerts, displayTypes, displayInterval, detectionTypes, streamVisible, utcTime,
                     mainCameraId, mainCameraName, mainCameraStatus, mainAlertType,
                     onlineCount, alertCount,
                     getTypeLabel, getLevelLabel, getStatusText,
-                    toggleSettingsNav, selectCamera, onVideoError, controlPlayback
+                    toggleSettingsNav, selectCamera, onVideoError, toggleDisplayType, saveDisplayConfig
                 };
             }
         }).mount('#app');

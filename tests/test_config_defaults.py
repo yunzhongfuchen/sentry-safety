@@ -58,3 +58,9 @@ def test_load_camera_configs_migrates_old_level_config(tmp_path, monkeypatch):
         assert "level" not in cfg
         assert "cooldown" in cfg
 
+
+def test_default_global_settings_contains_display_interval():
+    from backend.config import DEFAULT_GLOBAL_SETTINGS
+    assert "display_detection_interval" in DEFAULT_GLOBAL_SETTINGS
+    assert DEFAULT_GLOBAL_SETTINGS["display_detection_interval"] == 1.0
+

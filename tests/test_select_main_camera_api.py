@@ -54,3 +54,72 @@ def test_non_main_camera_stream():
         assert response.status_code == 404
         assert response.json()["error"] == "Camera is not the main stream"
         gen.assert_not_called()
+
+
+def test_get_display_types_returns_types_and_interval():
+    with patch("backend.main_multi.app_config.load_global_settings") as load_gs, \
+         patch("backend.main_multi.app_config.DEFAULT_GLOBAL_SETTINGS", {
+             "display_detection_types": {"fire": True},
+             "display_detection_interval": 1.0,
+         }):
+        load_gs.return_value = {
+            "display_detection_types": {"fire": True, "smoke": False},
+            "display_detection_interval": 2.5,
+        }
+        from backend.main_multi import app
+        client = TestClient(app)
+        response = client.get("/display-types")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["display_detection_types"] == {"fire": True, "smoke": False}
+        assert data["display_detection_interval"] == 2.5
+
+
+def test_update_display_types_clamps_interval():
+    with patch("backend.main_multi.app_config.load_global_settings") as load_gs, \
+         patch("backend.main_multi.app_config.save_global_settings") as save_gs, \
+         patch("backend.main_multi.selected_camera_display") as scd, \
+         patch("backend.main_multi.app_config.DEFAULT_GLOBAL_SETTINGS", {
+             "display_detection_types": {"fire": True},
+             "display_detection_interval": 1.0,
+         }):
+        load_gs.return_value = {
+            "display_detection_types": {"fire": True},
+            "display_detection_interval": 1.0,
+        }
+        from backend.main_multi import app
+        client = TestClient(app)
+        response = client.post("/display-types", json={
+            "display_detection_types": {"fire": False},
+            "display_detection_interval": 0.05,
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["display_detection_interval"] == 0.1
+        assert data["display_detection_types"] == {"fire": False}
+        saved = save_gs.call_args.args[0]
+        assert saved["display_detection_interval"] == 0.1
+        scd.set_display_config.assert_called_once_with({"fire": False}, 0.1)
+
+
+def test_update_display_types_rejects_invalid_interval():
+    with patch("backend.main_multi.app_config.load_global_settings") as load_gs, \
+         patch("backend.main_multi.app_config.save_global_settings") as save_gs, \
+         patch("backend.main_multi.selected_camera_display") as scd, \
+         patch("backend.main_multi.app_config.DEFAULT_GLOBAL_SETTINGS", {
+             "display_detection_types": {"fire": True},
+             "display_detection_interval": 1.0,
+         }):
+        load_gs.return_value = {
+            "display_detection_types": {"fire": True},
+            "display_detection_interval": 1.0,
+        }
+        from backend.main_multi import app
+        client = TestClient(app)
+        response = client.post("/display-types", json={
+            "display_detection_types": {"fire": True},
+            "display_detection_interval": "fast",
+        })
+        assert response.status_code == 400
+        save_gs.assert_not_called()
+        scd.set_display_config.assert_not_called()

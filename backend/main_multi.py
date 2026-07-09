@@ -14,11 +14,10 @@ import base64
 from typing import Dict, List, Optional, Tuple
 from collections import deque
 from pathlib import Path
-from datetime import datetime
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -57,6 +56,7 @@ try:
     from video_stream import get_stream_server
     from safety_detection.api import router as safety_router
     from alarm_state import create_record, apply_vlm_review, confirm_alarm, confirm_false_positive
+    from display_detection_worker import DisplayDetectionWorker
 except ImportError as e:
     logger.error(f"Import error: {e}")
     raise
@@ -111,11 +111,6 @@ _records_dirty = threading.Event()
 # 小模型告警 VLM 复核待更新记录映射 (camera_id, dtype) -> record_id
 _pending_reviews: Dict[Tuple[str, str], str] = {}
 _pending_reviews_lock = threading.Lock()
-
-# 全局画框配置：要画的检测类型列表，默认空（不画框）
-_overlay_config: List[str] = []
-_overlay_config_lock = threading.RLock()
-
 
 def log_message(msg: str, level: str = "info"):
     """记录日志"""
@@ -227,18 +222,12 @@ def init_components():
             height=cam_data.get("height", 480),
             fps=cam_data.get("fps", 15),
             source_type=cam_data.get("source_type", "auto"),
-            video_loop=cam_data.get("video_loop", True),
-            video_playback_speed=cam_data.get("video_playback_speed", 1.0),
             detection_types=cam_data.get("detection_types"),
         )
         camera_manager.register_camera(cfg)
         # 不在此处注册所有流缓冲，只由 set_main_camera 注册主画面
 
     log_message(f"Registered {len(camera_configs_data)} cameras")
-
-    # 2.5 加载全局画框配置（overlay_types）
-    global _overlay_config
-    _overlay_config = _global_settings.get("overlay_types", [])
 
     # 3. 检测设备优先级: GPU > NPU > CPU
     device, npu_cores = detect_best_device()
@@ -366,6 +355,19 @@ def init_components():
     )
     app.state.multi_detector = multi_detector
 
+    # 8. 初始化选中摄像头独立显示模块（与检测解耦）
+    global selected_camera_display
+    display_types = _global_settings.get("display_detection_types", app_config.DEFAULT_GLOBAL_SETTINGS["display_detection_types"])
+    display_interval = _global_settings.get("display_detection_interval", app_config.DEFAULT_GLOBAL_SETTINGS["display_detection_interval"])
+    selected_camera_display = SelectedCameraDisplay(
+        camera_manager=camera_manager,
+        stream_server=stream_server,
+        npu_cores=npu_cores,
+        device=device,
+        display_types=display_types,
+        display_interval=display_interval,
+    )
+
     # 注册摄像头到检测器（detection_types 已由 apply_camera_globals 填充全局默认值）
     for cam_data in camera_configs_data:
         detection_types = cam_data.get("detection_types", {})
@@ -377,7 +379,7 @@ def init_components():
     if use_gpu_scheduler and device == "gpu":
         try:
             from gpu_scheduler import ModelConfig, GPUDynamicScheduler
-            from inference_engine import _resolve_model_path, MASK_TARGET_CLASSES, CIGARETTE_TARGET_CLASSES
+            from inference_engine import _resolve_model_path, MASK_TARGET_CLASSES, CIGARETTE_TARGET_CLASSES, UNIFORM_TARGET_CLASSES
 
             def _gpu_on_result(cam_id: str, dtype: str, result):
                 if multi_detector is None:
@@ -385,8 +387,6 @@ def init_components():
                 res_dict = _convert_ultralytics_result(dtype, result)
                 if res_dict is None:
                     return
-                if dtype == "uniform":
-                    res_dict["detected"] = False
                 frame = getattr(result, "orig_img", None)
                 multi_detector._latest_results.setdefault(cam_id, {})[dtype] = res_dict
                 with multi_detector._lock:
@@ -395,9 +395,7 @@ def init_components():
                         return
                     schedule.last_run = time.time()
                     try:
-                        if dtype == "uniform":
-                            multi_detector._handle_uniform_window(cam_id, frame, res_dict, schedule)
-                        elif dtype == "sleep":
+                        if dtype == "sleep":
                             multi_detector._handle_sleep_detection(cam_id, frame, res_dict, schedule)
                         else:
                             multi_detector._handle_standard_detection(cam_id, dtype, frame, res_dict, schedule)
@@ -418,9 +416,9 @@ def init_components():
             sleep_path = _resolve_model_path("sleep", use_npu=False)
             if sleep_path:
                 model_configs["sleep"] = ModelConfig(sleep_path, "sleep", device="cuda", confidence=0.1)
-            person_path = _resolve_model_path("person", use_npu=False)
-            if person_path:
-                model_configs["uniform"] = ModelConfig(person_path, "uniform", device="cuda", classes=[0])
+            uniform_path = _resolve_model_path("uniform", use_npu=False)
+            if uniform_path:
+                model_configs["uniform"] = ModelConfig(uniform_path, "uniform", device="cuda", classes=UNIFORM_TARGET_CLASSES)
 
             num_queues = _global_settings.get("gpu_scheduler_num_queues", app_config.GPU_SCHEDULER_NUM_QUEUES) or None
             gpu_scheduler = GPUDynamicScheduler(
@@ -452,11 +450,10 @@ def init_components():
         max_cameras_per_inspection=3,
     )
 
-    # 9. 加载历史记录（按需求清空测试数据）
+    # 9. 加载历史记录
     global detection_records
-    detection_records = []
-    storage.save_records(detection_records)
-    log_message("Historical records cleared")
+    detection_records = storage.load_records()
+    log_message(f"Loaded {len(detection_records)} historical records")
 
     # 10. 启动后台保存线程
     threading.Thread(target=_records_saver_loop, daemon=True).start()
@@ -495,21 +492,24 @@ def _pick_default_main_camera() -> Optional[str]:
 
 
 def set_main_camera(camera_id: Optional[str]):
-    """切换主画面摄像头，同步更新解码频率和流缓冲"""
+    """切换选中的摄像头，同步更新显示模块"""
     global stream_server
 
     old_main = camera_manager.get_main_camera() if camera_manager else None
 
     if old_main:
         stream_server.unregister_camera(old_main)
-        log_message(f"Unregistered stream for old main camera {old_main}")
+        log_message(f"Unregistered stream for old selected camera {old_main}")
 
     if camera_manager:
         camera_manager.set_main_camera(camera_id)
 
     if camera_id:
         stream_server.register_camera(camera_id)
-        log_message(f"Registered stream for main camera {camera_id}")
+        log_message(f"Registered stream for selected camera {camera_id}")
+
+    if selected_camera_display is not None:
+        selected_camera_display.set_selected_camera(camera_id)
 
 
 def _records_saver_loop():
@@ -540,21 +540,6 @@ def generate_camera_frames(camera_id: str, raw: bool = False):
         raw: True 输出原始帧流，False 输出标注帧流
     """
     yield from stream_server.generate_frames(camera_id, raw=raw)
-
-
-def generate_multi_view():
-    """生成多画面合流 - 使用高性能流服务器"""
-    if camera_manager is None:
-        return
-    
-    # 获取所有启用的摄像头ID
-    with camera_manager._lock:
-        camera_ids = [
-            cid for cid, state in camera_manager._cameras.items()
-            if state.config.enabled
-        ]
-    
-    yield from stream_server.generate_multi_view(camera_ids)
 
 
 # ── API 端点 ──
@@ -606,8 +591,6 @@ async def list_cameras():
                 s["detection"] = det_states[cam_id]
             cfg = cameras_config.get(cam_id, {})
             s["source_type"] = cfg.get("source_type", "auto")
-            s["video_loop"] = cfg.get("video_loop", True)
-            s["video_playback_speed"] = cfg.get("video_playback_speed", 1.0)
             s["detection_types"] = cfg.get("detection_types", {})
 
     return {"cameras": status_list}
@@ -634,15 +617,6 @@ async def camera_stream(camera_id: str, raw: bool = False):
         return JSONResponse({"error": "Camera is not the main stream"}, status_code=404)
     return StreamingResponse(
         generate_camera_frames(camera_id, raw=raw),
-        media_type="multipart/x-mixed-replace; boundary=frame"
-    )
-
-
-@app.get("/stream")
-async def multi_view_stream():
-    """多画面合流"""
-    return StreamingResponse(
-        generate_multi_view(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
@@ -888,8 +862,65 @@ async def update_settings(data: dict):
                 vlm_inspector.start()
             elif new_interval <= 0 and vlm_inspector._running:
                 vlm_inspector.stop()
+        if selected_camera_display and ("display_detection_types" in data or "display_detection_interval" in data):
+            selected_camera_display.set_display_config(
+                data.get("display_detection_types") if "display_detection_types" in data else None,
+                data.get("display_detection_interval") if "display_detection_interval" in data else None,
+            )
         log_message("Global settings updated")
         return {"success": True, "settings": settings}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.get("/display-types")
+async def get_display_types():
+    """获取显示类型开关与刷新频率"""
+    settings = app_config.load_global_settings()
+    return {
+        "display_detection_types": settings.get(
+            "display_detection_types", app_config.DEFAULT_GLOBAL_SETTINGS["display_detection_types"]
+        ),
+        "display_detection_interval": settings.get(
+            "display_detection_interval", app_config.DEFAULT_GLOBAL_SETTINGS["display_detection_interval"]
+        ),
+    }
+
+
+@app.post("/display-types")
+async def update_display_types(data: dict):
+    """更新显示类型开关与刷新频率"""
+    try:
+        display_types = data.get("display_detection_types", {})
+        display_interval = data.get("display_detection_interval")
+        if not isinstance(display_types, dict):
+            return JSONResponse({"error": "display_detection_types must be a dict"}, status_code=400)
+        if display_interval is not None:
+            try:
+                display_interval = float(display_interval)
+            except (TypeError, ValueError):
+                return JSONResponse({"error": "display_detection_interval must be a number"}, status_code=400)
+
+        settings = app_config.load_global_settings()
+        settings["display_detection_types"] = display_types
+        if display_interval is not None:
+            settings["display_detection_interval"] = SelectedCameraDisplay._clamp_display_interval(display_interval)
+        app_config.save_global_settings(settings)
+        global _global_settings
+        _global_settings = settings
+
+        if selected_camera_display:
+            selected_camera_display.set_display_config(
+                display_types,
+                settings.get("display_detection_interval"),
+            )
+
+        log_message(f"Display config updated: types={display_types}, interval={settings.get('display_detection_interval')}")
+        return {
+            "success": True,
+            "display_detection_types": display_types,
+            "display_detection_interval": settings.get("display_detection_interval"),
+        }
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
@@ -964,31 +995,6 @@ async def ignore_alert(record_id: str):
     return {"success": True}
 
 
-@app.get("/overlay")
-async def get_overlay():
-    """获取全局画框配置"""
-    with _overlay_config_lock:
-        types = list(_overlay_config)
-    return {"overlay_types": types}
-
-
-@app.post("/overlay")
-async def set_overlay(data: dict):
-    """设置全局画框配置（持久化到 global.json）"""
-    global _overlay_config
-    types = data.get("types", [])
-    if not isinstance(types, list):
-        return JSONResponse({"error": "types must be a list"}, status_code=400)
-    with _overlay_config_lock:
-        _overlay_config = types
-    # 持久化到 global.json
-    settings = app_config.load_global_settings()
-    settings["overlay_types"] = types
-    app_config.save_global_settings(settings)
-    log_message(f"Global overlay config updated: {types}")
-    return {"overlay_types": types}
-
-
 # ── 摄像头配置 API ──
 
 @app.post("/cameras/{camera_id}/config")
@@ -1019,10 +1025,6 @@ async def update_camera_config(camera_id: str, data: dict):
                 camera_manager.start_camera(camera_id)
             else:
                 camera_manager.stop_camera(camera_id)
-        if "video_loop" in data:
-            cfg.video_loop = bool(data["video_loop"])
-        if "video_playback_speed" in data:
-            cfg.video_playback_speed = float(data["video_playback_speed"])
         if detection_types:
             cfg.detection_types = detection_types
 
@@ -1042,10 +1044,6 @@ async def update_camera_config(camera_id: str, data: dict):
                 cam["height"] = int(data["height"])
             if "enabled" in data:
                 cam["enabled"] = bool(data["enabled"])
-            if "video_loop" in data:
-                cam["video_loop"] = bool(data["video_loop"])
-            if "video_playback_speed" in data:
-                cam["video_playback_speed"] = float(data["video_playback_speed"])
             if detection_types:
                 cam["detection_types"] = detection_types
             break
@@ -1106,8 +1104,6 @@ async def reset_camera_config(camera_id: str):
     restored["width"] = camera_globals.get("width", 640)
     restored["height"] = camera_globals.get("height", 480)
     restored["fps"] = camera_globals.get("fps", 15)
-    restored["video_loop"] = camera_globals.get("video_loop", True)
-    restored["video_playback_speed"] = camera_globals.get("video_playback_speed", 1.0)
     restored["detection_types"] = {
         k: dict(v) for k, v in camera_globals.get("detection_types", app_config.DEFAULT_TYPE_CONFIG).items()
     }
@@ -1118,8 +1114,6 @@ async def reset_camera_config(camera_id: str):
         state.config.width = restored["width"]
         state.config.height = restored["height"]
         state.config.fps = restored["fps"]
-        state.config.video_loop = restored["video_loop"]
-        state.config.video_playback_speed = restored["video_playback_speed"]
         state.config.detection_types = restored["detection_types"]
 
     # 更新检测器
@@ -1157,48 +1151,11 @@ async def switch_camera_source(camera_id: str, data: dict):
             if cam["camera_id"] == camera_id:
                 cam["source"] = source
                 cam["source_type"] = source_type
-                if "video_loop" in data:
-                    cam["video_loop"] = bool(data["video_loop"])
-                if "video_playback_speed" in data:
-                    cam["video_playback_speed"] = float(data["video_playback_speed"])
                 break
         app_config.save_camera_configs(cameras)
-        # 更新 CameraManager 中的 runtime config
-        state = camera_manager._cameras.get(camera_id)
-        if state:
-            if "video_loop" in data:
-                state.config.video_loop = bool(data["video_loop"])
-            if "video_playback_speed" in data:
-                state.config.video_playback_speed = float(data["video_playback_speed"])
         log_message(f"Camera {camera_id} source switched to {source}")
         return {"success": True}
     return JSONResponse({"error": "Failed to switch source"}, status_code=400)
-
-
-@app.post("/cameras/{camera_id}/playback/control")
-async def control_playback(camera_id: str, data: dict):
-    """视频播放控制：play / pause / seek / speed / loop"""
-    if camera_manager is None:
-        return JSONResponse({"error": "Camera manager not initialized"}, status_code=500)
-
-    action = data.get("action")
-    if not action:
-        return JSONResponse({"error": "action is required"}, status_code=400)
-
-    result = camera_manager.control_playback(camera_id, action, **{k: v for k, v in data.items() if k != "action"})
-    return {"success": result is not False, "status": result}
-
-
-@app.get("/cameras/{camera_id}/playback/status")
-async def get_playback_status(camera_id: str):
-    """获取视频播放状态"""
-    if camera_manager is None:
-        return JSONResponse({"error": "Camera manager not initialized"}, status_code=500)
-
-    status = camera_manager.get_playback_status(camera_id)
-    if status is None:
-        return JSONResponse({"error": "Camera not found or not a video source"}, status_code=404)
-    return status
 
 
 def save_camera_configs():
@@ -1217,8 +1174,6 @@ def save_camera_configs():
                     "height": cfg.height,
                     "fps": cfg.fps,
                     "source_type": cfg.source_type,
-                    "video_loop": cfg.video_loop,
-                    "video_playback_speed": cfg.video_playback_speed,
                     "detection_types": cfg.detection_types or {},
                 }
                 if cfg.detection_roi:
@@ -1256,8 +1211,6 @@ async def add_camera(data: dict):
             height=cam_data.get("height", 480),
             fps=cam_data.get("fps", 15),
             source_type=cam_data.get("source_type", "auto"),
-            video_loop=cam_data.get("video_loop", True),
-            video_playback_speed=cam_data.get("video_playback_speed", 1.0),
             detection_types=cam_data.get("detection_types"),
         )
 
@@ -1283,42 +1236,6 @@ async def add_camera(data: dict):
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-
-
-@app.post("/upload/video")
-async def upload_video(file: UploadFile = File(...)):
-    """上传本地视频文件到服务器，返回保存后的绝对路径"""
-    import shutil
-
-    upload_dir = Path(__file__).parent.parent / "uploads" / "videos"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    # 安全检查：只允许视频扩展名
-    allowed_exts = {".mp4", ".avi", ".mkv", ".mov", ".flv", ".wmv", ".webm"}
-    ext = Path(file.filename or "").suffix.lower()
-    if ext not in allowed_exts:
-        return JSONResponse(
-            {"error": f"不支持的文件格式: {ext}，仅支持 {allowed_exts}"},
-            status_code=400
-        )
-
-    # 生成唯一文件名，避免覆盖
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_name = f"{timestamp}_{file.filename}"
-    dest_path = upload_dir / safe_name
-
-    try:
-        with open(dest_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        logger.info(f"Video uploaded: {dest_path}")
-        return {
-            "success": True,
-            "filename": safe_name,
-            "path": str(dest_path.absolute())
-        }
-    except Exception as e:
-        logger.error(f"Upload failed: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @app.delete("/cameras/{camera_id}")
@@ -1385,7 +1302,7 @@ async def restart_system():
     try:
         log_message("System restart requested via API")
         # 停止现有组件
-        stop_overlay_thread()
+        stop_selected_camera_display()
         if vlm_inspector:
             vlm_inspector.stop()
         if vlm_queue:
@@ -1411,7 +1328,7 @@ async def restart_system():
             vlm_queue.start()
         if vlm_inspector and _global_settings.get("vlm_inspection_interval", 30.0) > 0:
             vlm_inspector.start()
-        start_overlay_thread()
+        start_selected_camera_display()
 
         log_message("System restart completed")
         return {"success": True, "message": "Detection service restarted"}
@@ -1421,79 +1338,358 @@ async def restart_system():
 
 
 # ------------------------------------------------------------------
-# 视频流渲染线程（与检测解耦，避免检测耗时阻塞播放）
+# 选中摄像头独立显示模块（与检测完全解耦）
 # ------------------------------------------------------------------
-_overlay_running = False
-_overlay_thread: Optional[threading.Thread] = None
+selected_camera_display: Optional["SelectedCameraDisplay"] = None
 
 
-def _overlay_loop():
-    """独立渲染线程：只给主画面推送原始帧和标注帧"""
-    global _overlay_running
-    log_message("Overlay render thread started")
-    while _overlay_running:
+class SelectedCameraDisplay:
+    """
+    独立显示模块：只负责当前选中摄像头的前端展示。
+    - 自己单独解码，25 FPS 流畅播放。
+    - 每秒独立检测一次（只测显示开关开启的类型），只画框，不告警。
+    - 检测与推流分两个线程，避免检测耗时阻塞前端帧率。
+    """
+
+    def __init__(
+        self,
+        camera_manager,
+        stream_server,
+        npu_cores: int,
+        device: str,
+        display_types: Optional[Dict[str, bool]] = None,
+        display_interval: float = 1.0,
+    ):
+        self.camera_manager = camera_manager
+        self.stream_server = stream_server
+        self._npu_cores = npu_cores
+        self._device = device
+        self._display_types: Dict[str, bool] = dict(display_types) if display_types else {}
+        self._display_interval: float = self._clamp_display_interval(display_interval)
+        self._lock = threading.RLock()
+        self._running = False
+        self._reader_thread: Optional[threading.Thread] = None
+        self._display_thread: Optional[threading.Thread] = None
+        self._detect_thread: Optional[threading.Thread] = None
+        self._result_thread: Optional[threading.Thread] = None
+        self._selected_camera_id: Optional[str] = None
+        self._cap: Optional[cv2.VideoCapture] = None
+        self._cap_source: Optional[str] = None
+        self._cap_camera_id: Optional[str] = None
+        self._latest_frame: Optional[np.ndarray] = None
+        self._frame_timestamp: float = 0.0
+        self._last_detection_results: Dict[str, dict] = {}
+        self._overlay_expires_at: float = 0.0
+        self._detection_worker: Optional[DisplayDetectionWorker] = None
+
+    @staticmethod
+    def _clamp_display_interval(value: float) -> float:
+        """把刷新频率限制在 0.1 ~ 10.0 秒之间。"""
         try:
-            if camera_manager is None or multi_detector is None or stream_server is None:
+            value = float(value)
+        except (TypeError, ValueError):
+            return 1.0
+        if value < 0.1:
+            return 0.1
+        if value > 10.0:
+            return 10.0
+        return value
+
+    def set_selected_camera(self, camera_id: Optional[str]):
+        """切换当前选中的摄像头"""
+        with self._lock:
+            if self._selected_camera_id == camera_id:
+                return
+            self._selected_camera_id = camera_id
+            self._close_capture()
+            self._latest_frame = None
+            self._last_detection_results = {}
+            self._overlay_expires_at = 0.0
+
+    def set_display_types(self, display_types: Dict[str, bool]):
+        """更新显示类型开关（向后兼容）。"""
+        self.set_display_config(display_types)
+
+    def set_display_config(
+        self,
+        display_types: Optional[Dict[str, bool]] = None,
+        display_interval: Optional[float] = None,
+    ):
+        """更新显示类型开关和/或刷新频率。"""
+        with self._lock:
+            if display_types is not None:
+                self._display_types = dict(display_types)
+                if not any(self._display_types.values()):
+                    self._last_detection_results = {}
+                    self._overlay_expires_at = 0.0
+            if display_interval is not None:
+                self._display_interval = self._clamp_display_interval(display_interval)
+
+    def start(self):
+        """启动检测子进程、读取线程、显示线程、检测线程和结果线程"""
+        if self._running:
+            return
+        self._running = True
+        self._detection_worker = DisplayDetectionWorker(self._npu_cores, self._device)
+        self._reader_thread = threading.Thread(
+            target=self._reader_loop, daemon=True, name="selected-camera-reader"
+        )
+        self._reader_thread.start()
+        self._display_thread = threading.Thread(
+            target=self._display_loop, daemon=True, name="selected-camera-display"
+        )
+        self._display_thread.start()
+        self._detect_thread = threading.Thread(
+            target=self._detect_loop, daemon=True, name="selected-camera-detect"
+        )
+        self._detect_thread.start()
+        self._result_thread = threading.Thread(
+            target=self._result_loop, daemon=True, name="selected-camera-result"
+        )
+        self._result_thread.start()
+        log_message("SelectedCameraDisplay started")
+
+    def stop(self):
+        """停止所有线程和子进程"""
+        self._running = False
+        if self._reader_thread:
+            self._reader_thread.join(timeout=2)
+            self._reader_thread = None
+        if self._display_thread:
+            self._display_thread.join(timeout=2)
+            self._display_thread = None
+        if self._detect_thread:
+            self._detect_thread.join(timeout=2)
+            self._detect_thread = None
+        if self._result_thread:
+            self._result_thread.join(timeout=2)
+            self._result_thread = None
+        if self._detection_worker:
+            self._detection_worker.stop()
+            self._detection_worker = None
+        self._close_capture()
+        log_message("SelectedCameraDisplay stopped")
+
+    def _close_capture(self):
+        with self._lock:
+            if self._cap is not None:
+                try:
+                    self._cap.release()
+                except Exception:
+                    pass
+                self._cap = None
+            self._cap_source = None
+            self._cap_camera_id = None
+
+    def _reader_loop(self):
+        """读取线程：独立 capture 并按源帧率读取最新帧，避免阻塞显示推流"""
+        log_message("SelectedCameraDisplay reader loop started")
+        while self._running:
+            try:
+                cap = self._ensure_capture()
+                if cap is None:
+                    time.sleep(0.1)
+                    continue
+
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    logger.warning(f"SelectedCameraDisplay read failed for {self._selected_camera_id}, re-opening")
+                    self._close_capture()
+                    time.sleep(0.1)
+                    continue
+
+                with self._lock:
+                    self._latest_frame = frame
+                    self._frame_timestamp = time.time()
+            except cv2.error as e:
+                logger.warning(f"SelectedCameraDisplay reader OpenCV error, re-opening capture: {e}")
+                self._close_capture()
                 time.sleep(0.1)
-                continue
-
-            main_id = camera_manager.get_main_camera()
-            if main_id is None:
+            except Exception as e:
+                logger.error(f"SelectedCameraDisplay reader loop error: {e}")
                 time.sleep(0.1)
-                continue
+        log_message("SelectedCameraDisplay reader loop stopped")
 
-            frame = camera_manager.get_latest_frame(main_id)
-            if frame is None:
-                time.sleep(0.02)
-                continue
+    def _open_capture(self, camera_id: str) -> bool:
+        """为指定摄像头打开独立 capture"""
+        state = self.camera_manager._cameras.get(camera_id)
+        if state is None:
+            return False
 
-            # 推送原始帧
-            stream_server.update_frame(main_id, frame, raw=True)
+        source = state.config.source
+        if isinstance(source, str) and source.isdigit():
+            source = int(source)
 
-            # 获取全局要画的类型
-            with _overlay_config_lock:
-                types_to_draw = list(_overlay_config)
+        cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+        if not cap.isOpened():
+            cap = cv2.VideoCapture(source)
+        if not cap.isOpened():
+            logger.error(f"SelectedCameraDisplay failed to open {camera_id}: {source}")
+            return False
 
-            if types_to_draw:
-                results = multi_detector._latest_results.get(main_id, {})
-                state = camera_manager._cameras.get(main_id)
-                cam_enabled_types = set()
-                if state and state.config.detection_types:
-                    cam_enabled_types = {
-                        k for k, v in state.config.detection_types.items()
-                        if v.get("enabled", False)
+        try:
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
+            cap.set(cv2.CAP_PROP_FPS, state.config.fps)
+        except Exception:
+            pass
+
+        with self._lock:
+            self._cap = cap
+            self._cap_source = str(state.config.source)
+            self._cap_camera_id = camera_id
+        return True
+
+    def _ensure_capture(self) -> Optional[cv2.VideoCapture]:
+        """确保 capture 已打开并返回"""
+        with self._lock:
+            camera_id = self._selected_camera_id
+
+        if camera_id is None:
+            return None
+
+        with self._lock:
+            need_open = (
+                self._cap is None
+                or not self._cap.isOpened()
+                or self._cap_camera_id != camera_id
+            )
+            if not need_open:
+                state = self.camera_manager._cameras.get(camera_id)
+                if state is not None and str(state.config.source) != self._cap_source:
+                    need_open = True
+
+        if need_open and not self._open_capture(camera_id):
+            return None
+
+        with self._lock:
+            return self._cap
+
+    def _scale_for_display(self, frame: np.ndarray, camera_id: str) -> np.ndarray:
+        """按摄像头配置的最大分辨率等比例缩放，降低推流编码压力（不改变检测分辨率）。"""
+        state = self.camera_manager._cameras.get(camera_id)
+        if state is None:
+            return frame
+        max_w = getattr(state.config, "width", 640)
+        max_h = getattr(state.config, "height", 480)
+        src_h, src_w = frame.shape[:2]
+        if src_w <= max_w and src_h <= max_h:
+            return frame
+        scale = min(max_w / src_w, max_h / src_h)
+        new_w = max(1, int(src_w * scale))
+        new_h = max(1, int(src_h * scale))
+        return cv2.resize(frame, (new_w, new_h))
+
+    def _display_loop(self):
+        """显示主循环：从缓存取最新帧，25 FPS 推流（只推标注帧，前端不消费原始帧）"""
+        log_message("SelectedCameraDisplay display loop started")
+        frame_count = 0
+        last_log_time = time.time()
+        while self._running:
+            try:
+                with self._lock:
+                    camera_id = self._selected_camera_id
+                    frame = self._latest_frame
+                    results = dict(self._last_detection_results)
+                    display_types = dict(self._display_types)
+
+                if camera_id is None or frame is None:
+                    time.sleep(0.05)
+                    continue
+
+                now = time.time()
+                frame_to_push = frame
+                enabled_types = [dtype for dtype, enabled in display_types.items() if enabled]
+                if results and enabled_types:
+                    frame_to_push = MultiDetector._annotate_frame(
+                        frame.copy(), results, camera_id, enabled_types
+                    )
+
+                display_frame = self._scale_for_display(frame_to_push, camera_id)
+                self.stream_server.update_frame(camera_id, display_frame, raw=False)
+
+                frame_count += 1
+                if now - last_log_time >= 5.0:
+                    fps = frame_count / (now - last_log_time)
+                    logger.info(f"SelectedCameraDisplay {camera_id} display FPS: {fps:.1f}")
+                    frame_count = 0
+                    last_log_time = now
+
+                time.sleep(0.04)
+            except Exception as e:
+                logger.error(f"SelectedCameraDisplay display loop error: {e}")
+                time.sleep(0.1)
+        log_message("SelectedCameraDisplay display loop stopped")
+
+    def _detect_loop(self):
+        """检测循环：按配置间隔向 worker 提交最新帧，不等待结果。"""
+        log_message("SelectedCameraDisplay detect loop started")
+        while self._running:
+            try:
+                time.sleep(self._display_interval)
+
+                with self._lock:
+                    camera_id = self._selected_camera_id
+                    frame = self._latest_frame
+                    display_types = dict(self._display_types)
+
+                if camera_id is None or frame is None:
+                    continue
+                if not any(display_types.values()):
+                    continue
+                if self._detection_worker is None:
+                    continue
+
+                types_to_detect = [dtype for dtype, enabled in display_types.items() if enabled]
+                if not self._detection_worker.submit(frame.copy(), types_to_detect):
+                    logger.debug(
+                        f"SelectedCameraDisplay {camera_id} detection worker busy, skipping interval"
+                    )
+            except Exception as e:
+                logger.error(f"SelectedCameraDisplay detect loop error: {e}")
+        log_message("SelectedCameraDisplay detect loop stopped")
+
+    def _result_loop(self):
+        """结果循环：持续从 worker 读取检测结果并更新显示缓存。"""
+        log_message("SelectedCameraDisplay result loop started")
+        while self._running:
+            try:
+                results = (
+                    self._detection_worker.get_result(timeout=0.1)
+                    if self._detection_worker
+                    else None
+                )
+                if results is None:
+                    continue
+
+                with self._lock:
+                    display_types = dict(self._display_types)
+                    enabled_types = [dtype for dtype, enabled in display_types.items() if enabled]
+                    visible_results = {
+                        dtype: results.get(dtype)
+                        for dtype in enabled_types
+                        if results.get(dtype)
                     }
-                effective_types = [t for t in types_to_draw if t in cam_enabled_types]
-                filtered = {k: v for k, v in results.items() if k in effective_types}
-                annotated = MultiDetector._annotate_frame(frame, filtered, main_id, [])
-            else:
-                annotated = frame
-
-            # 推送标注帧
-            stream_server.update_frame(main_id, annotated, raw=False)
-        except Exception as e:
-            logger.error(f"Overlay loop error: {e}")
-
-        time.sleep(0.04)  # 25 FPS 上限
-    log_message("Overlay render thread stopped")
+                    self._overlay_expires_at = time.time() + max(self._display_interval, 0.1)
+                    self._last_detection_results = visible_results
+            except Exception as e:
+                logger.error(f"SelectedCameraDisplay result loop error: {e}")
+        log_message("SelectedCameraDisplay result loop stopped")
 
 
-def start_overlay_thread():
-    """启动渲染线程"""
-    global _overlay_running, _overlay_thread
-    if _overlay_thread and _overlay_thread.is_alive():
-        return
-    _overlay_running = True
-    _overlay_thread = threading.Thread(target=_overlay_loop, daemon=True, name="overlay-render")
-    _overlay_thread.start()
+def start_selected_camera_display():
+    """启动选中摄像头显示模块"""
+    global selected_camera_display
+    if selected_camera_display is not None:
+        selected_camera_display.start()
 
 
-def stop_overlay_thread():
-    """停止渲染线程"""
-    global _overlay_running
-    _overlay_running = False
-    if _overlay_thread:
-        _overlay_thread.join(timeout=2)
+def stop_selected_camera_display():
+    """停止选中摄像头显示模块"""
+    global selected_camera_display
+    if selected_camera_display is not None:
+        selected_camera_display.stop()
 
 
 @app.on_event("startup")
@@ -1526,8 +1722,8 @@ async def startup():
         if vlm_inspector and _global_settings.get("vlm_inspection_interval", 30.0) > 0:
             vlm_inspector.start()
 
-        # 启动独立渲染线程（画框 + 送流，与检测解耦）
-        start_overlay_thread()
+        # 启动选中摄像头独立显示模块（画框 + 送流，与检测解耦）
+        start_selected_camera_display()
 
         log_message(f"Sentry Safety Detection started on {app_config.API_HOST}:{app_config.API_PORT}")
         log_message(f"Access the monitoring center at http://{app_config.API_HOST}:{app_config.API_PORT}/monitor")
@@ -1540,7 +1736,7 @@ async def startup():
 async def shutdown():
     """服务关闭"""
     log_message("Shutting down...")
-    stop_overlay_thread()
+    stop_selected_camera_display()
 
     if vlm_inspector:
         vlm_inspector.stop()

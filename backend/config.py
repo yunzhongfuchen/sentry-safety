@@ -97,40 +97,40 @@ DEFAULT_TYPE_CONFIG = {
         "enabled": False,
         "interval": 1,
         "threshold": 0.6,
-        "consecutive_required": 2,
-        "cooldown": 10,
+        "consecutive_required": 3,
+        "cooldown": 60,
         "use_vlm": False,
     },
     "smoke": {
         "enabled": False,
         "interval": 1,
         "threshold": 0.55,
-        "consecutive_required": 2,
-        "cooldown": 10,
+        "consecutive_required": 3,
+        "cooldown": 60,
         "use_vlm": False,
     },
     "uniform": {
         "enabled": False,
         "interval": 1,
         "threshold": 0.5,
-        "compliance_window_seconds": 30,
-        "cooldown": 3,
+        "consecutive_required": 3,
+        "cooldown": 60,
         "use_vlm": False,
     },
     "mask": {
         "enabled": False,
         "interval": 1,
         "threshold": 0.5,
-        "consecutive_required": 1,
-        "cooldown": 3,
+        "consecutive_required": 3,
+        "cooldown": 60,
         "use_vlm": False,
     },
     "cigarette": {
         "enabled": False,
         "interval": 1,
         "threshold": 0.5,
-        "consecutive_required": 1,
-        "cooldown": 3,
+        "consecutive_required": 3,
+        "cooldown": 60,
         "use_vlm": False,
     },
     "sleep": {
@@ -138,7 +138,7 @@ DEFAULT_TYPE_CONFIG = {
         "interval": 60,
         "threshold": 0.7,
         "consecutive_required": 3,
-        "cooldown": 30,
+        "cooldown": 60,
         "use_vlm": False,
     },
 }
@@ -158,6 +158,15 @@ DEFAULT_GLOBAL_SETTINGS = {
     "gpu_scheduler_num_queues": 0,
     "gpu_scheduler_interval": 0.5,
     "gpu_scheduler_half": False,
+    "display_detection_types": {
+        "fire": True,
+        "smoke": True,
+        "uniform": True,
+        "mask": True,
+        "cigarette": True,
+        "sleep": True,
+    },
+    "display_detection_interval": 1.0,
 }
 
 # ==================== 默认摄像头参数（全局模板） ====================
@@ -166,8 +175,6 @@ DEFAULT_CAMERA_GLOBALS = {
     "height": 480,
     "fps": 15,
     "source_type": "auto",
-    "video_loop": False,
-    "video_playback_speed": 1.0,
     "detection_types": dict(DEFAULT_TYPE_CONFIG),
 }
 
@@ -214,7 +221,7 @@ def apply_camera_globals(cam_config: dict, globals_data: dict = None) -> dict:
     result = dict(cam_config)
 
     # 基础参数：若缺失则填充全局默认值
-    for key in ("width", "height", "fps", "source_type", "video_loop", "video_playback_speed"):
+    for key in ("width", "height", "fps", "source_type"):
         if result.get(key) is None:
             result[key] = globals_data.get(key, DEFAULT_CAMERA_GLOBALS.get(key))
 
@@ -368,13 +375,6 @@ def load_camera_configs() -> List[Dict[str, Any]]:
 
         # 确保新字段存在
         cam.setdefault("source_type", "auto")
-        cam.setdefault("video_loop", False)
-        cam.setdefault("video_playback_speed", 1.0)
-
-        # 旧配置迁移：之前默认 video_loop=True，现在改为 False
-        if cam.get("video_loop") is True:
-            cam["video_loop"] = False
-            migrated = True
 
     if migrated:
         save_camera_configs(cameras)
