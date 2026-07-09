@@ -67,7 +67,7 @@ def test_selected_camera_display_switch_clears_overlay_not_frame(_mock_worker_cl
     assert np.array_equal(display._latest_frame, old_frame)
     assert display._last_detection_results == {}
     assert display._overlay_expires_at == 0.0
-    assert display._opening_capture is False
+    assert display._opening_camera_id is None
 
 
 @patch("backend.main_multi.DisplayDetectionWorker")
@@ -326,7 +326,7 @@ def test_ensure_capture_opens_asynchronously(_mock_worker, mock_thread):
     result = display._ensure_capture()
     assert result is None
     mock_thread.assert_called_once()
-    assert display._opening_capture is True
+    assert display._opening_camera_id == "cam_01"
 
 
 @patch("backend.main_multi.DisplayDetectionWorker")
@@ -340,7 +340,7 @@ def test_ensure_capture_honors_fail_cooldown(_mock_worker):
 
     result = display._ensure_capture()
     assert result is None
-    assert display._opening_capture is False
+    assert display._opening_camera_id is None
 
 
 @patch("backend.main_multi.DisplayDetectionWorker")
