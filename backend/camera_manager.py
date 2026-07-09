@@ -579,6 +579,8 @@ class CameraManager:
             raise RuntimeError(f"Failed to open video source: {source}")
 
         cap.set(cv2.CAP_PROP_BUFFERSIZE, state.config.buffer_size)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
+        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
         cap.set(cv2.CAP_PROP_FPS, state.config.fps)

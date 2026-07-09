@@ -1541,6 +1541,8 @@ class SelectedCameraDisplay:
 
             try:
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
+                cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000)
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
                 cap.set(cv2.CAP_PROP_FPS, state.config.fps)
