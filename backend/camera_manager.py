@@ -570,8 +570,19 @@ class CameraManager:
                 logger.info(f"Camera {camera_id} using GPU decoder")
 
         # 回退到 OpenCV CPU 解码：网络流强制用 FFMPEG，本地摄像头可回退
+        # 网络流通过环境变量注入 FFMPEG 连接超时（stimeout=3s），避免离线摄像头长时间阻塞
         if cap is None:
-            cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+            if is_network:
+                _prev = os.environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS")
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "stimeout;3000000|timeout;3000000"
+            try:
+                cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+            finally:
+                if is_network:
+                    if _prev is None:
+                        os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
+                    else:
+                        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = _prev
             if not cap.isOpened() and not is_network:
                 cap = cv2.VideoCapture(source)
 
