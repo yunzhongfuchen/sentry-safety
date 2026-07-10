@@ -6,46 +6,27 @@ import time
 from backend.main_multi import SelectedCameraDisplay
 
 
-@patch("backend.main_multi.threading.Thread")
 @patch("backend.main_multi.DisplayDetectionWorker")
-@patch("backend.main_multi.cv2.VideoCapture")
-def test_selected_camera_display_reader_uses_private_capture(mock_videocap, _mock_worker_cls, mock_thread):
+def test_selected_camera_display_reader_session_uses_shared_frame(_mock_worker_cls):
+    """_reader_session 从 camera_manager.get_latest_frame 取帧，不再自建 VideoCapture。"""
     frame = np.ones((16, 16, 3), dtype=np.uint8)
-    cap = MagicMock()
-    cap.isOpened.return_value = True
-    mock_videocap.return_value = cap
 
     camera_manager = MagicMock()
-    state = MagicMock()
-    state.config.source = "0"
-    state.config.width = 640
-    state.config.height = 480
-    state.config.fps = 25
-    camera_manager._cameras = {"cam_01": state}
     stream_server = MagicMock()
-
-    # 让 _ensure_capture 中启动的打开线程同步执行，便于测试
-    def run_thread_target(*args, **kwargs):
-        target = kwargs.get("target")
-        if target:
-            target(*kwargs.get("args", ()))
-        return MagicMock()
-
-    mock_thread.side_effect = run_thread_target
 
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
     display._running = True
-    display.set_selected_camera("cam_01")
+    display._active_session_id = 1
 
-    def stop_after_first_read():
+    def stop_after_first_frame(camera_id):
         display._running = False
-        return True, frame.copy()
+        return frame.copy()
 
-    cap.read.side_effect = stop_after_first_read
+    camera_manager.get_latest_frame.side_effect = stop_after_first_frame
 
-    display._reader_loop()
+    display._reader_session(1, "cam_01")
 
-    mock_videocap.assert_called()
+    camera_manager.get_latest_frame.assert_called_with("cam_01")
     assert np.array_equal(display._latest_frame, frame)
 
 
@@ -67,7 +48,7 @@ def test_selected_camera_display_switch_clears_overlay_not_frame(_mock_worker_cl
     assert np.array_equal(display._latest_frame, old_frame)
     assert display._last_detection_results == {}
     assert display._overlay_expires_at == 0.0
-    assert display._opening_camera_id is None
+    assert display._active_session_id == 1
 
 
 @patch("backend.main_multi.DisplayDetectionWorker")
@@ -313,34 +294,168 @@ def test_result_loop_filters_disabled_types(_mock_worker_cls):
     assert display._last_detection_results == {"fire": {"boxes": [[1, 1, 2, 2]]}}
 
 
-@patch("backend.main_multi.threading.Thread")
 @patch("backend.main_multi.DisplayDetectionWorker")
-def test_ensure_capture_opens_asynchronously(_mock_worker, mock_thread):
+def test_stale_session_frame_cannot_update_latest_frame(_mock_worker):
     camera_manager = MagicMock()
     stream_server = MagicMock()
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
 
-    display._selected_camera_id = "cam_01"
+    old_frame = np.zeros((8, 8, 3), dtype=np.uint8)
+    stale_frame = np.ones((8, 8, 3), dtype=np.uint8)
+    display._latest_frame = old_frame
+    display._active_session_id = 2
 
-    # _ensure_capture 应该启动一个线程去打开，而不是同步阻塞
-    result = display._ensure_capture()
-    assert result is None
-    mock_thread.assert_called_once()
-    assert display._opening_camera_id == "cam_01"
+    updated = display._update_session_frame(1, stale_frame)
+
+    assert updated is False
+    assert np.array_equal(display._latest_frame, old_frame)
 
 
 @patch("backend.main_multi.DisplayDetectionWorker")
-def test_ensure_capture_honors_fail_cooldown(_mock_worker):
+def test_active_session_frame_updates_latest_frame(_mock_worker):
     camera_manager = MagicMock()
     stream_server = MagicMock()
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
 
-    display._selected_camera_id = "cam_01"
-    display._last_open_fail_time = time.time()
+    frame = np.ones((8, 8, 3), dtype=np.uint8)
+    display._active_session_id = 2
 
-    result = display._ensure_capture()
-    assert result is None
-    assert display._opening_camera_id is None
+    updated = display._update_session_frame(2, frame)
+
+    assert updated is True
+    assert np.array_equal(display._latest_frame, frame)
+
+
+@patch("backend.main_multi.DisplayDetectionWorker")
+@patch("backend.main_multi.MultiDetector._annotate_frame")
+def test_display_loop_does_not_push_stale_session_frame(mock_annotate, _mock_worker_cls):
+    camera_manager = MagicMock()
+    state = MagicMock()
+    state.config.width = 640
+    state.config.height = 480
+    camera_manager._cameras = {"cam_new": state}
+    stream_server = MagicMock()
+
+    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
+    old_frame = np.zeros((8, 8, 3), dtype=np.uint8)
+
+    display._selected_camera_id = "cam_new"
+    display._active_session_id = 2
+    display._latest_frame = old_frame
+    display._frame_session_id = 1
+    display._display_types = {"fire": True}
+    display._running = True
+
+    # 旧 session 帧不能被推到新 camera_id 的 stream buffer。
+    # 第一次循环应跳过；第二次循环退出测试。
+    loop_count = [0]
+    original_sleep = time.sleep
+
+    def sleep_once(_seconds):
+        loop_count[0] += 1
+        if loop_count[0] >= 2:
+            display._running = False
+        original_sleep(0)
+
+    with patch("backend.main_multi.time.sleep", side_effect=sleep_once):
+        display._display_loop()
+
+    stream_server.update_frame.assert_not_called()
+    mock_annotate.assert_not_called()
+
+
+@patch("backend.main_multi.DisplayDetectionWorker")
+def test_reader_session_skips_when_camera_offline(_mock_worker):
+    """摄像头离线时 get_latest_frame 返回 None，reader 应持续等待而不崩溃。"""
+    camera_manager = MagicMock()
+    stream_server = MagicMock()
+    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
+    display._running = True
+    display._active_session_id = 1
+
+    call_count = [0]
+
+    def return_none_then_stop(camera_id):
+        call_count[0] += 1
+        if call_count[0] >= 3:
+            display._running = False
+        return None
+
+    camera_manager.get_latest_frame.side_effect = return_none_then_stop
+
+    with patch("backend.main_multi.time.sleep"):
+        display._reader_session(1, "cam_01")
+
+    assert display._latest_frame is None
+    assert camera_manager.get_latest_frame.call_count >= 2
+
+
+@patch("backend.main_multi.DisplayDetectionWorker")
+def test_reader_session_exits_when_session_superseded(_mock_worker):
+    """切换摄像头后旧 session 应在检查 _active_session_id 时自行退出，不再拉帧。"""
+    frame = np.ones((8, 8, 3), dtype=np.uint8)
+    camera_manager = MagicMock()
+    stream_server = MagicMock()
+    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
+    display._running = True
+    display._active_session_id = 1
+
+    def switch_then_return(camera_id):
+        # 模拟拿到帧后，其他线程切换了摄像头
+        display._active_session_id = 2
+        return frame.copy()
+
+    camera_manager.get_latest_frame.side_effect = switch_then_return
+
+    display._reader_session(1, "cam_01")
+
+    # session 1 的帧不能写入（session 2 已激活），_latest_frame 应保持 None
+    assert display._latest_frame is None
+
+
+@patch("backend.main_multi.DisplayDetectionWorker")
+def test_active_reader_session_clears_capture_after_read_failure(_mock_worker):
+    """保留：_update_session_frame 返回 False 时 session 退出（session 被抢占场景）。"""
+    frame = np.ones((8, 8, 3), dtype=np.uint8)
+    camera_manager = MagicMock()
+    stream_server = MagicMock()
+    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
+    display._running = True
+    display._active_session_id = 2  # session 1 已过期
+
+    camera_manager.get_latest_frame.return_value = frame
+
+    display._reader_session(1, "cam_01")  # session_id=1 != active=2，直接退出
+
+    camera_manager.get_latest_frame.assert_not_called()
+    assert display._latest_frame is None
+
+
+@patch("backend.main_multi.DisplayDetectionWorker")
+def test_active_reader_session_reconnects_after_read_failure(_mock_worker):
+    """摄像头恢复上线后，reader session 应拿到新帧并更新 _latest_frame。"""
+    camera_manager = MagicMock()
+    stream_server = MagicMock()
+    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
+    display._running = True
+    display._active_session_id = 1
+
+    second_frame = np.ones((8, 8, 3), dtype=np.uint8)
+    calls = [0]
+
+    def offline_then_online(camera_id):
+        calls[0] += 1
+        if calls[0] == 1:
+            return None  # 第一次离线
+        display._running = False
+        return second_frame.copy()  # 第二次上线
+
+    camera_manager.get_latest_frame.side_effect = offline_then_online
+
+    with patch("backend.main_multi.time.sleep"):
+        display._reader_session(1, "cam_01")
+
+    assert np.array_equal(display._latest_frame, second_frame)
 
 
 @patch("backend.main_multi.DisplayDetectionWorker")

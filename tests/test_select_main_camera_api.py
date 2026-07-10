@@ -28,6 +28,25 @@ def test_select_main_camera_not_found():
         set_main.assert_not_called()
 
 
+def test_set_main_camera_keeps_old_stream_buffer_registered():
+    from backend import main_multi
+
+    cm = MagicMock()
+    cm.get_main_camera.return_value = "cam_01"
+    ss = MagicMock()
+    selected_display = MagicMock()
+
+    with patch.object(main_multi, "camera_manager", cm), \
+         patch.object(main_multi, "stream_server", ss), \
+         patch.object(main_multi, "selected_camera_display", selected_display):
+        main_multi.set_main_camera("cam_02")
+
+    ss.unregister_camera.assert_not_called()
+    ss.register_camera.assert_called_once_with("cam_02")
+    cm.set_main_camera.assert_called_once_with("cam_02")
+    selected_display.set_selected_camera.assert_called_once_with("cam_02")
+
+
 def test_main_camera_stream():
     with patch("backend.main_multi.camera_manager") as cm, \
          patch("backend.main_multi.stream_server") as ss, \

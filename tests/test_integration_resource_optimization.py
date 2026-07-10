@@ -6,8 +6,8 @@ from backend.camera_manager import CameraManager, CameraConfig
 from backend import main_multi
 
 
-def test_main_camera_only_stream_registered():
-    """验证只有主画面注册流缓冲，且切换时注销旧主画面"""
+def test_main_camera_stream_buffers_are_kept_across_switches():
+    """验证切换主画面时保留旧流缓冲，避免前端 stream 重建竞态。"""
     cm = CameraManager()
     cm.register_camera(CameraConfig(camera_id="cam_01", source="0"))
     cm.register_camera(CameraConfig(camera_id="cam_02", source="0"))
@@ -35,7 +35,7 @@ def test_main_camera_only_stream_registered():
             main_multi.set_main_camera("cam_02")
             assert cm.get_main_camera() == "cam_02"
             assert cm.decode_scheduler._main_camera == "cam_02"
-            mock_stream_server.unregister_camera.assert_called_once_with("cam_01")
+            mock_stream_server.unregister_camera.assert_not_called()
             mock_stream_server.register_camera.assert_called_once_with("cam_02")
     finally:
         main_multi.camera_manager = original_camera_manager

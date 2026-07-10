@@ -466,18 +466,24 @@
                     sidebar.value.settingsExpanded = !sidebar.value.settingsExpanded;
                 }
 
-                function selectCamera(cid) {
-                    const idx = cameraOrder.value.indexOf(cid);
-                    if (idx > 0) {
-                        const newOrder = [...cameraOrder.value];
-                        [newOrder[0], newOrder[idx]] = [newOrder[idx], newOrder[0]];
-                        cameraOrder.value = newOrder;
-                    } else if (idx === -1) {
-                        cameraOrder.value = [cid, ...cameraOrder.value.filter(id => id !== cid)];
+                async function selectCamera(cid) {
+                    if (cid === mainCameraId.value) return;
+                    try {
+                        // 先让后端完成主画面切换，再更新前端 img src，避免 /stream 404 竞态
+                        await safeFetch(`/cameras/${cid}/select`, { method: 'POST' });
+                        const idx = cameraOrder.value.indexOf(cid);
+                        if (idx > 0) {
+                            const newOrder = [...cameraOrder.value];
+                            [newOrder[0], newOrder[idx]] = [newOrder[idx], newOrder[0]];
+                            cameraOrder.value = newOrder;
+                        } else if (idx === -1) {
+                            cameraOrder.value = [cid, ...cameraOrder.value.filter(id => id !== cid)];
+                        }
+                        streamVisible.value[cid] = true;
+                        updateUrl();
+                    } catch (e) {
+                        console.error('select camera failed', e);
                     }
-                    updateUrl();
-                    // 通知后端切换主画面
-                    safeFetch(`/cameras/${cid}/select`, { method: 'POST' }).catch(e => console.error('select camera failed', e));
                 }
 
                 function updateUrl() {

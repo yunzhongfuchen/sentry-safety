@@ -492,14 +492,8 @@ def _pick_default_main_camera() -> Optional[str]:
 
 
 def set_main_camera(camera_id: Optional[str]):
-    """切换选中的摄像头，同步更新显示模块"""
+    """切换选中的摄像头，同步更新显示模块。保留旧流缓冲，避免前端切换时连接抖动。"""
     global stream_server
-
-    old_main = camera_manager.get_main_camera() if camera_manager else None
-
-    if old_main:
-        stream_server.unregister_camera(old_main)
-        log_message(f"Unregistered stream for old selected camera {old_main}")
 
     if camera_manager:
         camera_manager.set_main_camera(camera_id)
@@ -1373,12 +1367,9 @@ class SelectedCameraDisplay:
         self._detect_thread: Optional[threading.Thread] = None
         self._result_thread: Optional[threading.Thread] = None
         self._selected_camera_id: Optional[str] = None
-        self._cap: Optional[cv2.VideoCapture] = None
-        self._cap_source: Optional[str] = None
-        self._cap_camera_id: Optional[str] = None
-        self._opening_camera_id: Optional[str] = None
-        self._last_open_fail_time: float = 0.0
+        self._active_session_id: int = 0
         self._latest_frame: Optional[np.ndarray] = None
+        self._frame_session_id: int = 0
         self._frame_timestamp: float = 0.0
         self._last_detection_results: Dict[str, dict] = {}
         self._overlay_expires_at: float = 0.0
@@ -1398,14 +1389,24 @@ class SelectedCameraDisplay:
         return value
 
     def set_selected_camera(self, camera_id: Optional[str]):
-        """切换当前选中的摄像头。旧 capture 保持运行，新 capture 在后台异步打开，避免黑屏。"""
+        """切换当前选中的摄像头：启动新的独立 reader session，旧 session 自行退出。"""
         with self._lock:
             if self._selected_camera_id == camera_id:
                 return
+            self._active_session_id += 1
+            session_id = self._active_session_id
             self._selected_camera_id = camera_id
-            # 不清空 _latest_frame：继续显示旧画面直到新 capture 有帧，避免切换黑屏
+            # 不清空 _latest_frame：继续显示旧画面直到新 session 有帧，避免切换黑屏
             self._last_detection_results = {}
             self._overlay_expires_at = 0.0
+
+        if camera_id is not None and self._running:
+            threading.Thread(
+                target=self._reader_session,
+                args=(session_id, camera_id),
+                daemon=True,
+                name=f"selected-camera-reader-{camera_id}",
+            ).start()
 
     def set_display_types(self, display_types: Dict[str, bool]):
         """更新显示类型开关（向后兼容）。"""
@@ -1427,15 +1428,22 @@ class SelectedCameraDisplay:
                 self._display_interval = self._clamp_display_interval(display_interval)
 
     def start(self):
-        """启动检测子进程、读取线程、显示线程、检测线程和结果线程"""
+        """启动检测子进程、显示线程、检测线程和结果线程"""
         if self._running:
             return
         self._running = True
         self._detection_worker = DisplayDetectionWorker(self._npu_cores, self._device)
-        self._reader_thread = threading.Thread(
-            target=self._reader_loop, daemon=True, name="selected-camera-reader"
-        )
-        self._reader_thread.start()
+        with self._lock:
+            session_id = self._active_session_id
+            camera_id = self._selected_camera_id
+        if camera_id is not None:
+            self._reader_thread = threading.Thread(
+                target=self._reader_session,
+                args=(session_id, camera_id),
+                daemon=True,
+                name=f"selected-camera-reader-{camera_id}",
+            )
+            self._reader_thread.start()
         self._display_thread = threading.Thread(
             target=self._display_loop, daemon=True, name="selected-camera-display"
         )
@@ -1468,199 +1476,38 @@ class SelectedCameraDisplay:
         if self._detection_worker:
             self._detection_worker.stop()
             self._detection_worker = None
-        self._close_capture()
         log_message("SelectedCameraDisplay stopped")
 
-    def _close_capture(self):
-        with self._lock:
-            if self._cap is not None:
-                try:
-                    self._cap.release()
-                except Exception:
-                    pass
-                self._cap = None
-            self._cap_source = None
-            self._cap_camera_id = None
-            self._opening_camera_id = None
-            self._last_open_fail_time = 0.0
-
-    def _reader_loop(self):
-        """读取线程：独立 capture 并按源帧率读取最新帧，避免阻塞显示推流。"""
-        log_message("SelectedCameraDisplay reader loop started")
-        while self._running:
-            try:
-                cap = self._ensure_capture()
-                if cap is None:
-                    time.sleep(0.1)
-                    continue
-
-                # 在独立线程中执行 cap.read()，避免网络流断开后无限阻塞
-                read_result = [None]
-
-                def _read_once():
-                    try:
-                        read_result[0] = cap.read()
-                    except Exception as e:
-                        logger.warning(f"SelectedCameraDisplay read thread error: {e}")
-                        read_result[0] = (False, None)
-
-                read_thread = threading.Thread(
-                    target=_read_once, daemon=True, name="selected-camera-read-once"
-                )
-                read_thread.start()
-                read_thread.join(timeout=3.0)
-
-                ret, frame = read_result[0] if read_result[0] is not None else (False, None)
-                if not ret or frame is None:
-                    logger.warning(
-                        f"SelectedCameraDisplay read failed or timeout for {self._selected_camera_id}, re-opening"
-                    )
-                    self._close_capture()
-                    time.sleep(0.1)
-                    continue
-
-                with self._lock:
-                    self._latest_frame = frame
-                    self._frame_timestamp = time.time()
-            except cv2.error as e:
-                logger.warning(f"SelectedCameraDisplay reader OpenCV error, re-opening capture: {e}")
-                self._close_capture()
-                time.sleep(0.1)
-            except Exception as e:
-                logger.error(f"SelectedCameraDisplay reader loop error: {e}")
-                time.sleep(0.1)
-        log_message("SelectedCameraDisplay reader loop stopped")
-
-    def _open_capture(self, camera_id: str) -> bool:
-        """为指定摄像头打开独立 capture。网络流强制使用 FFMPEG，避免回退到错误的 images 后端。"""
+    def _reader_session(self, session_id: int, camera_id: str):
+        """主画面读取会话：从 camera_manager 共享帧轮询，切换时旧 session 自行退出。
+        不再自建 VideoCapture，消除切换时重建 RTSP 连接的延迟。
+        """
+        log_message(f"SelectedCameraDisplay reader session started: {camera_id}#{session_id}")
         try:
-            state = self.camera_manager._cameras.get(camera_id)
-            if state is None:
-                return False
-
-            source = state.config.source
-            if isinstance(source, str) and source.isdigit():
-                source = int(source)
-
-            source_str = str(source)
-            is_network = source_str.startswith(("http://", "https://", "rtsp://"))
-
-            # 对网络流设置 FFMPEG 连接/读取超时（微秒），避免异常流无限阻塞 open/read
-            ffmpeg_options = None
-            if is_network:
-                ffmpeg_options = os.environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS")
-                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "stimeout;3000000|timeout;3000000"
-
-            try:
-                cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-            finally:
-                if is_network:
-                    if ffmpeg_options is None:
-                        os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
-                    else:
-                        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ffmpeg_options
-
-            if not cap.isOpened() and not is_network:
-                # 只有本地摄像头才允许回退到默认后端
-                cap = cv2.VideoCapture(source)
-            if not cap.isOpened():
-                logger.error(f"SelectedCameraDisplay failed to open {camera_id}: {source}")
-                try:
-                    cap.release()
-                except Exception:
-                    pass
+            while self._running:
                 with self._lock:
-                    self._last_open_fail_time = time.time()
-                    # 只有当前仍在等待这个 camera_id 时才清空 opening 状态
-                    if self._opening_camera_id == camera_id:
-                        self._opening_camera_id = None
+                    if session_id != self._active_session_id:
+                        break
+
+                frame = self.camera_manager.get_latest_frame(camera_id)
+                if frame is None:
+                    time.sleep(0.04)
+                    continue
+
+                if not self._update_session_frame(session_id, frame):
+                    break
+        finally:
+            log_message(f"SelectedCameraDisplay reader session stopped: {camera_id}#{session_id}")
+
+    def _update_session_frame(self, session_id: int, frame: np.ndarray) -> bool:
+        """只有当前 session 才能更新最新帧，防止旧 session 迟到覆盖画面。"""
+        with self._lock:
+            if session_id != self._active_session_id:
                 return False
-
-            try:
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
-                cap.set(cv2.CAP_PROP_FPS, state.config.fps)
-            except Exception:
-                pass
-
-            with self._lock:
-                # 如果用户已经切走了，不要覆盖当前正在显示的 capture
-                if self._opening_camera_id != camera_id:
-                    try:
-                        cap.release()
-                    except Exception:
-                        pass
-                    return False
-                old_cap = self._cap
-                self._cap = cap
-                self._cap_source = str(state.config.source)
-                self._cap_camera_id = camera_id
-                self._last_open_fail_time = 0.0
-                self._opening_camera_id = None
-
-            # 新 capture 就绪后再释放旧 capture，避免切换黑屏
-            if old_cap is not None and old_cap is not cap:
-                try:
-                    old_cap.release()
-                except Exception:
-                    pass
+            self._latest_frame = frame
+            self._frame_session_id = session_id
+            self._frame_timestamp = time.time()
             return True
-        except Exception as e:
-            logger.error(f"SelectedCameraDisplay _open_capture error: {e}")
-            try:
-                cap.release()
-            except Exception:
-                pass
-            with self._lock:
-                self._last_open_fail_time = time.time()
-                if self._opening_camera_id == camera_id:
-                    self._opening_camera_id = None
-            return False
-
-    def _ensure_capture(self) -> Optional[cv2.VideoCapture]:
-        """确保 capture 已打开并返回。打开操作在独立线程异步执行，避免阻塞 reader_loop。"""
-        with self._lock:
-            camera_id = self._selected_camera_id
-
-        if camera_id is None:
-            return None
-
-        with self._lock:
-            need_open = (
-                self._cap is None
-                or not self._cap.isOpened()
-                or self._cap_camera_id != camera_id
-            )
-            if not need_open:
-                state = self.camera_manager._cameras.get(camera_id)
-                if state is not None and str(state.config.source) != self._cap_source:
-                    need_open = True
-
-            if not need_open:
-                return self._cap
-
-            # 如果正在打开目标摄像头，继续等待
-            if self._opening_camera_id == camera_id:
-                return self._cap
-
-            # 如果正在打开其他摄像头（用户已切换走），取消旧打开并重试
-            if self._opening_camera_id is not None:
-                self._opening_camera_id = None
-
-            # 打开失败后冷却 2 秒，避免 reader_loop 被频繁阻塞
-            if self._last_open_fail_time and time.time() - self._last_open_fail_time < 2.0:
-                return self._cap
-
-            self._opening_camera_id = camera_id
-
-        threading.Thread(
-            target=self._open_capture,
-            args=(camera_id,),
-            daemon=True,
-            name="selected-camera-open",
-        ).start()
-        return self._cap
 
     def _scale_for_display(self, frame: np.ndarray, camera_id: str) -> np.ndarray:
         """按摄像头配置的最大分辨率等比例缩放，降低推流编码压力（不改变检测分辨率）。"""
@@ -1689,8 +1536,15 @@ class SelectedCameraDisplay:
                     frame = self._latest_frame
                     results = dict(self._last_detection_results)
                     display_types = dict(self._display_types)
+                    frame_session_id = self._frame_session_id
+                    active_session_id = self._active_session_id
 
                 if camera_id is None or frame is None:
+                    time.sleep(0.05)
+                    continue
+
+                # 跳过旧 session 残留帧，防止切换后旧帧闪入新摄像头流（A-B-A-B 问题）
+                if frame_session_id != active_session_id:
                     time.sleep(0.05)
                     continue
 
