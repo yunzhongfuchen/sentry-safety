@@ -572,7 +572,16 @@ class CameraManager:
 
         # 回退到 OpenCV CPU 解码：网络流强制用 FFMPEG，本地摄像头可回退
         # 注：localhost 的 MJPEG 流用 CAP_ANY 自动选择后端（MSMF/DirectShow 对 MJPEG 支持更好）
+        # 网络流先用 HTTP GET 预检测（1s 超时），避免 VideoCapture() 内部的长时间阻塞
         if cap is None:
+            if is_network and source_str.startswith(("http://", "https://")):
+                import requests
+                try:
+                    resp = requests.get(source_str, stream=True, timeout=1.0)
+                    resp.close()
+                except Exception as e:
+                    raise RuntimeError(f"Failed to reach video source: {source_str} ({e})")
+
             if is_localhost:
                 cap = cv2.VideoCapture(source)  # CAP_ANY，让 OpenCV 自动选择
             else:
