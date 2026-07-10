@@ -560,6 +560,7 @@ class CameraManager:
         source_str = str(source)
         is_network = source_str.startswith(("http://", "https://", "rtsp://"))
         is_rtsp = source_str.startswith("rtsp://")
+        is_localhost = "localhost" in source_str or "127.0.0.1" in source_str
         cap = None
 
         # RTSP 流优先尝试 GPU 硬件解码
@@ -570,30 +571,14 @@ class CameraManager:
                 logger.info(f"Camera {camera_id} using GPU decoder")
 
         # 回退到 OpenCV CPU 解码：网络流强制用 FFMPEG，本地摄像头可回退
-        # 网络流的 VideoCapture() 构造会在 FFMPEG 层阻塞 15-30s，环境变量 stimeout 在此版本无效。
-        # 用独立线程 + Event 给构造过程设置 3s 上限，超时直接放弃本次连接。
+        # 注：localhost 的 MJPEG 流用 CAP_ANY 自动选择后端（MSMF/DirectShow 对 MJPEG 支持更好）
         if cap is None:
-            if is_network:
-                result_holder = [None]
-                done = threading.Event()
-
-                def _open_in_thread():
-                    try:
-                        result_holder[0] = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-                    except Exception:
-                        pass
-                    finally:
-                        done.set()
-
-                t = threading.Thread(target=_open_in_thread, daemon=True)
-                t.start()
-                if not done.wait(timeout=5.0):
-                    raise RuntimeError(f"Failed to open video source: {source} (connect timeout)")
-                cap = result_holder[0]
+            if is_localhost:
+                cap = cv2.VideoCapture(source)  # CAP_ANY，让 OpenCV 自动选择
             else:
                 cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-                if not cap.isOpened():
-                    cap = cv2.VideoCapture(source)
+            if not cap.isOpened() and not is_network:
+                cap = cv2.VideoCapture(source)
 
         if not cap.isOpened():
             raise RuntimeError(f"Failed to open video source: {source}")
