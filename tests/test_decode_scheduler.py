@@ -1,11 +1,10 @@
 import time
 import queue
-from collections import deque
 from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from backend.decode_scheduler import DecodeScheduler, _MAX_FRAME_HISTORY, _MAIN_CAMERA_INTERVAL
+from backend.decode_scheduler import DecodeScheduler, _MAIN_CAMERA_INTERVAL
 
 
 def test_scheduler_has_main_camera_attribute():
@@ -93,7 +92,6 @@ def test_decode_one_frame_updates_state_under_lock():
     state.config = cfg
     state.current_frame = None
     state.frame_count = 0
-    state.frame_history = deque(maxlen=_MAX_FRAME_HISTORY)
     state.error_count = 0
 
     cm._cameras = {"cam_01": state}
@@ -104,36 +102,7 @@ def test_decode_one_frame_updates_state_under_lock():
     assert state.decode_queued is False
     assert state.frame_count == 1
     assert state.error_count == 0
-    assert len(state.frame_history) == 1
-
-
-def test_decode_one_frame_bounds_frame_history():
-    cm = MagicMock()
-    cfg = MagicMock()
-    cfg.width = 640
-    cfg.height = 480
-
-    state = MagicMock()
-    state.running = True
-    state.reader_queue = queue.Queue(maxsize=1)
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    state.last_decode_time = 0.0
-    state.decode_queued = True
-    state.lock = MagicMock()
-    state.config = cfg
-    state.current_frame = None
-    state.frame_count = 0
-    state.frame_history = deque(maxlen=_MAX_FRAME_HISTORY)
-    state.error_count = 0
-
-    cm._cameras = {"cam_01": state}
-    scheduler = DecodeScheduler(cm, num_workers=1)
-
-    for _ in range(_MAX_FRAME_HISTORY + 5):
-        state.reader_queue.put_nowait(frame.copy())
-        scheduler._decode_one_frame("cam_01", time.time())
-
-    assert len(state.frame_history) == _MAX_FRAME_HISTORY
+    assert state.current_frame is not None
 
 
 def test_decode_one_frame_returns_gracefully_when_queue_empty():
@@ -151,7 +120,6 @@ def test_decode_one_frame_returns_gracefully_when_queue_empty():
     state.config = cfg
     state.current_frame = None
     state.frame_count = 0
-    state.frame_history = deque(maxlen=_MAX_FRAME_HISTORY)
     state.error_count = 3
 
     cm._cameras = {"cam_01": state}
@@ -197,7 +165,6 @@ def test_worker_does_not_skip_real_work_for_sentinel():
     state.config = cfg
     state.current_frame = None
     state.frame_count = 0
-    state.frame_history = deque(maxlen=_MAX_FRAME_HISTORY)
     state.error_count = 0
 
     cm._cameras = {"cam_01": state}

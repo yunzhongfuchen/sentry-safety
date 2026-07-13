@@ -22,9 +22,6 @@ logger = logging.getLogger(__name__)
 _MAIN_CAMERA_INTERVAL = 1.0 / 25.0
 _BACKGROUND_CAMERA_INTERVAL = 1.0
 
-# 非主画面摄像头帧历史最大长度（1 FPS 时约 1 分钟）
-_MAX_FRAME_HISTORY = 60
-
 
 class DecodeScheduler:
     """统一解码线程池"""
@@ -235,7 +232,6 @@ class DecodeScheduler:
             state.current_frame = frame
             state.last_frame_time = current_time
             state.frame_count += 1
-            state.frame_history.append((current_time, frame.copy()))
 
             # FPS 统计（每秒一次）
             fps_stats = getattr(state, "fps_stats", None)
