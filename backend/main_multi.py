@@ -144,7 +144,6 @@ def encode_frame_to_bytes(frame: np.ndarray, quality: int = 70) -> bytes:
 def _save_detection_frames_async(
     record_id: str,
     detection_frames: List[Tuple[float, bytes]],
-    quality: int,
 ):
     """后台保存检测帧序列。"""
     try:
@@ -206,13 +205,11 @@ def on_trigger(camera_id: str, dtype: str, frame: Optional[np.ndarray], result: 
                 _save_detection_frames_async,
                 record_id,
                 detection_frames,
-                _global_settings.get("frame_quality", 60),
             )
         else:
             _save_detection_frames_async(
                 record_id,
                 detection_frames,
-                _global_settings.get("frame_quality", 60),
             )
     except Exception as e:
         logger.error(f"Failed to schedule detection frames save for {record_id}: {e}")
