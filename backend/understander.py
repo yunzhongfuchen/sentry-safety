@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import cv2
 import requests
-import config
+from backend import config
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +16,15 @@ def _get_prompt_and_question():
     return config.load_prompt()
 
 
+def _get_vlm_prompts() -> Dict[str, str]:
+    """加载 VLM 复核提示词模板（config/vlm_prompts.json）"""
+    return config.load_vlm_prompts()
+
+
 # ==================== 多类型安全检测 Prompt 模板 ====================
 
-PROMPT_TEMPLATES = {
+# 保留本地兜底模板，避免配置文件异常时无法运行
+_FALLBACK_PROMPT_TEMPLATES = {
     "fire_review": """你正在复核一个工业安全监控系统的火焰检测结果。
 请仔细查看图片，判断画面中是否真的有明火。
 注意排除以下误判情况：
@@ -39,8 +45,8 @@ PROMPT_TEMPLATES = {
 请以 JSON 格式返回：
 {"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
 
-    "mask_confirm": """你正在确认一个工业安全监控画面的口罩佩戴情况。
-请判断画面中是否有未戴口罩的人员。
+    "mask_review": """你正在复核一个工业安全监控系统的口罩佩戴检测结果。
+请仔细查看图片，判断画面中是否真的有未佩戴口罩的人员。
 注意排除以下情况：
 - 人员正在喝水或用餐（暂时摘下）
 - 人员手持物品遮挡面部
@@ -49,18 +55,18 @@ PROMPT_TEMPLATES = {
 请以 JSON 格式返回：
 {"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
 
-    "cigarette_confirm": """你正在确认一个工业安全监控画面是否存在吸烟行为。
-请判断画面中是否有人正在吸烟。
+    "cigarette_review": """你正在复核一个工业安全监控系统的吸烟行为检测结果。
+请仔细查看图片，判断画面中是否真的有人正在吸烟。
 注意排除以下情况：
 - 手持笔、筷子等细长物体
-- 手持电子烟（也视为吸烟）
-- 人员只是在摸嘴
+- 人员只是在摸嘴或吃东西
+- 画面模糊无法确认
 
 请以 JSON 格式返回：
 {"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
 
-    "uniform_confirm": """你正在确认一个工业安全监控画面的工服佩戴情况。
-请判断画面中是否有未穿工服/反光背心的人员。
+    "uniform_review": """你正在复核一个工业安全监控系统的工服/反光背心检测结果。
+请仔细查看图片，判断画面中是否真的有未穿工服或反光背心的人员。
 注意：
 - 不同岗位工服颜色可能不同
 - 只需判断是否有"未穿"的情况
@@ -94,6 +100,15 @@ PROMPT_TEMPLATES = {
 - confidence 范围 0.0-1.0
 - 如果没有发现任何异常，所有 detected 都返回 false""",
 }
+
+
+def _get_prompt_template(prompt_type: str) -> str:
+    """优先从配置文件读取模板，失败则使用本地兜底"""
+    try:
+        prompts = _get_vlm_prompts()
+    except Exception:
+        prompts = {}
+    return prompts.get(prompt_type, _FALLBACK_PROMPT_TEMPLATES.get(prompt_type, _FALLBACK_PROMPT_TEMPLATES["fire_review"]))
 
 
 class VideoUnderstander:
@@ -258,15 +273,11 @@ class VideoUnderstander:
             return {"error": "No frames provided"}
 
         # 构建 prompt
-        if prompt_type in PROMPT_TEMPLATES:
-            template = PROMPT_TEMPLATES[prompt_type]
+        if prompt_type == "inspection":
+            template = self._build_inspection_prompt(extra_context)
         else:
-            template = PROMPT_TEMPLATES["fire_review"]
-
-        if extra_context:
-            if prompt_type == "inspection":
-                template = self._build_inspection_prompt(extra_context)
-            elif prompt_type == "sleep_identity":
+            template = _get_prompt_template(prompt_type)
+            if extra_context and prompt_type == "sleep_identity":
                 template = template.format(
                     consecutive_required=extra_context.get("consecutive_required", 3),
                     interval=extra_context.get("interval", 60),
@@ -316,7 +327,7 @@ class VideoUnderstander:
             [f'    "{t}": {{"detected": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}}' for t in types]
         )
 
-        template = PROMPT_TEMPLATES["inspection"]
+        template = _get_prompt_template("inspection")
         return template.format(
             enabled_types_desc=checks_str,
             detections_json=detections_json,

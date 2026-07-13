@@ -7,7 +7,7 @@ import base64
 import logging
 import threading
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 from dataclasses import dataclass
 import time
 
@@ -66,12 +66,17 @@ def _frame_path(record_id: str, kind: str, index: int = 0) -> Path:
     return FRAMES_DIR / f"{record_id}_frame_{index:03d}.jpg"
 
 
-def save_image(record_id: str, kind: str, b64_data: str, index: int = 0) -> str:
-    """保存 base64 图片为文件"""
+def save_image(record_id: str, kind: str, image_data: Union[bytes, str], index: int = 0) -> str:
+    """保存图片为文件。接受 JPEG 字节或 base64 字符串。"""
     ensure_dirs()
     path = _frame_path(record_id, kind, index)
     try:
-        path.write_bytes(base64.b64decode(b64_data))
+        if isinstance(image_data, bytes):
+            path.write_bytes(image_data)
+            b64_data = base64.b64encode(image_data).decode("utf-8")
+        else:
+            b64_data = image_data
+            path.write_bytes(base64.b64decode(b64_data))
         # 同时存入缓存
         cache_key = f"{record_id}_{kind}_{index}"
         _image_cache.put(cache_key, b64_data)

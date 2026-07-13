@@ -6,8 +6,7 @@ import time
 from backend.main_multi import SelectedCameraDisplay
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_selected_camera_display_reader_session_uses_shared_frame(_mock_worker_cls):
+def test_selected_camera_display_reader_session_uses_shared_frame():
     """_reader_session 从 camera_manager.get_latest_frame 取帧，不再自建 VideoCapture。"""
     frame = np.ones((16, 16, 3), dtype=np.uint8)
 
@@ -30,8 +29,7 @@ def test_selected_camera_display_reader_session_uses_shared_frame(_mock_worker_c
     assert np.array_equal(display._latest_frame, frame)
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_selected_camera_display_switch_clears_overlay_not_frame(_mock_worker_cls):
+def test_selected_camera_display_switch_clears_overlay_not_frame():
     camera_manager = MagicMock()
     stream_server = MagicMock()
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
@@ -51,8 +49,7 @@ def test_selected_camera_display_switch_clears_overlay_not_frame(_mock_worker_cl
     assert display._active_session_id == 1
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_selected_camera_display_clears_overlay_when_all_types_disabled(_mock_worker_cls):
+def test_selected_camera_display_clears_overlay_when_all_types_disabled():
     camera_manager = MagicMock()
     stream_server = MagicMock()
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
@@ -66,9 +63,8 @@ def test_selected_camera_display_clears_overlay_when_all_types_disabled(_mock_wo
     assert display._overlay_expires_at == 0.0
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
 @patch("backend.main_multi.MultiDetector._annotate_frame")
-def test_display_loop_reuses_detection_results_on_latest_frame(mock_annotate, _mock_worker_cls):
+def test_display_loop_reuses_detection_results_on_latest_frame(mock_annotate):
     camera_manager = MagicMock()
     state = MagicMock()
     state.config.width = 640
@@ -103,9 +99,8 @@ def test_display_loop_reuses_detection_results_on_latest_frame(mock_annotate, _m
     assert np.array_equal(pushed, annotated)
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
 @patch("backend.main_multi.MultiDetector._annotate_frame")
-def test_display_loop_uses_raw_frame_when_no_detection_results(mock_annotate, _mock_worker_cls):
+def test_display_loop_uses_raw_frame_when_no_detection_results(mock_annotate):
     camera_manager = MagicMock()
     state = MagicMock()
     state.config.width = 640
@@ -142,8 +137,7 @@ def test_clamp_display_interval_bounds():
     assert SelectedCameraDisplay._clamp_display_interval(None) == 1.0
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_selected_camera_display_uses_configurable_interval(_mock_worker_cls):
+def test_selected_camera_display_uses_configurable_interval():
     camera_manager = MagicMock()
     stream_server = MagicMock()
     display = SelectedCameraDisplay(
@@ -152,8 +146,7 @@ def test_selected_camera_display_uses_configurable_interval(_mock_worker_cls):
     assert display._display_interval == 0.5
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_set_display_config_updates_interval_and_types(_mock_worker_cls):
+def test_set_display_config_updates_interval_and_types():
     camera_manager = MagicMock()
     stream_server = MagicMock()
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
@@ -173,8 +166,7 @@ def test_set_display_config_updates_interval_and_types(_mock_worker_cls):
     assert display._display_interval == 0.8
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_set_display_config_interval_is_clamped(_mock_worker_cls):
+def test_set_display_config_interval_is_clamped():
     camera_manager = MagicMock()
     stream_server = MagicMock()
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
@@ -186,116 +178,104 @@ def test_set_display_config_interval_is_clamped(_mock_worker_cls):
     assert display._display_interval == 10.0
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_detect_loop_submits_without_blocking(_mock_worker_cls):
+@patch("backend.main_multi.safety_detector")
+def test_detect_loop_calls_safety_detector_and_updates_results(mock_detector):
     camera_manager = MagicMock()
     stream_server = MagicMock()
-    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
+    display = SelectedCameraDisplay(
+        camera_manager, stream_server, npu_cores=0, device="cpu", display_interval=0.001
+    )
 
-    worker = MagicMock()
-    worker.submit.return_value = True
-    display._detection_worker = worker
     display._latest_frame = np.zeros((8, 8, 3), dtype=np.uint8)
     display._selected_camera_id = "cam_01"
     display._display_types = {"fire": True}
-    display._display_interval = 0.001
     display._running = True
 
-    def stop_after_submit(*args, **kwargs):
-        display._running = False
-        return True
+    results = {"fire": {"boxes": [[1, 1, 2, 2]]}}
 
-    worker.submit.side_effect = stop_after_submit
+    def detect_once(*args, **kwargs):
+        display._running = False
+        return results
+
+    mock_detector.detect.side_effect = detect_once
 
     display._detect_loop()
 
-    worker.submit.assert_called_once()
-    worker.detect.assert_not_called()
-    submitted_frame, submitted_types = worker.submit.call_args.args
+    mock_detector.ensure_models_loaded.assert_called_once_with(["fire"])
+    mock_detector.detect.assert_called_once()
+    submitted_frame, submitted_types = mock_detector.detect.call_args.args
     assert np.array_equal(submitted_frame, display._latest_frame)
     assert submitted_types == ["fire"]
+    assert display._last_detection_results == results
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_detect_loop_skips_when_worker_busy(_mock_worker_cls):
+@patch("backend.main_multi.safety_detector")
+def test_detect_loop_skips_without_frame(mock_detector):
     camera_manager = MagicMock()
     stream_server = MagicMock()
-    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
+    display = SelectedCameraDisplay(
+        camera_manager, stream_server, npu_cores=0, device="cpu", display_interval=0.001
+    )
 
-    worker = MagicMock()
-    worker.submit.return_value = False
-    display._detection_worker = worker
+    display._latest_frame = None
+    display._selected_camera_id = "cam_01"
+    display._display_types = {"fire": True}
+    display._running = True
+
+    def stop_on_sleep(*args):
+        display._running = False
+
+    with patch("backend.main_multi.time.sleep", side_effect=stop_on_sleep):
+        display._detect_loop()
+
+    mock_detector.ensure_models_loaded.assert_not_called()
+    mock_detector.detect.assert_not_called()
+
+
+@patch("backend.main_multi.safety_detector")
+def test_detect_loop_skips_when_no_types_enabled(mock_detector):
+    camera_manager = MagicMock()
+    stream_server = MagicMock()
+    display = SelectedCameraDisplay(
+        camera_manager, stream_server, npu_cores=0, device="cpu", display_interval=0.001
+    )
+
+    display._latest_frame = np.zeros((8, 8, 3), dtype=np.uint8)
+    display._selected_camera_id = "cam_01"
+    display._display_types = {"fire": False}
+    display._running = True
+
+    def stop_on_sleep(*args):
+        display._running = False
+
+    with patch("backend.main_multi.time.sleep", side_effect=stop_on_sleep):
+        display._detect_loop()
+
+    mock_detector.ensure_models_loaded.assert_not_called()
+    mock_detector.detect.assert_not_called()
+
+
+def test_detect_loop_skips_when_safety_detector_unavailable():
+    camera_manager = MagicMock()
+    stream_server = MagicMock()
+    display = SelectedCameraDisplay(
+        camera_manager, stream_server, npu_cores=0, device="cpu", display_interval=0.001
+    )
+
     display._latest_frame = np.zeros((8, 8, 3), dtype=np.uint8)
     display._selected_camera_id = "cam_01"
     display._display_types = {"fire": True}
-    display._display_interval = 0.001
     display._running = True
 
-    call_count = [0]
-
-    def count_submits(*args, **kwargs):
-        call_count[0] += 1
-        if call_count[0] >= 2:
-            display._running = False
-        return False
-
-    worker.submit.side_effect = count_submits
-
-    display._detect_loop()
-
-    assert worker.submit.call_count == 2
-    worker.detect.assert_not_called()
-
-
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_result_loop_updates_detection_results(_mock_worker_cls):
-    camera_manager = MagicMock()
-    stream_server = MagicMock()
-    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
-
-    worker = MagicMock()
-    results = [{"fire": {"boxes": [[1, 1, 2, 2]]}}, None]
-
-    def side_effect(*args, **kwargs):
-        if not results:
-            display._running = False
-            return None
-        return results.pop(0)
-
-    worker.get_result.side_effect = side_effect
-    display._detection_worker = worker
-    display._display_types = {"fire": True}
-    display._running = True
-
-    display._result_loop()
-
-    assert display._last_detection_results == {"fire": {"boxes": [[1, 1, 2, 2]]}}
-
-
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_result_loop_filters_disabled_types(_mock_worker_cls):
-    camera_manager = MagicMock()
-    stream_server = MagicMock()
-    display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
-
-    worker = MagicMock()
-
-    def side_effect(*args, **kwargs):
+    def stop_on_sleep(*args):
         display._running = False
-        return {"fire": {"boxes": [[1, 1, 2, 2]]}, "smoke": {"boxes": [[3, 3, 4, 4]]}}
 
-    worker.get_result.side_effect = side_effect
-    display._detection_worker = worker
-    display._display_types = {"fire": True, "smoke": False}
-    display._running = True
-
-    display._result_loop()
-
-    assert display._last_detection_results == {"fire": {"boxes": [[1, 1, 2, 2]]}}
+    with patch("backend.main_multi.safety_detector", None):
+        with patch("backend.main_multi.time.sleep", side_effect=stop_on_sleep):
+            display._detect_loop()
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_stale_session_frame_cannot_update_latest_frame(_mock_worker):
+def test_stale_session_frame_cannot_update_latest_frame():
     camera_manager = MagicMock()
     stream_server = MagicMock()
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
@@ -311,8 +291,7 @@ def test_stale_session_frame_cannot_update_latest_frame(_mock_worker):
     assert np.array_equal(display._latest_frame, old_frame)
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_active_session_frame_updates_latest_frame(_mock_worker):
+def test_active_session_frame_updates_latest_frame():
     camera_manager = MagicMock()
     stream_server = MagicMock()
     display = SelectedCameraDisplay(camera_manager, stream_server, npu_cores=0, device="cpu")
@@ -326,9 +305,8 @@ def test_active_session_frame_updates_latest_frame(_mock_worker):
     assert np.array_equal(display._latest_frame, frame)
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
 @patch("backend.main_multi.MultiDetector._annotate_frame")
-def test_display_loop_does_not_push_stale_session_frame(mock_annotate, _mock_worker_cls):
+def test_display_loop_does_not_push_stale_session_frame(mock_annotate):
     camera_manager = MagicMock()
     state = MagicMock()
     state.config.width = 640
@@ -364,8 +342,7 @@ def test_display_loop_does_not_push_stale_session_frame(mock_annotate, _mock_wor
     mock_annotate.assert_not_called()
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_reader_session_skips_when_camera_offline(_mock_worker):
+def test_reader_session_skips_when_camera_offline():
     """摄像头离线时 get_latest_frame 返回 None，reader 应持续等待而不崩溃。"""
     camera_manager = MagicMock()
     stream_server = MagicMock()
@@ -390,8 +367,7 @@ def test_reader_session_skips_when_camera_offline(_mock_worker):
     assert camera_manager.get_latest_frame.call_count >= 2
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_reader_session_exits_when_session_superseded(_mock_worker):
+def test_reader_session_exits_when_session_superseded():
     """切换摄像头后旧 session 应在检查 _active_session_id 时自行退出，不再拉帧。"""
     frame = np.ones((8, 8, 3), dtype=np.uint8)
     camera_manager = MagicMock()
@@ -413,8 +389,7 @@ def test_reader_session_exits_when_session_superseded(_mock_worker):
     assert display._latest_frame is None
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_active_reader_session_clears_capture_after_read_failure(_mock_worker):
+def test_active_reader_session_clears_capture_after_read_failure():
     """保留：_update_session_frame 返回 False 时 session 退出（session 被抢占场景）。"""
     frame = np.ones((8, 8, 3), dtype=np.uint8)
     camera_manager = MagicMock()
@@ -431,8 +406,7 @@ def test_active_reader_session_clears_capture_after_read_failure(_mock_worker):
     assert display._latest_frame is None
 
 
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_active_reader_session_reconnects_after_read_failure(_mock_worker):
+def test_active_reader_session_reconnects_after_read_failure():
     """摄像头恢复上线后，reader session 应拿到新帧并更新 _latest_frame。"""
     camera_manager = MagicMock()
     stream_server = MagicMock()
@@ -456,22 +430,3 @@ def test_active_reader_session_reconnects_after_read_failure(_mock_worker):
         display._reader_session(1, "cam_01")
 
     assert np.array_equal(display._latest_frame, second_frame)
-
-
-@patch("backend.main_multi.DisplayDetectionWorker")
-def test_display_detection_worker_submit_and_get_result(_mock_worker_cls):
-    from backend.display_detection_worker import DisplayDetectionWorker
-
-    worker = DisplayDetectionWorker(npu_cores=0, device="cpu")
-    worker._input_queue = MagicMock()
-    worker._output_queue = MagicMock()
-
-    worker._input_queue.put_nowait.return_value = None
-    assert worker.submit(np.zeros((8, 8, 3), dtype=np.uint8), ["fire"]) is True
-    worker._input_queue.put_nowait.assert_called_once()
-
-    worker._input_queue.put_nowait.side_effect = Exception("full")
-    assert worker.submit(np.zeros((8, 8, 3), dtype=np.uint8), ["fire"]) is False
-
-    worker._output_queue.get.side_effect = Exception("empty")
-    assert worker.get_result(timeout=0.1) is None

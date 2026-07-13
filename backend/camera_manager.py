@@ -77,8 +77,8 @@ class CameraState:
     last_decode_time: float = 0.0
     decode_queued: bool = False
     # 统计信息
-    fps_stats: List[float] = field(default_factory=list)
-    # 时间窗口帧历史 (用于触发时保存前5秒帧)
+    fps_stats: deque = field(default_factory=lambda: deque(maxlen=10))
+    # 时间窗口帧历史 (用于触发时保存前5秒帧；非主摄像头 1 FPS 时 10 帧已足够覆盖)
     frame_history: deque = field(default_factory=lambda: deque(maxlen=10))
     # 录制状态
     recording: bool = False
@@ -92,6 +92,11 @@ class CameraState:
     record_preview_path: Optional[str] = None
     record_preview_queue: Optional[queue.Queue] = None
     record_preview_thread: Optional[threading.Thread] = None
+    # 独立帧读取线程：把网络 I/O 与解码 worker 解耦，避免 grab 循环阻塞共享 worker
+    reader_thread: Optional[threading.Thread] = None
+    reader_stop: threading.Event = field(default_factory=threading.Event)
+    reader_queue: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=1))
+    reader_error_count: int = 0
 
     def get_avg_fps(self) -> float:
         """计算平均FPS"""
@@ -112,6 +117,26 @@ class CameraManager:
         self._global_frame_callback: Optional[Callable[[str, np.ndarray], None]] = None
         self._main_camera_id: Optional[str] = None
         self.decode_scheduler = DecodeScheduler(self, num_workers=4)
+
+    def _frame_history_maxlen(self, camera_id: str) -> int:
+        """根据是否主画面返回合适的帧历史长度。主画面 25 FPS 时需要约 150 帧覆盖 5 秒；
+        非主画面 1 FPS 时 10 帧已能覆盖 5 秒以上预录窗口。"""
+        return 150 if camera_id == self._main_camera_id else 10
+
+    def _recreate_frame_history(self, camera_id: str):
+        """切换主画面时按新角色重建 deque，尽量保留可用历史帧。"""
+        with self._lock:
+            if camera_id not in self._cameras:
+                return
+            state = self._cameras[camera_id]
+            new_maxlen = self._frame_history_maxlen(camera_id)
+            if state.frame_history.maxlen == new_maxlen:
+                return
+            old = list(state.frame_history)
+            state.frame_history = deque(maxlen=new_maxlen)
+            for ts, fr in old[-new_maxlen:]:
+                state.frame_history.append((ts, fr))
+
     def register_camera(self, config: CameraConfig) -> bool:
         """注册摄像头"""
         with self._lock:
@@ -161,6 +186,9 @@ class CameraManager:
             state.last_frame_count = 0
             state.last_fps_time = 0.0
             state.fps_stats.clear()
+            state.reader_error_count = 0
+            state.reader_stop.clear()
+            state.frame_history = deque(maxlen=self._frame_history_maxlen(camera_id))
 
             # 启动 DecodeScheduler（首次启动时）
             if not self.decode_scheduler._running.is_set():
@@ -176,6 +204,9 @@ class CameraManager:
 
         threading.Thread(target=_open_and_retry, daemon=True, name=f"open-{camera_id}").start()
 
+        # 启动独立帧读取线程（与 open 并行，无 cap 时会自旋等待）
+        self._ensure_reader_thread(camera_id)
+
         logger.info(f"Camera {camera_id} started")
         return True
     
@@ -188,7 +219,10 @@ class CameraManager:
             state = self._cameras[camera_id]
             state.running = False
 
-        # 给 DecodeScheduler worker 留出时间完成当前 cap.read()
+        # 先停止帧读取线程，避免在释放 cap 时发生 use-after-release
+        self._stop_reader_thread(camera_id)
+
+        # 给 DecodeScheduler worker 留出时间完成当前任务
         time.sleep(0.15)
 
         with self._lock:
@@ -204,7 +238,102 @@ class CameraManager:
             state.status = CameraStatus.IDLE
             logger.info(f"Camera {camera_id} stopped")
             return True
-    
+
+    def _ensure_reader_thread(self, camera_id: str):
+        """启动该摄像头的独立帧读取线程（幂等）"""
+        with self._lock:
+            if camera_id not in self._cameras:
+                return
+            state = self._cameras[camera_id]
+            if state.reader_thread is not None and state.reader_thread.is_alive():
+                return
+            state.reader_stop.clear()
+            state.reader_thread = threading.Thread(
+                target=self._reader_loop,
+                args=(camera_id,),
+                daemon=True,
+                name=f"reader-{camera_id}",
+            )
+            state.reader_thread.start()
+            logger.info(f"Camera {camera_id} reader thread started")
+
+    def _stop_reader_thread(self, camera_id: str):
+        """停止帧读取线程并清空残留帧"""
+        with self._lock:
+            if camera_id not in self._cameras:
+                return
+            state = self._cameras[camera_id]
+            state.reader_stop.set()
+            reader_thread = state.reader_thread
+            reader_queue = state.reader_queue
+
+        # 清空队列，让 reader 的阻塞 get/put 有机会退出
+        if isinstance(reader_queue, queue.Queue):
+            while not reader_queue.empty():
+                try:
+                    reader_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+        if reader_thread is not None and reader_thread.is_alive():
+            reader_thread.join(timeout=1.0)
+
+        with self._lock:
+            if camera_id in self._cameras:
+                self._cameras[camera_id].reader_thread = None
+
+    def _reader_loop(self, camera_id: str):
+        """独立帧读取线程：持续从 cap 读取最新帧，丢弃旧帧。
+
+        把网络 I/O 从 DecodeScheduler 的共享 worker 中剥离，避免多路 RTSP
+        的缓冲跳过/读超时阻塞整个解码池。
+        """
+        while True:
+            with self._lock:
+                if camera_id not in self._cameras:
+                    return
+                state = self._cameras[camera_id]
+                if state.reader_stop.is_set() or not state.running:
+                    return
+                cap = state.cap
+
+            if cap is None or not cap.isOpened():
+                time.sleep(0.02)
+                continue
+
+            try:
+                ret, frame = cap.read()
+            except Exception as e:
+                logger.debug(f"Camera {camera_id} reader read exception: {e}")
+                ret, frame = False, None
+
+            if not ret or frame is None:
+                with state.lock:
+                    state.reader_error_count += 1
+                # 错误过多时触发重连（在 reader 线程外调用，避免锁死）
+                if state.reader_error_count > 30:
+                    logger.warning(f"Camera {camera_id} reader too many errors, reopening")
+                    with state.lock:
+                        state.reader_error_count = 0
+                    self._reopen_capture(camera_id)
+                continue
+
+            with state.lock:
+                state.reader_error_count = 0
+                state.last_frame_time = time.time()
+
+            # 只保留最新一帧；队列满时丢弃旧帧再放入新帧
+            q = state.reader_queue
+            if isinstance(q, queue.Queue):
+                try:
+                    q.put_nowait(frame)
+                except queue.Full:
+                    try:
+                        q.get_nowait()
+                        q.put_nowait(frame)
+                    except (queue.Empty, queue.Full):
+                        pass
+
     def start_all(self):
         """启动所有已启用的摄像头"""
         with self._lock:
@@ -245,6 +374,9 @@ class CameraManager:
 
             self._main_camera_id = camera_id
             self.decode_scheduler.set_main_camera(camera_id)
+            # 主画面切换后重新计算各摄像头的帧历史长度
+            for cid in list(self._cameras.keys()):
+                self._recreate_frame_history(cid)
             logger.info(f"Main camera set to {camera_id}")
             return True
 
@@ -408,9 +540,9 @@ class CameraManager:
             logger.error(f"Failed to open preview VideoWriter for {preview_path}, falling back to HD only")
             sd_writer = None
 
-        # 创建帧队列和后台写入线程
-        hd_queue: queue.Queue = queue.Queue(maxsize=120)
-        sd_queue: queue.Queue = queue.Queue(maxsize=120)
+        # 创建帧队列和后台写入线程（限制容量，避免高分辨率录制时内存暴涨）
+        hd_queue: queue.Queue = queue.Queue(maxsize=15)
+        sd_queue: queue.Queue = queue.Queue(maxsize=15)
 
         def _hd_writer_loop():
             dropped = 0
@@ -620,6 +752,8 @@ class CameraManager:
                 logger.error(f"Camera {camera_id} max reconnect attempts reached")
                 state.status = CameraStatus.ERROR
                 state.running = False
+                # reader 线程发现 running=False 后会自行退出；这里不调用 _stop_reader_thread，
+                # 避免在 reader 线程内 join 自身导致死锁
                 if state.cap:
                     try:
                         state.cap.release()

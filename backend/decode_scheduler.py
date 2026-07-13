@@ -10,6 +10,7 @@ import logging
 import queue
 import threading
 import time
+from collections import deque
 from typing import Optional
 
 import cv2
@@ -97,10 +98,29 @@ class DecodeScheduler:
         logger.info("DecodeScheduler stopped")
 
     def _schedule_loop(self):
-        """调度循环：把到期摄像头放入优先队列"""
+        """调度循环：把到期摄像头放入优先队列，并睡到下一帧最近到期时间。"""
         while self._running.is_set():
             self._schedule_loop_single()
-            time.sleep(0.01)
+
+            now = time.time()
+            cameras = getattr(self.camera_manager, "_cameras", {})
+            next_due = None
+            for cam_id, state in list(cameras.items()):
+                if not getattr(state, "running", False) or getattr(state, "cap", None) is None:
+                    continue
+                interval = (
+                    _MAIN_CAMERA_INTERVAL
+                    if cam_id == self._main_camera
+                    else _BACKGROUND_CAMERA_INTERVAL
+                )
+                due = max(state.last_decode_time + interval, now)
+                if next_due is None or due < next_due:
+                    next_due = due
+
+            if next_due is None:
+                time.sleep(0.1)
+            else:
+                time.sleep(max(0.001, next_due - now))
 
     def _schedule_loop_single(self):
         """执行一轮调度，便于单元测试"""
@@ -120,11 +140,12 @@ class DecodeScheduler:
                     if not getattr(state, "running", False) or cap is None:
                         continue
 
-                    due_time = state.last_decode_time + interval
+                    due_time = max(state.last_decode_time + interval, now)
                     if now >= due_time and not state.decode_queued:
                         priority = 1
                         self._queue.put((priority, next(self._counter), due_time, cam_id))
                         state.decode_queued = True
+                        state.last_decode_time = due_time
         except Exception as e:
             logger.error(f"Decode scheduler error: {e}")
 
@@ -151,61 +172,30 @@ class DecodeScheduler:
                 self._queue.task_done()
 
     def _decode_one_frame(self, cam_id: str, due_time: float):
-        """解码一帧并更新状态"""
+        """解码一帧并更新状态。帧读取已由 camera_manager 的 reader 线程完成，
+        此处只从队列取最新帧，避免在共享 worker 中执行网络 I/O。"""
         cameras = getattr(self.camera_manager, "_cameras", {})
         state = cameras.get(cam_id)
         if state is None:
             return
 
-        cap = getattr(state, "cap", None)
-        if cap is None or not getattr(cap, "isOpened", lambda: False)():
-            needs_reopen = False
-            with state.lock:
-                state.decode_queued = False
-                state.last_decode_time = due_time
-                if not state.running:
-                    return
-                state.error_count += 1
-                if state.error_count > 30:
-                    logger.warning(f"Camera {cam_id} cap not opened, too many errors, reopening")
-                    state.error_count = 0
-                    needs_reopen = True
-            # 在锁外调用 _reopen_capture，避免与 stop_camera 的加锁顺序（self._lock -> state.lock）形成死锁
-            if needs_reopen:
-                reopen = getattr(self.camera_manager, "_reopen_capture", None)
-                if reopen:
-                    reopen(cam_id)
-            return
-
-        # 在使用 cap 前再检查一次 running，降低 stop_camera 释放 cap 后的 use-after-release 风险
         with state.lock:
             if not state.running:
                 state.decode_queued = False
                 state.last_decode_time = due_time
                 return
-            # 保持对当前 cap 对象的引用
-            cap = state.cap
 
-        ret, frame = cap.read()
-
-        if not ret or frame is None:
-            needs_reopen = False
+        reader_queue = getattr(state, "reader_queue", None)
+        if not isinstance(reader_queue, queue.Queue):
             with state.lock:
                 state.decode_queued = False
                 state.last_decode_time = due_time
-                state.error_count += 1
-                if state.error_count > 30:
-                    logger.warning(f"Camera {cam_id} too many read errors, reopening")
-                    state.error_count = 0
-                    needs_reopen = True
-
-            if needs_reopen:
-                reopen = getattr(self.camera_manager, "_reopen_capture", None)
-                if reopen:
-                    reopen(cam_id)
             return
 
-        if not cap.isOpened():
+        try:
+            frame = reader_queue.get(timeout=0.1)
+        except queue.Empty:
+            # reader 线程尚未产出帧（如刚启动或正在重连），不记错误，直接跳过
             with state.lock:
                 state.decode_queued = False
                 state.last_decode_time = due_time
@@ -246,20 +236,15 @@ class DecodeScheduler:
             state.last_frame_time = current_time
             state.frame_count += 1
             state.frame_history.append((current_time, frame.copy()))
-            # 限制历史长度，防止内存无限增长
-            while len(state.frame_history) > _MAX_FRAME_HISTORY:
-                state.frame_history.pop(0)
 
             # FPS 统计（每秒一次）
             fps_stats = getattr(state, "fps_stats", None)
             last_fps_time = getattr(state, "last_fps_time", 0)
             last_frame_count = getattr(state, "last_frame_count", 0)
-            if isinstance(fps_stats, list) and isinstance(last_fps_time, (int, float)) and isinstance(last_frame_count, int):
+            if isinstance(fps_stats, deque) and isinstance(last_fps_time, (int, float)) and isinstance(last_frame_count, int):
                 if current_time - last_fps_time >= 1.0:
                     fps = (state.frame_count - last_frame_count) / (current_time - last_fps_time)
                     fps_stats.append(fps)
-                    if len(fps_stats) > 10:
-                        fps_stats.pop(0)
                     state.last_fps_time = current_time
                     state.last_frame_count = state.frame_count
 

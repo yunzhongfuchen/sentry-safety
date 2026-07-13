@@ -125,8 +125,8 @@ MODEL_PATHS = {
     },
 }
 
-# YOLOv8 自定义模型目标类别（逗号分隔 class id，默认 0）
-MASK_TARGET_CLASSES = [int(x) for x in os.getenv("MASK_TARGET_CLASSES", "0").split(",") if x.strip()] or [0]
+# YOLOv8 自定义模型目标类别（逗号分隔 class id，默认 1 表示未戴口罩）
+MASK_TARGET_CLASSES = [int(x) for x in os.getenv("MASK_TARGET_CLASSES", "1").split(",") if x.strip()] or [1]
 CIGARETTE_TARGET_CLASSES = [int(x) for x in os.getenv("CIGARETTE_TARGET_CLASSES", "0").split(",") if x.strip()] or [0]
 # 工服检测：默认 class 1 表示未穿工服/反光背心（class 0 表示已穿），可通过环境变量调整
 UNIFORM_TARGET_CLASSES = [int(x) for x in os.getenv("UNIFORM_TARGET_CLASSES", "1").split(",") if x.strip()] or [1]

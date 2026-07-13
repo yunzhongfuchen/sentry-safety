@@ -24,12 +24,14 @@ class VideoStreamBuffer:
         self._queue: Queue = Queue(maxsize=maxsize)
         self._lock = threading.Lock()
         self._latest_frame: Optional[np.ndarray] = None
+        self._latest_jpeg: Optional[bytes] = None
         self._frame_seq = 0
+        self._jpeg_seq = 0
         self._fps = 0
         self._frame_count = 0
         self._last_time = time.time()
-        
-    def put(self, frame: np.ndarray) -> bool:
+
+    def put(self, frame: np.ndarray, quality: int = 85) -> bool:
         """添加帧到缓冲区"""
         try:
             # 非阻塞放入，如果满了就丢弃最旧的
@@ -44,18 +46,29 @@ class VideoStreamBuffer:
                 self._latest_frame = frame
                 self._frame_seq += 1
                 self._frame_count += 1
-                
+                self._encode_jpeg(frame, quality)
+
                 # 计算 FPS
                 now = time.time()
                 if now - self._last_time >= 1.0:
                     self._fps = self._frame_count / (now - self._last_time)
                     self._frame_count = 0
                     self._last_time = now
-            
+
             return True
         except:
             return False
-    
+
+    def _encode_jpeg(self, frame: np.ndarray, quality: int) -> None:
+        """缓存当前帧的 JPEG 字节，避免每个 HTTP 客户端独立编码。"""
+        try:
+            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            if _:
+                self._latest_jpeg = jpeg.tobytes()
+                self._jpeg_seq = self._frame_seq
+        except Exception:
+            self._latest_jpeg = None
+
     def get(self) -> Optional[np.ndarray]:
         """获取一帧"""
         try:
@@ -73,7 +86,12 @@ class VideoStreamBuffer:
         """获取最新帧及其序列号"""
         with self._lock:
             return self._frame_seq, self._latest_frame.copy() if self._latest_frame is not None else None
-    
+
+    def get_latest_jpeg_with_seq(self) -> tuple:
+        """获取最新帧的 JPEG 字节及其序列号"""
+        with self._lock:
+            return self._jpeg_seq, self._latest_jpeg
+
     def get_fps(self) -> float:
         """获取当前 FPS"""
         with self._lock:
@@ -119,10 +137,10 @@ class MJPEGStreamServer:
         with self._lock:
             if raw:
                 if camera_id in self._raw_buffers:
-                    self._raw_buffers[camera_id].put(frame)
+                    self._raw_buffers[camera_id].put(frame, quality=self._quality)
             else:
                 if camera_id in self._buffers:
-                    self._buffers[camera_id].put(frame)
+                    self._buffers[camera_id].put(frame, quality=self._quality)
 
     def _placeholder_frame(self) -> bytes:
         """生成黑屏占位帧，避免无帧时 HTTP 连接挂起导致浏览器并发槽耗尽"""
@@ -157,25 +175,20 @@ class MJPEGStreamServer:
                 time.sleep(0.1)
                 continue
 
-            seq, frame = buffer.get_latest_with_seq()
-            if frame is not None and seq != last_seq:
-                # 压缩图片
-                _, jpeg = cv2.imencode('.jpg', frame,
-                    [cv2.IMWRITE_JPEG_QUALITY, self._quality])
-
-                if _:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' +
-                           jpeg.tobytes() + b'\r\n')
-                    last_seq = seq
-                    placeholder_sent = False
-            elif frame is None and not placeholder_sent:
+            seq, jpeg = buffer.get_latest_jpeg_with_seq()
+            if jpeg is not None and seq != last_seq:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' +
+                       jpeg + b'\r\n')
+                last_seq = seq
+                placeholder_sent = False
+            elif jpeg is None and not placeholder_sent:
                 # 缓冲区存在但尚无帧（摄像头连接中或读帧失败），发送一次占位帧
                 yield self._placeholder_frame()
                 placeholder_sent = True
 
             # 短轮询，降低 CPU 占用同时保证低延迟
-            time.sleep(0.005)
+            time.sleep(0.02)
     
     def generate_multi_view(self, camera_ids: list, layout: str = 'grid'):
         """

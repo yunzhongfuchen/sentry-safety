@@ -167,7 +167,7 @@ function renderSidebar(container, context) {
             <div class="sidebar-brand">
                 <div class="sidebar-brand-mark">S</div>
                 <div class="sidebar-brand-copy">
-                    <div class="sidebar-brand-title">安全哨兵</div>
+                    <div class="sidebar-brand-title">视频诊断系统</div>
                     <div class="sidebar-brand-subtitle">安全检测平台</div>
                 </div>
             </div>

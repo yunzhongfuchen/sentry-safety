@@ -128,15 +128,11 @@ class VLMInspector:
                 if not detection.get("detected", False):
                     continue
 
-                # 四重去重
+                # 三重去重
                 now = time.time()
                 if self.multi_detector.has_active_alert(cam_id, dtype):
                     continue
-                if self.multi_detector.is_pending_vlm(cam_id, dtype):
-                    continue
                 if self.multi_detector.is_in_cooldown(cam_id, dtype, now):
-                    continue
-                if dtype == "sleep" and self.multi_detector.sleep_has_pending_vlm(cam_id):
                     continue
 
                 # 注入

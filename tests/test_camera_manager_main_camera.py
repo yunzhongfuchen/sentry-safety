@@ -1,4 +1,5 @@
 import time
+import queue
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -63,19 +64,20 @@ def test_get_latest_frame_copy_is_independent():
     assert cm._cameras["cam_01"].current_frame[0, 0, 0] == 0
 
 
-def test_decode_scheduler_cap_none_increments_error_count():
+def test_decode_scheduler_empty_queue_returns_gracefully():
     cm = CameraManager()
     cm.register_camera(CameraConfig(camera_id="cam_01", source="0"))
     state = cm._cameras["cam_01"]
     state.running = True
 
-    with patch.object(cm, "_open_capture"):
-        scheduler = cm.decode_scheduler
-        for _ in range(31):
-            scheduler._decode_one_frame("cam_01", time.time())
+    scheduler = cm.decode_scheduler
+    for _ in range(31):
+        scheduler._decode_one_frame("cam_01", time.time())
 
-    assert state.error_count == 0  # reset after threshold triggers reopen
-    assert state.reconnect_attempts == 1  # _reopen_capture was called once
+    # reader 线程未产出帧时，decode worker 应直接返回，不记错误、不触发重连
+    assert state.error_count == 0
+    assert state.reader_error_count == 0
+    assert state.reconnect_attempts == 0
 
 
 def test_main_camera_writes_frame_history():
@@ -86,10 +88,7 @@ def test_main_camera_writes_frame_history():
     state.running = True
 
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
-    cap = MagicMock()
-    cap.isOpened.return_value = True
-    cap.read.return_value = (True, frame.copy())
-    state.cap = cap
+    state.reader_queue.put_nowait(frame.copy())
 
     scheduler = cm.decode_scheduler
     scheduler._decode_one_frame("cam_01", time.time())

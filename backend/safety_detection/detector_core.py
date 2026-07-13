@@ -32,7 +32,6 @@ class TypeSchedule:
     consecutive_required: int = 1
     consecutive_count: int = 0
     last_run: float = 0.0
-    pending_vlm: bool = False
     use_vlm: bool = False
     # 当存在外部调度器（如 GPU scheduler）接管该类型推理时设为 True
     externally_managed: bool = False
@@ -251,6 +250,8 @@ class MultiDetector:
                     consecutive_required=cfg.get("consecutive_required", 3),
                     use_vlm=cfg.get("use_vlm", False),
                 )
+                # 睡岗历史帧上限与连续命中次数联动，由 deque 自动淘汰旧帧
+                schedule.history_frames = deque(maxlen=max(10, schedule.consecutive_required * 3))
                 self._schedules[camera_id][dtype] = schedule
             logger.info(f"Camera {camera_id} registered with {len(self._schedules[camera_id])} types")
 
@@ -537,10 +538,7 @@ class MultiDetector:
 
         schedule.consecutive_count += 1
         schedule.history_frames.append(frame.copy())
-        # 限制历史帧数量，防止内存无限增长
-        max_history = getattr(schedule, 'consecutive_required', 3) * 3
-        if len(schedule.history_frames) > max_history:
-            schedule.history_frames = schedule.history_frames[-max_history:]
+        # deque maxlen 已在注册时按 consecutive_required*3 设置，无需手动截断
 
         logger.debug(f"{camera_id} sleep consecutive={schedule.consecutive_count}/{schedule.consecutive_required}")
 
@@ -592,42 +590,6 @@ class MultiDetector:
         }
         self.vlm_queue.submit(task)
 
-    def _submit_vlm_confirm(self, camera_id: str, dtype: str, frame: np.ndarray,
-                            schedule: TypeSchedule, result: dict) -> None:
-        """确认（mask/cigarette/uniform）"""
-        if self.vlm_queue is None:
-            return
-        task = {
-            "task_id": str(uuid.uuid4()),
-            "camera_id": camera_id,
-            "dtype": dtype,
-            "level": "small_model_alarm",
-            "frames": [frame],
-            "prompt_type": f"{dtype}_confirm",
-            "callback": lambda res: self._on_vlm_confirm(camera_id, dtype, frame, result, schedule, res),
-        }
-        self.vlm_queue.submit(task)
-
-    def _submit_sleep_identity(self, camera_id: str, frames: List[np.ndarray],
-                               schedule: TypeSchedule, result: dict) -> None:
-        """睡岗同一人判定"""
-        if self.vlm_queue is None:
-            return
-        task = {
-            "task_id": str(uuid.uuid4()),
-            "camera_id": camera_id,
-            "dtype": "sleep",
-            "level": "small_model_alarm",
-            "frames": frames,
-            "prompt_type": "sleep_identity",
-            "extra_context": {
-                "consecutive_required": schedule.consecutive_required,
-                "interval": schedule.interval,
-            },
-            "callback": lambda res: self._on_sleep_identity(camera_id, schedule, result, res),
-        }
-        self.vlm_queue.submit(task)
-
     # ------------------------------------------------------------------
     # VLM 回调
     # ------------------------------------------------------------------
@@ -646,40 +608,6 @@ class MultiDetector:
             except Exception as e:
                 logger.error(f"VLM result callback error: {e}")
 
-    def _on_vlm_confirm(self, camera_id: str, dtype: str, frame: np.ndarray,
-                        result: dict, schedule: TypeSchedule, vlm_result: dict) -> None:
-        """VLM 确认回调：透传给上层，由上层更新记录 level。
-
-        注意：小模型告警记录已在 trigger_callback 中创建（当检测命中时）。
-        此回调仅将 VLM 确认结果通过 vlm_result_callback 转发给上层，
-        以便上层更新现有记录的 level。它不会再次调用 trigger_callback。
-        """
-        schedule.pending_vlm = False
-        logger.info(f"VLM confirm result for {camera_id} {dtype}: {vlm_result}")
-        if self.vlm_result_callback:
-            try:
-                self.vlm_result_callback(camera_id, dtype, vlm_result)
-            except Exception as e:
-                logger.error(f"VLM result callback error: {e}")
-
-    def _on_sleep_identity(self, camera_id: str, schedule: TypeSchedule,
-                           result: dict, vlm_result: dict) -> None:
-        """睡岗同一人判定回调"""
-        schedule.pending_vlm = False
-        same_person = vlm_result.get("same_person", False)
-        conf = vlm_result.get("confidence", 0)
-        logger.info(f"Sleep identity result for {camera_id}: same_person={same_person} conf={conf}")
-
-        if same_person and conf >= 0.7:
-            self._alert_states[camera_id]["sleep"] = {
-                "active": True, "time": time.time(), "level": "small_model_alarm"
-            }
-            if self.trigger_callback:
-                try:
-                    self.trigger_callback(camera_id, "sleep", None, result)
-                except Exception as e:
-                    logger.error(f"Trigger callback error: {e}")
-
     # ------------------------------------------------------------------
     # 巡检注入
     # ------------------------------------------------------------------
@@ -693,14 +621,10 @@ class MultiDetector:
             schedule = schedules[dtype]
             now = time.time()
 
-            # 四重去重
+            # 三重去重
             if self.has_active_alert(camera_id, dtype):
                 return
-            if self.is_pending_vlm(camera_id, dtype):
-                return
             if self.is_in_cooldown(camera_id, dtype, now):
-                return
-            if dtype == "sleep" and self.sleep_has_pending_vlm(camera_id):
                 return
 
             # 高置信度巡检结果可跳过二次复核
@@ -731,22 +655,12 @@ class MultiDetector:
         with self._lock:
             return self._alert_states.get(camera_id, {}).get(dtype, {}).get("active", False)
 
-    def is_pending_vlm(self, camera_id: str, dtype: str) -> bool:
-        with self._lock:
-            schedule = self._schedules.get(camera_id, {}).get(dtype)
-            return schedule.pending_vlm if schedule else False
-
     def is_in_cooldown(self, camera_id: str, dtype: str, now: float) -> bool:
         with self._lock:
             last = self._cooldowns.get(camera_id, {}).get(dtype, 0)
             schedule = self._schedules.get(camera_id, {}).get(dtype)
             cooldown = schedule.cooldown if schedule else 3.0
             return now - last < cooldown
-
-    def sleep_has_pending_vlm(self, camera_id: str) -> bool:
-        with self._lock:
-            schedule = self._schedules.get(camera_id, {}).get("sleep")
-            return schedule.pending_vlm if schedule else False
 
     # ------------------------------------------------------------------
     # 状态查询（兼容旧接口）
@@ -762,7 +676,6 @@ class MultiDetector:
                         dtype: {
                             "enabled": s.enabled,
                             "consecutive_count": s.consecutive_count,
-                            "pending_vlm": s.pending_vlm,
                             "last_run": s.last_run,
                         }
                         for dtype, s in schedules.items()

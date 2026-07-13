@@ -4,13 +4,13 @@ Sentry 多摄像头版本主程序
 """
 
 import asyncio
+import concurrent.futures
 import os
 import sys
 import json
 import logging
 import threading
 import time
-import base64
 from typing import Dict, List, Optional, Tuple
 from collections import deque
 from pathlib import Path
@@ -56,7 +56,6 @@ try:
     from video_stream import get_stream_server
     from safety_detection.api import router as safety_router
     from alarm_state import create_record, apply_vlm_review, confirm_alarm, confirm_false_positive
-    from display_detection_worker import DisplayDetectionWorker
 except ImportError as e:
     logger.error(f"Import error: {e}")
     raise
@@ -89,6 +88,7 @@ vlm_inspector: Optional[VLMInspector] = None
 stream_server = get_stream_server()
 _global_settings: dict = {}
 gpu_scheduler = None
+_save_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
 # 状态管理
 _status_lock = threading.Lock()
@@ -108,8 +108,10 @@ _display_lock = threading.Lock()
 _records_lock = threading.Lock()
 detection_records: List[dict] = []
 _records_dirty = threading.Event()
-# 小模型告警 VLM 复核待更新记录映射 (camera_id, dtype) -> record_id
-_pending_reviews: Dict[Tuple[str, str], str] = {}
+# 单次 API 返回的最大记录帧数
+_MAX_RECORD_FRAMES_PER_REQUEST = 20
+# 小模型告警 VLM 复核待更新记录映射 (camera_id, dtype) -> deque(record_id, ...)
+_pending_reviews: Dict[Tuple[str, str], "deque[str]"] = {}
 _pending_reviews_lock = threading.Lock()
 
 def log_message(msg: str, level: str = "info"):
@@ -132,10 +134,52 @@ def log_message(msg: str, level: str = "info"):
         logger.info(msg)
 
 
-def encode_frame_to_base64(frame: np.ndarray, quality: int = 70) -> str:
-    """将帧编码为 base64"""
+def encode_frame_to_bytes(frame: np.ndarray, quality: int = 70) -> bytes:
+    """将帧编码为 JPEG 字节"""
     _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
-    return base64.b64encode(buffer.tobytes()).decode('utf-8')
+    return buffer.tobytes()
+
+
+def _draw_timestamp_on_frame(frame: np.ndarray, timestamp: float) -> np.ndarray:
+    """在帧右上角绘制时间戳（白字黑边），便于在记录帧中核对实际解码时刻。"""
+    h, w = frame.shape[:2]
+    text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = max(0.4, min(w, h) / 800.0)
+    thickness = max(1, int(min(w, h) / 400))
+    margin = max(8, int(min(w, h) * 0.015))
+
+    (text_w, text_h), _ = cv2.getTextSize(text, font, font_scale, thickness)
+    x = w - text_w - margin
+    y = text_h + margin
+
+    cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 1, cv2.LINE_AA)
+    cv2.putText(frame, text, (x, y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+    return frame
+
+
+def _save_window_frames_async(
+    record_id: str,
+    window_frames: List[Tuple[float, np.ndarray]],
+    fallback_frame: Optional[np.ndarray],
+    quality: int,
+    trigger_ts: float,
+):
+    """后台保存告警时间窗口帧，避免阻塞检测线程。"""
+    try:
+        if window_frames:
+            for i, (ts, fr) in enumerate(window_frames):
+                fr = _draw_timestamp_on_frame(fr, ts)
+                frame_bytes = encode_frame_to_bytes(fr, quality=quality)
+                storage.save_image(record_id, "frame", frame_bytes, i)
+            log_message(f"Saved {len(window_frames)} window frames for {record_id}")
+        elif fallback_frame is not None:
+            fr = _draw_timestamp_on_frame(fallback_frame.copy(), trigger_ts)
+            frame_bytes = encode_frame_to_bytes(fr, quality=quality)
+            storage.save_image(record_id, "frame", frame_bytes, 0)
+            log_message(f"Saved trigger frame for {record_id} (window empty)")
+    except Exception as e:
+        logger.error(f"Failed to save window frames for {record_id}: {e}")
 
 
 def _convert_ultralytics_result(dtype: str, result) -> Optional[dict]:
@@ -283,8 +327,8 @@ def init_components():
         if frame is not None:
             trigger_results = {dtype: result}
             annotated = MultiDetector._annotate_frame(frame, trigger_results, camera_id, [])
-            snapshot_b64 = encode_frame_to_base64(annotated, quality=_global_settings.get("snapshot_quality", 70))
-            storage.save_image(record_id, "snapshot", snapshot_b64)
+            snapshot_bytes = encode_frame_to_bytes(annotated, quality=_global_settings.get("snapshot_quality", 70))
+            storage.save_image(record_id, "snapshot", snapshot_bytes)
 
         record = create_record(camera_id, dtype, result, record_id=record_id)
         record["time"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(trigger_ts))
@@ -292,7 +336,7 @@ def init_components():
         # 如果该类型启用了 VLM 复核，记录待更新映射，供 VLM 回调更新 level
         if result.get("pending_vlm_review"):
             with _pending_reviews_lock:
-                _pending_reviews[(camera_id, dtype)] = record_id
+                _pending_reviews.setdefault((camera_id, dtype), deque()).append(record_id)
 
         with _records_lock:
             detection_records.insert(0, record)
@@ -306,31 +350,46 @@ def init_components():
                 detection_records = detection_records[:-remove_count]
         mark_records_dirty()
 
-        # 保存触发时刻前最多5秒的时间窗口帧
+        # 保存触发时刻前最多5秒的时间窗口帧（移到后台线程，避免阻塞检测流水线）
         try:
             window_frames = camera_manager.get_window_frames(camera_id, trigger_ts - 5, trigger_ts)
             if window_frames:
-                quality = _global_settings.get("frame_quality", 60)
-                for i, (ts, fr) in enumerate(window_frames):
-                    b64 = encode_frame_to_base64(fr, quality=quality)
-                    storage.save_image(record_id, "frame", b64, i)
                 record["frame_count"] = len(window_frames)
-                log_message(f"Saved {len(window_frames)} window frames for {record_id}")
             elif frame is not None:
-                quality = _global_settings.get("frame_quality", 60)
-                b64 = encode_frame_to_base64(frame, quality=quality)
-                storage.save_image(record_id, "frame", b64, 0)
                 record["frame_count"] = 1
-                log_message(f"Saved trigger frame for {record_id} (window empty)")
+            else:
+                record["frame_count"] = 0
+
+            if _save_executor is not None:
+                _save_executor.submit(
+                    _save_window_frames_async,
+                    record_id,
+                    window_frames,
+                    frame,
+                    _global_settings.get("frame_quality", 60),
+                    trigger_ts,
+                )
+            else:
+                _save_window_frames_async(
+                    record_id,
+                    window_frames,
+                    frame,
+                    _global_settings.get("frame_quality", 60),
+                    trigger_ts,
+                )
         except Exception as e:
-            logger.error(f"Failed to save window frames for {record_id}: {e}")
+            logger.error(f"Failed to schedule window frames save for {record_id}: {e}")
 
     def on_vlm_result(camera_id: str, dtype: str, vlm_result: dict):
         """VLM 复核/确认结果回调：更新已有记录 level，不改 status"""
         global detection_records
         record_id = None
         with _pending_reviews_lock:
-            record_id = _pending_reviews.pop((camera_id, dtype), None)
+            review_queue = _pending_reviews.get((camera_id, dtype))
+            if review_queue:
+                record_id = review_queue.popleft()
+                if not review_queue:
+                    del _pending_reviews[(camera_id, dtype)]
         if not record_id:
             return
 
@@ -439,6 +498,14 @@ def init_components():
         except Exception as e:
             log_message(f"GPU scheduler init failed: {e}", "error")
             gpu_scheduler = None
+
+    # 8. 初始化告警图片后台保存线程池（避免阻塞检测流水线）
+    global _save_executor
+    if _save_executor is not None:
+        _save_executor.shutdown(wait=False)
+    _save_executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=4, thread_name_prefix="save-image"
+    )
 
     # 8. 初始化 VLMInspector
     vlm_inspector = VLMInspector(
@@ -726,7 +793,7 @@ async def get_record(record_id: str, include_frames: bool = True):
     if include_frames:
         frame_count = meta.get("frame_count", 0)
         frames = []
-        for i in range(min(frame_count, 30)):  # 限制最大30帧
+        for i in range(min(frame_count, _MAX_RECORD_FRAMES_PER_REQUEST)):
             b64 = storage.load_image_b64(record_id, "frame", i)
             if b64:
                 frames.append(b64)
@@ -751,7 +818,7 @@ async def get_record_frames(record_id: str, start: int = 0, count: int = 10):
     """分页获取记录帧图片"""
     import urllib.parse
     decoded_id = urllib.parse.unquote(record_id)
-    count = min(count, 20)  # 限制最大数量
+    count = min(count, _MAX_RECORD_FRAMES_PER_REQUEST)  # 限制最大数量
     
     frames = []
     for i in range(start, start + count):
@@ -1310,6 +1377,12 @@ async def restart_system():
         if safety_detector:
             safety_detector.release()
 
+        # 关闭旧保存线程池
+        global _save_executor
+        if _save_executor is not None:
+            _save_executor.shutdown(wait=False)
+            _save_executor = None
+
         # 重新初始化
         init_components()
         if camera_manager:
@@ -1365,7 +1438,6 @@ class SelectedCameraDisplay:
         self._reader_thread: Optional[threading.Thread] = None
         self._display_thread: Optional[threading.Thread] = None
         self._detect_thread: Optional[threading.Thread] = None
-        self._result_thread: Optional[threading.Thread] = None
         self._selected_camera_id: Optional[str] = None
         self._active_session_id: int = 0
         self._latest_frame: Optional[np.ndarray] = None
@@ -1373,7 +1445,6 @@ class SelectedCameraDisplay:
         self._frame_timestamp: float = 0.0
         self._last_detection_results: Dict[str, dict] = {}
         self._overlay_expires_at: float = 0.0
-        self._detection_worker: Optional[DisplayDetectionWorker] = None
 
     @staticmethod
     def _clamp_display_interval(value: float) -> float:
@@ -1428,11 +1499,10 @@ class SelectedCameraDisplay:
                 self._display_interval = self._clamp_display_interval(display_interval)
 
     def start(self):
-        """启动检测子进程、显示线程、检测线程和结果线程"""
+        """启动显示线程和检测线程"""
         if self._running:
             return
         self._running = True
-        self._detection_worker = DisplayDetectionWorker(self._npu_cores, self._device)
         with self._lock:
             session_id = self._active_session_id
             camera_id = self._selected_camera_id
@@ -1452,14 +1522,10 @@ class SelectedCameraDisplay:
             target=self._detect_loop, daemon=True, name="selected-camera-detect"
         )
         self._detect_thread.start()
-        self._result_thread = threading.Thread(
-            target=self._result_loop, daemon=True, name="selected-camera-result"
-        )
-        self._result_thread.start()
         log_message("SelectedCameraDisplay started")
 
     def stop(self):
-        """停止所有线程和子进程"""
+        """停止所有线程"""
         self._running = False
         if self._reader_thread:
             self._reader_thread.join(timeout=2)
@@ -1470,12 +1536,6 @@ class SelectedCameraDisplay:
         if self._detect_thread:
             self._detect_thread.join(timeout=2)
             self._detect_thread = None
-        if self._result_thread:
-            self._result_thread.join(timeout=2)
-            self._result_thread = None
-        if self._detection_worker:
-            self._detection_worker.stop()
-            self._detection_worker = None
         log_message("SelectedCameraDisplay stopped")
 
     def _reader_session(self, session_id: int, camera_id: str):
@@ -1524,6 +1584,10 @@ class SelectedCameraDisplay:
         new_h = max(1, int(src_h * scale))
         return cv2.resize(frame, (new_w, new_h))
 
+    def _draw_timestamp(self, frame: np.ndarray, timestamp: float) -> np.ndarray:
+        """在帧右上角绘制采集时间戳（白字黑边）。"""
+        return _draw_timestamp_on_frame(frame, timestamp)
+
     def _display_loop(self):
         """显示主循环：从缓存取最新帧，25 FPS 推流（只推标注帧，前端不消费原始帧）"""
         log_message("SelectedCameraDisplay display loop started")
@@ -1538,6 +1602,7 @@ class SelectedCameraDisplay:
                     display_types = dict(self._display_types)
                     frame_session_id = self._frame_session_id
                     active_session_id = self._active_session_id
+                    frame_timestamp = self._frame_timestamp
 
                 if camera_id is None or frame is None:
                     time.sleep(0.05)
@@ -1557,6 +1622,7 @@ class SelectedCameraDisplay:
                     )
 
                 display_frame = self._scale_for_display(frame_to_push, camera_id)
+                display_frame = self._draw_timestamp(display_frame, frame_timestamp)
                 self.stream_server.update_frame(camera_id, display_frame, raw=False)
 
                 frame_count += 1
@@ -1573,11 +1639,15 @@ class SelectedCameraDisplay:
         log_message("SelectedCameraDisplay display loop stopped")
 
     def _detect_loop(self):
-        """检测循环：按配置间隔向 worker 提交最新帧，不等待结果。"""
+        """检测循环：按配置间隔直接对最新帧做推理并更新显示缓存。"""
         log_message("SelectedCameraDisplay detect loop started")
+        next_time = time.time()
         while self._running:
             try:
-                time.sleep(self._display_interval)
+                sleep_time = next_time - time.time()
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                next_time = time.time() + self._display_interval
 
                 with self._lock:
                     camera_id = self._selected_camera_id
@@ -1588,44 +1658,28 @@ class SelectedCameraDisplay:
                     continue
                 if not any(display_types.values()):
                     continue
-                if self._detection_worker is None:
+                if safety_detector is None:
                     continue
 
                 types_to_detect = [dtype for dtype, enabled in display_types.items() if enabled]
-                if not self._detection_worker.submit(frame.copy(), types_to_detect):
-                    logger.debug(
-                        f"SelectedCameraDisplay {camera_id} detection worker busy, skipping interval"
-                    )
-            except Exception as e:
-                logger.error(f"SelectedCameraDisplay detect loop error: {e}")
-        log_message("SelectedCameraDisplay detect loop stopped")
-
-    def _result_loop(self):
-        """结果循环：持续从 worker 读取检测结果并更新显示缓存。"""
-        log_message("SelectedCameraDisplay result loop started")
-        while self._running:
-            try:
-                results = (
-                    self._detection_worker.get_result(timeout=0.1)
-                    if self._detection_worker
-                    else None
-                )
-                if results is None:
+                try:
+                    safety_detector.ensure_models_loaded(types_to_detect)
+                    results = safety_detector.detect(frame.copy(), types_to_detect)
+                except Exception as e:
+                    logger.error(f"SelectedCameraDisplay {camera_id} detection error: {e}")
                     continue
 
                 with self._lock:
-                    display_types = dict(self._display_types)
-                    enabled_types = [dtype for dtype, enabled in display_types.items() if enabled]
                     visible_results = {
                         dtype: results.get(dtype)
-                        for dtype in enabled_types
+                        for dtype in types_to_detect
                         if results.get(dtype)
                     }
                     self._overlay_expires_at = time.time() + max(self._display_interval, 0.1)
                     self._last_detection_results = visible_results
             except Exception as e:
-                logger.error(f"SelectedCameraDisplay result loop error: {e}")
-        log_message("SelectedCameraDisplay result loop stopped")
+                logger.error(f"SelectedCameraDisplay detect loop error: {e}")
+        log_message("SelectedCameraDisplay detect loop stopped")
 
 
 def start_selected_camera_display():

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>安全哨兵 监控中心</title>
+    <title>视频诊断系统 监控中心</title>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/styles/glass-clay.css">
     <script src="/static/vue3.global.prod.js"></script>
@@ -178,8 +178,8 @@
 
         .cam-item {
             display: flex;
-            align-items: center;
-            gap: 10px;
+            flex-direction: column;
+            gap: 8px;
             padding: 12px 14px;
             border-radius: var(--radius-md);
             background: var(--bg-soft);
@@ -196,6 +196,12 @@
         .cam-item.active {
             border-color: var(--accent);
             background: var(--accent-soft);
+        }
+
+        .cam-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .cam-name {
@@ -381,8 +387,10 @@
                         <div v-for="cam in cameras" :key="cam.camera_id"
                              :class="['cam-item', cam.camera_id === mainCameraId ? 'active' : '']"
                              @click="selectCamera(cam.camera_id)">
-                            <span :class="['status-dot', cam.status === 'connected' ? 'online' : 'offline']"></span>
-                            <span class="cam-name">{{ cam.name || cam.camera_id }}</span>
+                            <div class="cam-row">
+                                <span :class="['status-dot', cam.status === 'connected' ? 'online' : 'offline']"></span>
+                                <span class="cam-name">{{ cam.name || cam.camera_id }}</span>
+                            </div>
                             <div class="cam-types">
                                 <template v-for="(cfg, type) in cam.detection_types" :key="type">
                                     <span v-if="cfg.enabled" class="cam-type-mini">

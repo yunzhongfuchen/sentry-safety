@@ -302,6 +302,116 @@ def save_prompt(prompt: str, question: str) -> bool:
         return False
 
 
+# ==================== VLM 复核提示词配置 ====================
+VLM_PROMPTS_FILE = CONFIG_DIR / "vlm_prompts.json"
+
+DEFAULT_VLM_PROMPTS = {
+    "fire_review": """你正在复核一个工业安全监控系统的火焰检测结果。
+请仔细查看图片，判断画面中是否真的有明火。
+注意排除以下误判情况：
+- 红色灯光、红色物体反光
+- 夕阳、晚霞
+- 橙色安全帽或衣服
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "smoke_review": """你正在复核一个工业安全监控系统的烟雾检测结果。
+请仔细查看图片，判断画面中是否真的有烟雾。
+注意排除以下误判情况：
+- 水蒸气、雾气
+- 灰尘扬起
+- 白色墙壁反光
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "mask_review": """你正在复核一个工业安全监控系统的口罩佩戴检测结果。
+请仔细查看图片，判断画面中是否真的有未佩戴口罩的人员。
+注意排除以下情况：
+- 人员正在喝水或用餐（暂时摘下）
+- 人员手持物品遮挡面部
+- 距离太远看不清
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "cigarette_review": """你正在复核一个工业安全监控系统的吸烟行为检测结果。
+请仔细查看图片，判断画面中是否真的有人正在吸烟。
+注意排除以下情况：
+- 手持笔、筷子等细长物体
+- 人员只是在摸嘴或吃东西
+- 画面模糊无法确认
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "uniform_review": """你正在复核一个工业安全监控系统的工服/反光背心检测结果。
+请仔细查看图片，判断画面中是否真的有未穿工服或反光背心的人员。
+注意：
+- 不同岗位工服颜色可能不同
+- 只需判断是否有"未穿"的情况
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "sleep_identity": """你正在查看同一摄像头的 {consecutive_required} 张监控截图，拍摄时间间隔约 {interval} 秒。
+
+请仔细判断：这 {consecutive_required} 张图中，睡岗/打盹的是否是同一个特定的人？
+注意排除以下情况：
+- 不同的人轮流打盹
+- 同一个人只是短暂低头后恢复正常
+- 画面中有多人，但睡岗的人换了
+
+请以 JSON 格式返回：
+{"same_person": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+
+    "inspection": """你正在执行工业安全监控巡检。请仔细检查监控画面，判断是否存在以下安全隐患：
+{enabled_types_desc}
+
+请以 JSON 格式返回，不要其他内容：
+{{
+  "detections": {{
+{detections_json}
+  }}
+}}
+
+注意：
+- 只检查上述列出的类型，不要自行扩展
+- confidence 范围 0.0-1.0
+- 如果没有发现任何异常，所有 detected 都返回 false""",
+}
+
+
+def load_vlm_prompts() -> Dict[str, str]:
+    """加载 VLM 复核提示词配置，缺失键自动补全默认值"""
+    if VLM_PROMPTS_FILE.exists():
+        try:
+            with open(VLM_PROMPTS_FILE, "r", encoding="utf-8") as f:
+                stored = json.load(f)
+            merged = dict(DEFAULT_VLM_PROMPTS)
+            merged.update(stored)
+            # 自动把新增模板写回文件
+            if merged != stored:
+                save_vlm_prompts(merged)
+            return merged
+        except Exception:
+            pass
+    save_vlm_prompts(DEFAULT_VLM_PROMPTS)
+    return dict(DEFAULT_VLM_PROMPTS)
+
+
+def save_vlm_prompts(prompts: Dict[str, str]) -> bool:
+    """保存 VLM 复核提示词配置到 config/vlm_prompts.json"""
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(VLM_PROMPTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(prompts, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
 # ==================== 全局配置管理 ====================
 
 def load_global_settings() -> Dict[str, Any]:

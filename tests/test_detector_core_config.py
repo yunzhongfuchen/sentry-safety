@@ -49,19 +49,6 @@ def test_vlm_callbacks_are_pure_passthrough():
     trigger_cb = Mock()
     md.trigger_callback = trigger_cb
 
-    schedule = md._schedules["cam01"]["fire"]
-    schedule.pending_vlm = True
-
-    # Test _on_vlm_confirm
-    md._on_vlm_confirm("cam01", "fire", None, {"detected": True}, schedule, {"confirmed": True, "confidence": 0.9, "reason": "有火焰"})
-    vlm_cb.assert_called_once()
-    trigger_cb.assert_not_called()
-    assert schedule.pending_vlm is False
-
-    vlm_cb.reset_mock()
-    trigger_cb.reset_mock()
-    schedule.pending_vlm = True
-
     # Test _on_vlm_review
     md._on_vlm_review("cam01", "fire", {"confirmed": True, "confidence": 0.8, "reason": "有烟雾"})
     vlm_cb.assert_called_once()

@@ -2,6 +2,15 @@ import pytest
 import backend.performance_storage as ps
 
 
+@pytest.fixture(autouse=True)
+def isolate_storage(tmp_path, monkeypatch):
+    monkeypatch.setattr(ps, "RECORDS_FILE", tmp_path / "records.json")
+    monkeypatch.setattr(ps, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(ps, "_records_cache", None)
+    yield
+    monkeypatch.setattr(ps, "_records_cache", None)
+
+
 def test_summary_uses_status_and_level():
     ps.save_records([
         {"id": "1", "status": "pending", "level": "small_model_alarm", "detection_type": "fire", "camera_id": "cam01"},
