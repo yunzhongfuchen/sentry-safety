@@ -48,6 +48,32 @@ def test_save_image_timestamp_false_does_not_draw_on_snapshot():
         mock_draw_ts.assert_not_called()
 
 
+def test_save_image_timestamp_false_preserves_detection_frame_bytes():
+    main_multi._save_executor = None
+    main_multi._global_settings = {
+        "frame_quality": 60,
+        "save_image_timestamp": False,
+        "max_records": 100,
+        "emergency_cleanup_ratio": 0.2,
+    }
+    frame = np.zeros((60, 80, 3), dtype=np.uint8)
+    raw_jpg = b"raw-detection-frame-bytes"
+    detection_frames = [(time.time(), raw_jpg)]
+    result = {
+        "detected": True,
+        "scores": [0.9],
+        "level": "small_model_alarm",
+        "detection_frames": detection_frames,
+    }
+    with patch.object(main_multi, "draw_timestamp_on_frame") as mock_draw_ts:
+        with patch.object(main_multi.storage, "save_image") as mock_save:
+            main_multi.on_trigger("cam1", "fire", frame, result)
+    mock_draw_ts.assert_not_called()
+    frame_calls = [call for call in mock_save.call_args_list if call.args[1] == "frame"]
+    assert len(frame_calls) == 1
+    assert frame_calls[0].args[2] is raw_jpg
+
+
 def test_save_detection_frames_async_writes_bytes():
     frames = [(time.time(), b"f1"), (time.time(), b"f2")]
     with patch.object(main_multi.storage, "save_image") as mock_save:

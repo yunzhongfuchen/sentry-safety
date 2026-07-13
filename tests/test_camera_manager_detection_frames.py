@@ -38,6 +38,19 @@ def test_clear_detection_frames():
     assert cm.get_detection_frames("cam1", "fire") == []
 
 
+def test_clear_all_detection_frames():
+    cm = CameraManager()
+    _register_and_start(cm)
+    ts = time.time()
+    cm.add_detection_frame("cam1", "fire", ts, b"f1", maxlen=3)
+    cm.add_detection_frame("cam1", "smoke", ts, b"s1", maxlen=3)
+    assert len(cm.get_detection_frames("cam1", "fire")) == 1
+    assert len(cm.get_detection_frames("cam1", "smoke")) == 1
+    cm.clear_all_detection_frames("cam1")
+    assert cm.get_detection_frames("cam1", "fire") == []
+    assert cm.get_detection_frames("cam1", "smoke") == []
+
+
 def test_unregister_clears_detection_frames():
     cm = CameraManager()
     _register_and_start(cm)

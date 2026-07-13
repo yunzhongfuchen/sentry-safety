@@ -5,7 +5,10 @@ import numpy as np
 
 
 def draw_timestamp_on_frame(frame: np.ndarray, timestamp: float) -> np.ndarray:
-    """在帧右上角绘制时间戳（白字黑边）。"""
+    """在帧右上角绘制时间戳（白字黑边）。
+
+    注意：该函数会原地修改输入 frame；如需保留原帧，调用方应先传入副本。
+    """
     h, w = frame.shape[:2]
     text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
     font = cv2.FONT_HERSHEY_SIMPLEX
