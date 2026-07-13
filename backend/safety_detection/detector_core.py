@@ -9,16 +9,19 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from collections import deque
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
+from backend import config
+from backend.frame_utils import encode_frame_to_jpg
 from inference_engine import SafetyDetector, detect_npu_cores
 
 logger = logging.getLogger(__name__)
+
+MAX_VLM_REVIEW_FRAMES = 5
 
 
 @dataclass
@@ -35,8 +38,6 @@ class TypeSchedule:
     use_vlm: bool = False
     # 当存在外部调度器（如 GPU scheduler）接管该类型推理时设为 True
     externally_managed: bool = False
-    # sleep 专用
-    history_frames: deque = field(default_factory=lambda: deque(maxlen=10))
 
     def is_due(self, now: float) -> bool:
         return now - self.last_run >= self.interval
@@ -250,9 +251,9 @@ class MultiDetector:
                     consecutive_required=cfg.get("consecutive_required", 3),
                     use_vlm=cfg.get("use_vlm", False),
                 )
-                # 睡岗历史帧上限与连续命中次数联动，由 deque 自动淘汰旧帧
-                schedule.history_frames = deque(maxlen=max(10, schedule.consecutive_required * 3))
                 self._schedules[camera_id][dtype] = schedule
+            if self.camera_manager is not None:
+                self.camera_manager.clear_all_detection_frames(camera_id)
             logger.info(f"Camera {camera_id} registered with {len(self._schedules[camera_id])} types")
 
     def mark_externally_managed(self, camera_id: str, dtypes: List[str]) -> None:
@@ -268,8 +269,6 @@ class MultiDetector:
         """注销摄像头，清理内存"""
         with self._lock:
             if camera_id in self._schedules:
-                for schedule in self._schedules[camera_id].values():
-                    schedule.history_frames.clear()
                 del self._schedules[camera_id]
             self._alert_states.pop(camera_id, None)
             self._cooldowns.pop(camera_id, None)
@@ -472,23 +471,34 @@ class MultiDetector:
         result: dict, schedule: TypeSchedule
     ) -> None:
         detected = result.get("detected", False)
-
-        if not detected:
-            # 未检测到，清空连续计数
-            if result.get("boxes"):
-                logger.warning(f"{camera_id} {dtype} has boxes but detected=False, resetting count")
-            schedule.consecutive_count = 0
-            return
-
-        # 置信度过滤
         max_conf = max(result.get("scores", [0]) or [0])
-        if max_conf < schedule.threshold:
+
+        if not detected or max_conf < schedule.threshold:
+            if not detected and result.get("boxes"):
+                logger.warning(f"{camera_id} {dtype} has boxes but detected=False, resetting count")
+            elif detected and max_conf < schedule.threshold:
+                logger.info(f"{camera_id} {dtype} blocked by threshold: conf={max_conf:.2f} < threshold={schedule.threshold}")
+            if self.camera_manager is not None:
+                self.camera_manager.clear_detection_frames(camera_id, dtype)
             schedule.consecutive_count = 0
-            logger.info(f"{camera_id} {dtype} blocked by threshold: conf={max_conf:.2f} < threshold={schedule.threshold}")
             return
 
         schedule.consecutive_count += 1
         logger.info(f"{camera_id} {dtype} consecutive={schedule.consecutive_count}/{schedule.consecutive_required} conf={max_conf:.2f}")
+
+        # 编码并写入检测帧缓存
+        if self.camera_manager is not None:
+            ts = time.time()
+            settings = config.load_global_settings()
+            jpeg_bytes = encode_frame_to_jpg(
+                frame,
+                quality=settings.get("frame_quality", 60),
+                draw_ts=settings.get("save_image_timestamp", True),
+                timestamp=ts,
+            )
+            self.camera_manager.add_detection_frame(
+                camera_id, dtype, ts, jpeg_bytes, maxlen=schedule.consecutive_required
+            )
 
         if schedule.consecutive_count < schedule.consecutive_required:
             return
@@ -510,14 +520,24 @@ class MultiDetector:
         # 达到阈值，统一触发告警流程：先创建记录，再按需提交 VLM 复核
         # 告警记录会在 trigger_callback 中立即创建；VLM 复核结果通过 vlm_result_callback 更新同一条记录。
         self._alert_states[camera_id][dtype] = {"active": True, "time": now, "level": "small_model_alarm"}
+        result["detection_frames"] = (
+            self.camera_manager.get_detection_frames(camera_id, dtype)
+            if self.camera_manager is not None
+            else []
+        )
         if schedule.use_vlm:
             result["pending_vlm_review"] = True
-            self._submit_vlm_review(camera_id, dtype, frame, schedule, result)
+            vlm_frames = result["detection_frames"][-MAX_VLM_REVIEW_FRAMES:]
+            self._submit_vlm_review(camera_id, dtype, vlm_frames, schedule, result)
         if self.trigger_callback:
             try:
                 self.trigger_callback(camera_id, dtype, frame, result)
             except Exception as e:
                 logger.error(f"Trigger callback error: {e}")
+
+        # 触发后清空缓存
+        if self.camera_manager is not None:
+            self.camera_manager.clear_detection_frames(camera_id, dtype)
 
     # ------------------------------------------------------------------
     # 睡岗检测状态机
@@ -526,69 +546,38 @@ class MultiDetector:
     def _handle_sleep_detection(
         self, camera_id: str, frame: np.ndarray, result: dict, schedule: TypeSchedule
     ) -> None:
-        detected = result.get("detected", False)
-
-        if not detected:
-            # 宽容递减：没检测到时计数减1（不是直接清零）
-            # 这样睡岗的人偶尔动一下（翻身、抬头）不会完全重置
-            schedule.consecutive_count = max(0, schedule.consecutive_count - 1)
-            if schedule.consecutive_count == 0:
-                schedule.history_frames.clear()
-            return
-
-        schedule.consecutive_count += 1
-        schedule.history_frames.append(frame.copy())
-        # deque maxlen 已在注册时按 consecutive_required*3 设置，无需手动截断
-
-        logger.debug(f"{camera_id} sleep consecutive={schedule.consecutive_count}/{schedule.consecutive_required}")
-
-        if schedule.consecutive_count < schedule.consecutive_required:
-            return
-
-        now = time.time()
-        if self.is_in_cooldown(camera_id, "sleep", now):
-            schedule.consecutive_count = max(0, schedule.consecutive_count - 1)
-            return
-
-        # 小模型直接告警
-        result["level"] = "small_model_alarm"
-        if not result.get("reason"):
+        """睡岗检测统一为标准检测逻辑：命中写缓存，未命中清空，触发后清空。"""
+        self._handle_standard_detection(camera_id, "sleep", frame, result, schedule)
+        # 睡岗 reason 兜底
+        if result.get("detected") and not result.get("reason"):
             result["reason"] = f"睡岗检测连续 {schedule.consecutive_required} 次命中"
-        self._cooldowns[camera_id]["sleep"] = now
-        self._alert_states[camera_id]["sleep"] = {
-            "active": True, "time": now, "level": "small_model_alarm"
-        }
-        logger.info(f"{camera_id} sleep triggered directly (small-model only)")
-        if self.trigger_callback:
-            try:
-                self.trigger_callback(camera_id, "sleep", frame, result)
-            except Exception as e:
-                logger.error(f"Trigger callback error: {e}")
-
-        # 触发后重置计数，但保留最近一帧用于后续观察
-        schedule.consecutive_count = 0
-        if schedule.history_frames:
-            schedule.history_frames = [schedule.history_frames[-1]]
 
     # ------------------------------------------------------------------
     # VLM 提交辅助
     # ------------------------------------------------------------------
 
-    def _submit_vlm_review(self, camera_id: str, dtype: str, frame: np.ndarray,
-                           schedule: TypeSchedule, result: dict) -> None:
+    def _submit_vlm_review(
+        self, camera_id: str, dtype: str,
+        frames: List[Tuple[float, bytes]],
+        schedule: TypeSchedule, result: dict
+    ) -> None:
         """异步复核（fire/smoke）"""
         if self.vlm_queue is None:
             return
+        numpy_frames = [
+            cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+            for _, jpg in frames
+        ]
         task = {
             "task_id": str(uuid.uuid4()),
             "camera_id": camera_id,
             "dtype": dtype,
             "level": "small_model_alarm",
-            "frames": [frame],
+            "frames": numpy_frames,
             "prompt_type": f"{dtype}_review",
             "callback": lambda res: self._on_vlm_review(camera_id, dtype, res),
         }
-        self.vlm_queue.submit(task)
+        self.vlm_queue.submit(task=task)
 
     # ------------------------------------------------------------------
     # VLM 回调
