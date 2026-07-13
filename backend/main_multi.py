@@ -56,6 +56,7 @@ try:
     from video_stream import get_stream_server
     from safety_detection.api import router as safety_router
     from alarm_state import create_record, apply_vlm_review, confirm_alarm, confirm_false_positive
+    from backend.frame_utils import draw_timestamp_on_frame
 except ImportError as e:
     logger.error(f"Import error: {e}")
     raise
@@ -140,46 +141,81 @@ def encode_frame_to_bytes(frame: np.ndarray, quality: int = 70) -> bytes:
     return buffer.tobytes()
 
 
-def _draw_timestamp_on_frame(frame: np.ndarray, timestamp: float) -> np.ndarray:
-    """在帧右上角绘制时间戳（白字黑边），便于在记录帧中核对实际解码时刻。"""
-    h, w = frame.shape[:2]
-    text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = max(0.4, min(w, h) / 800.0)
-    thickness = max(1, int(min(w, h) / 400))
-    margin = max(8, int(min(w, h) * 0.015))
-
-    (text_w, text_h), _ = cv2.getTextSize(text, font, font_scale, thickness)
-    x = w - text_w - margin
-    y = text_h + margin
-
-    cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 1, cv2.LINE_AA)
-    cv2.putText(frame, text, (x, y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
-    return frame
-
-
-def _save_window_frames_async(
+def _save_detection_frames_async(
     record_id: str,
-    window_frames: List[Tuple[float, np.ndarray]],
-    fallback_frame: Optional[np.ndarray],
+    detection_frames: List[Tuple[float, bytes]],
     quality: int,
-    trigger_ts: float,
 ):
-    """后台保存告警时间窗口帧，避免阻塞检测线程。"""
+    """后台保存检测帧序列。"""
     try:
-        if window_frames:
-            for i, (ts, fr) in enumerate(window_frames):
-                fr = _draw_timestamp_on_frame(fr, ts)
-                frame_bytes = encode_frame_to_bytes(fr, quality=quality)
-                storage.save_image(record_id, "frame", frame_bytes, i)
-            log_message(f"Saved {len(window_frames)} window frames for {record_id}")
-        elif fallback_frame is not None:
-            fr = _draw_timestamp_on_frame(fallback_frame.copy(), trigger_ts)
-            frame_bytes = encode_frame_to_bytes(fr, quality=quality)
-            storage.save_image(record_id, "frame", frame_bytes, 0)
-            log_message(f"Saved trigger frame for {record_id} (window empty)")
+        for i, (ts, jpg_bytes) in enumerate(detection_frames):
+            storage.save_image(record_id, "frame", jpg_bytes, i)
+        log_message(f"Saved {len(detection_frames)} detection frames for {record_id}")
     except Exception as e:
-        logger.error(f"Failed to save window frames for {record_id}: {e}")
+        logger.error(f"Failed to save detection frames for {record_id}: {e}")
+
+
+def on_trigger(camera_id: str, dtype: str, frame: Optional[np.ndarray], result: dict):
+    """检测触发回调（创建告警记录）"""
+    global detection_records
+
+    with _status_lock:
+        _system_status["total_detections"] += 1
+
+    log_message(f"Camera {camera_id}: {dtype} detected, level={result.get('level', 'small_model_alarm')}")
+
+    trigger_ts = time.time()
+    record_id = f"{camera_id}_{dtype}_{int(trigger_ts * 1000)}"
+
+    # 保存快照（只画触发类型的框）
+    if frame is not None:
+        trigger_results = {dtype: result}
+        annotated = MultiDetector._annotate_frame(frame, trigger_results, camera_id, [])
+        if _global_settings.get("save_image_timestamp", True):
+            annotated = draw_timestamp_on_frame(annotated.copy(), trigger_ts)
+        snapshot_bytes = encode_frame_to_bytes(annotated, quality=_global_settings.get("snapshot_quality", 70))
+        storage.save_image(record_id, "snapshot", snapshot_bytes)
+
+    record = create_record(camera_id, dtype, result, record_id=record_id)
+    record["time"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(trigger_ts))
+
+    # 如果该类型启用了 VLM 复核，记录待更新映射，供 VLM 回调更新 level
+    if result.get("pending_vlm_review"):
+        with _pending_reviews_lock:
+            _pending_reviews.setdefault((camera_id, dtype), deque()).append(record_id)
+
+    with _records_lock:
+        detection_records.insert(0, record)
+        max_records = _global_settings.get("max_records", 100)
+        if len(detection_records) > max_records:
+            ratio = _global_settings.get("emergency_cleanup_ratio", 0.2)
+            remove_count = max(1, int(len(detection_records) * ratio))
+            to_remove = detection_records[-remove_count:]
+            for old in to_remove:
+                storage.delete_record_images(old["id"])
+            detection_records = detection_records[:-remove_count]
+    mark_records_dirty()
+
+    # 保存检测帧序列
+    try:
+        detection_frames = result.get("detection_frames", [])
+        record["frame_count"] = len(detection_frames)
+
+        if _save_executor is not None:
+            _save_executor.submit(
+                _save_detection_frames_async,
+                record_id,
+                detection_frames,
+                _global_settings.get("frame_quality", 60),
+            )
+        else:
+            _save_detection_frames_async(
+                record_id,
+                detection_frames,
+                _global_settings.get("frame_quality", 60),
+            )
+    except Exception as e:
+        logger.error(f"Failed to schedule detection frames save for {record_id}: {e}")
 
 
 def _convert_ultralytics_result(dtype: str, result) -> Optional[dict]:
@@ -311,74 +347,6 @@ def init_components():
         log_message("Using SerialStrategy")
 
     # 7. 初始化 MultiDetector
-    def on_trigger(camera_id: str, dtype: str, frame: Optional[np.ndarray], result: dict):
-        """检测触发回调（创建告警记录）"""
-        global detection_records
-
-        with _status_lock:
-            _system_status["total_detections"] += 1
-
-        log_message(f"Camera {camera_id}: {dtype} detected, level={result.get('level', 'small_model_alarm')}")
-
-        trigger_ts = time.time()
-        record_id = f"{camera_id}_{dtype}_{int(trigger_ts * 1000)}"
-
-        # 保存快照（只画触发类型的框）
-        if frame is not None:
-            trigger_results = {dtype: result}
-            annotated = MultiDetector._annotate_frame(frame, trigger_results, camera_id, [])
-            snapshot_bytes = encode_frame_to_bytes(annotated, quality=_global_settings.get("snapshot_quality", 70))
-            storage.save_image(record_id, "snapshot", snapshot_bytes)
-
-        record = create_record(camera_id, dtype, result, record_id=record_id)
-        record["time"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(trigger_ts))
-
-        # 如果该类型启用了 VLM 复核，记录待更新映射，供 VLM 回调更新 level
-        if result.get("pending_vlm_review"):
-            with _pending_reviews_lock:
-                _pending_reviews.setdefault((camera_id, dtype), deque()).append(record_id)
-
-        with _records_lock:
-            detection_records.insert(0, record)
-            max_records = _global_settings.get("max_records", 100)
-            if len(detection_records) > max_records:
-                ratio = _global_settings.get("emergency_cleanup_ratio", 0.2)
-                remove_count = max(1, int(len(detection_records) * ratio))
-                to_remove = detection_records[-remove_count:]
-                for old in to_remove:
-                    storage.delete_record_images(old["id"])
-                detection_records = detection_records[:-remove_count]
-        mark_records_dirty()
-
-        # 保存触发时刻前最多5秒的时间窗口帧（移到后台线程，避免阻塞检测流水线）
-        try:
-            window_frames = camera_manager.get_window_frames(camera_id, trigger_ts - 5, trigger_ts)
-            if window_frames:
-                record["frame_count"] = len(window_frames)
-            elif frame is not None:
-                record["frame_count"] = 1
-            else:
-                record["frame_count"] = 0
-
-            if _save_executor is not None:
-                _save_executor.submit(
-                    _save_window_frames_async,
-                    record_id,
-                    window_frames,
-                    frame,
-                    _global_settings.get("frame_quality", 60),
-                    trigger_ts,
-                )
-            else:
-                _save_window_frames_async(
-                    record_id,
-                    window_frames,
-                    frame,
-                    _global_settings.get("frame_quality", 60),
-                    trigger_ts,
-                )
-        except Exception as e:
-            logger.error(f"Failed to schedule window frames save for {record_id}: {e}")
 
     def on_vlm_result(camera_id: str, dtype: str, vlm_result: dict):
         """VLM 复核/确认结果回调：更新已有记录 level，不改 status"""
@@ -1586,7 +1554,7 @@ class SelectedCameraDisplay:
 
     def _draw_timestamp(self, frame: np.ndarray, timestamp: float) -> np.ndarray:
         """在帧右上角绘制采集时间戳（白字黑边）。"""
-        return _draw_timestamp_on_frame(frame, timestamp)
+        return draw_timestamp_on_frame(frame, timestamp)
 
     def _display_loop(self):
         """显示主循环：从缓存取最新帧，25 FPS 推流（只推标注帧，前端不消费原始帧）"""
