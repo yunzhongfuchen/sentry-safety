@@ -64,3 +64,9 @@ def test_default_global_settings_contains_display_interval():
     assert "display_detection_interval" in DEFAULT_GLOBAL_SETTINGS
     assert DEFAULT_GLOBAL_SETTINGS["display_detection_interval"] == 1.0
 
+
+def test_global_settings_has_save_image_timestamp():
+    from backend import config
+    assert "save_image_timestamp" in config.DEFAULT_GLOBAL_SETTINGS
+    assert config.DEFAULT_GLOBAL_SETTINGS["save_image_timestamp"] is True
+

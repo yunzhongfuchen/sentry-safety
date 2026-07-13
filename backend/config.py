@@ -167,6 +167,7 @@ DEFAULT_GLOBAL_SETTINGS = {
         "sleep": True,
     },
     "display_detection_interval": 1.0,
+    "save_image_timestamp": True,
 }
 
 # ==================== 默认摄像头参数（全局模板） ====================
