@@ -3,7 +3,7 @@ import os
 import logging
 import base64
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +27,15 @@ def _frame_path(record_id: str, kind: str, index: int = 0) -> Path:
     return FRAMES_DIR / f"{record_id}_frame_{index:03d}.jpg"
 
 
-def save_image(record_id: str, kind: str, b64_data: str, index: int = 0) -> str:
-    """将 base64 图片保存为文件，返回相对路径"""
+def save_image(record_id: str, kind: str, data: Union[str, bytes], index: int = 0) -> str:
+    """将图片数据保存为文件，支持 base64 字符串或原始字节，返回相对路径"""
     ensure_dirs()
     path = _frame_path(record_id, kind, index)
     try:
-        path.write_bytes(base64.b64decode(b64_data))
+        if isinstance(data, str):
+            path.write_bytes(base64.b64decode(data))
+        else:
+            path.write_bytes(data)
         return str(path.relative_to(DATA_DIR))
     except Exception as e:
         logger.error(f"Failed to save image {path}: {e}")
