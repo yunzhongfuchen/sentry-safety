@@ -356,16 +356,15 @@ DEFAULT_VLM_PROMPTS = {
 请以 JSON 格式返回：
 {"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
 
-    "sleep_identity": """你正在查看同一摄像头的 {consecutive_required} 张监控截图，拍摄时间间隔约 {interval} 秒。
-
-请仔细判断：这 {consecutive_required} 张图中，睡岗/打盹的是否是同一个特定的人？
+    "sleep_review": """你正在复核一个工业安全监控系统的睡岗/打盹检测结果。
+请仔细查看图片，判断画面中是否真的有人正在睡岗或打盹。
 注意排除以下情况：
-- 不同的人轮流打盹
-- 同一个人只是短暂低头后恢复正常
-- 画面中有多人，但睡岗的人换了
+- 人员只是低头看手机或文件
+- 人员闭目休息但时间很短
+- 画面模糊无法确认
 
 请以 JSON 格式返回：
-{"same_person": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
 
     "inspection": """你正在执行工业安全监控巡检。请仔细检查监控画面，判断是否存在以下安全隐患：
 {enabled_types_desc}

@@ -74,17 +74,6 @@ _FALLBACK_PROMPT_TEMPLATES = {
 请以 JSON 格式返回：
 {"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
 
-    "sleep_identity": """你正在查看同一摄像头的 {consecutive_required} 张监控截图，拍摄时间间隔约 {interval} 秒。
-
-请仔细判断：这 {consecutive_required} 张图中，睡岗/打盹的是否是同一个特定的人？
-注意排除以下情况：
-- 不同的人轮流打盹
-- 同一个人只是短暂低头后恢复正常
-- 画面中有多人，但睡岗的人换了
-
-请以 JSON 格式返回：
-{"same_person": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}""",
-
     "inspection": """你正在执行工业安全监控巡检。请仔细检查监控画面，判断是否存在以下安全隐患：
 {enabled_types_desc}
 
@@ -263,7 +252,7 @@ class VideoUnderstander:
 
         Args:
             frames: 图片帧列表
-            prompt_type: prompt 模板名称（fire_review / mask_confirm / sleep_identity / inspection 等）
+            prompt_type: prompt 模板名称（fire_review / smoke_review / mask_review / cigarette_review / uniform_review / sleep_review / inspection 等）
             extra_context: 额外上下文，用于填充模板变量
 
         Returns:
@@ -277,11 +266,6 @@ class VideoUnderstander:
             template = self._build_inspection_prompt(extra_context)
         else:
             template = _get_prompt_template(prompt_type)
-            if extra_context and prompt_type == "sleep_identity":
-                template = template.format(
-                    consecutive_required=extra_context.get("consecutive_required", 3),
-                    interval=extra_context.get("interval", 60),
-                )
 
         if not self._ensure_initialized():
             return self._mock_analyze_multi(frames, prompt_type)
@@ -401,10 +385,6 @@ class VideoUnderstander:
             confirmed_match = re.search(r'"confirmed"\s*[:=]\s*(true|false)', response, re.IGNORECASE)
             if confirmed_match:
                 result["confirmed"] = confirmed_match.group(1).lower() == "true"
-        if "same_person" in response.lower() or prompt_type == "sleep_identity":
-            sp_match = re.search(r'"same_person"\s*[:=]\s*(true|false)', response, re.IGNORECASE)
-            if sp_match:
-                result["same_person"] = sp_match.group(1).lower() == "true"
         conf_match = re.search(r'"confidence"\s*[:=]\s*(\d+\.?\d*)', response)
         if conf_match:
             result["confidence"] = float(conf_match.group(1))
@@ -440,13 +420,7 @@ class VideoUnderstander:
     def _mock_analyze_multi(self, frames: List[np.ndarray], prompt_type: str) -> dict:
         """Mock分析结果（新接口）"""
         import random
-        if prompt_type == "sleep_identity":
-            result = {
-                "same_person": random.choice([True, False]),
-                "confidence": round(random.uniform(0.6, 0.95), 2),
-                "reason": "Mock: 同一人判定",
-            }
-        elif prompt_type == "inspection":
+        if prompt_type == "inspection":
             result = {
                 "detections": {},
             }

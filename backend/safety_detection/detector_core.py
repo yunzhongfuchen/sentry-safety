@@ -445,14 +445,7 @@ class MultiDetector:
                         schedule.last_run = now
                     result = results.get(dtype, {"detected": False})
 
-                    if dtype == "uniform":
-                        if result.get("detected") and not result.get("reason"):
-                            result["reason"] = "检测到未穿工服/反光背心的人员"
-                        self._handle_standard_detection(camera_id, dtype, frame, result, schedule)
-                    elif dtype == "sleep":
-                        self._handle_sleep_detection(camera_id, frame, result, schedule)
-                    else:
-                        self._handle_standard_detection(camera_id, dtype, frame, result, schedule)
+                    self._handle_standard_detection(camera_id, dtype, frame, result, schedule)
 
         # 注：视频流渲染已拆分到独立 overlay 线程，此处不再送流
 
@@ -515,10 +508,7 @@ class MultiDetector:
         # 把 level 和 reason 写入 result，供 trigger_callback 创建记录时使用
         result["level"] = "small_model_alarm"
         if not result.get("reason"):
-            if dtype == "sleep":
-                result["reason"] = f"睡岗检测连续 {schedule.consecutive_required} 次命中"
-            else:
-                result["reason"] = f"检测到 {dtype}，置信度 {max_conf:.2f}"
+            result["reason"] = f"检测到 {dtype}，置信度 {max_conf:.2f}"
 
         # 达到阈值，统一触发告警流程：先创建记录，再按需提交 VLM 复核
         # 告警记录会在 trigger_callback 中立即创建；VLM 复核结果通过 vlm_result_callback 更新同一条记录。
@@ -541,16 +531,6 @@ class MultiDetector:
         # 触发后清空缓存
         if self.camera_manager is not None:
             self.camera_manager.clear_detection_frames(camera_id, dtype)
-
-    # ------------------------------------------------------------------
-    # 睡岗检测状态机
-    # ------------------------------------------------------------------
-
-    def _handle_sleep_detection(
-        self, camera_id: str, frame: np.ndarray, result: dict, schedule: TypeSchedule
-    ) -> None:
-        """睡岗检测统一为标准检测逻辑：命中写缓存，未命中清空，触发后清空。"""
-        self._handle_standard_detection(camera_id, "sleep", frame, result, schedule)
 
     # ------------------------------------------------------------------
     # VLM 提交辅助
@@ -620,21 +600,14 @@ class MultiDetector:
             if simulated_result.get("confidence", 0) > 0.85:
                 simulated_result["vlm_pre_confirmed"] = True
 
-            # 作为普通检测处理
-            if dtype == "sleep":
-                # 巡检不缩短 60s 间隔，仅作为一次独立命中
-                simulated_result["skip_interval_check"] = True
-                # TODO: 需要 frame 参数
-            else:
-                # 标准类型需要 frame，但巡检注入时可能没有
-                # 简化：直接标记告警
-                self._cooldowns[camera_id][dtype] = now
-                self._alert_states[camera_id][dtype] = {
-                    "active": True, "time": now, "level": "small_model_alarm", "source": "vlm_inspection"
-                }
-                if dtype == "uniform" and not simulated_result.get("reason"):
-                    simulated_result["reason"] = "VLM 巡检发现未穿工服/反光背心的人员"
-                logger.info(f"Injected {dtype} detection for {camera_id} from VLM inspection")
+            # 作为普通检测处理：巡检注入时通常没有原始帧，直接标记告警
+            self._cooldowns[camera_id][dtype] = now
+            self._alert_states[camera_id][dtype] = {
+                "active": True, "time": now, "level": "small_model_alarm", "source": "vlm_inspection"
+            }
+            if not simulated_result.get("reason"):
+                simulated_result["reason"] = f"VLM 巡检发现 {dtype}"
+            logger.info(f"Injected {dtype} detection for {camera_id} from VLM inspection")
 
     # ------------------------------------------------------------------
     # 去重查询

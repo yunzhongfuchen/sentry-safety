@@ -419,10 +419,7 @@ def init_components():
                         return
                     schedule.last_run = time.time()
                     try:
-                        if dtype == "sleep":
-                            multi_detector._handle_sleep_detection(cam_id, frame, res_dict, schedule)
-                        else:
-                            multi_detector._handle_standard_detection(cam_id, dtype, frame, res_dict, schedule)
+                        multi_detector._handle_standard_detection(cam_id, dtype, frame, res_dict, schedule)
                     except Exception as e:
                         logger.error(f"GPU scheduler result handling error [{cam_id}/{dtype}]: {e}")
 
