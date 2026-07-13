@@ -274,6 +274,10 @@
                                 <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 14px;">图像质量</div>
                                 <div class="gc-form-field"><label>快照质量 (1-100)</label><input type="number" class="clay-input" v-model.number="settings.snapshot_quality" min="1" max="100" /></div>
                                 <div class="gc-form-field"><label>帧质量 (1-100)</label><input type="number" class="clay-input" v-model.number="settings.frame_quality" min="1" max="100" /></div>
+                                <div class="gc-form-field" style="display: flex; align-items: center; justify-content: space-between;">
+                                    <label>保存图像时叠加时间戳</label>
+                                    <input type="checkbox" v-model="settings.save_image_timestamp" />
+                                </div>
                             </div>
                         </div>
                         <button class="clay-button primary" @click="saveSystemSettings">保存系统设置</button>
@@ -540,6 +544,7 @@
                             emergency_cleanup_ratio: settings.value.emergency_cleanup_ratio,
                             snapshot_quality: settings.value.snapshot_quality,
                             frame_quality: settings.value.frame_quality,
+                            save_image_timestamp: settings.value.save_image_timestamp,
                             use_gpu_scheduler: settings.value.use_gpu_scheduler,
                             gpu_scheduler_num_queues: settings.value.gpu_scheduler_num_queues,
                             gpu_scheduler_interval: settings.value.gpu_scheduler_interval,
