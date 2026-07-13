@@ -78,21 +78,3 @@ def test_decode_scheduler_empty_queue_returns_gracefully():
     assert state.error_count == 0
     assert state.reader_error_count == 0
     assert state.reconnect_attempts == 0
-
-
-def test_main_camera_writes_frame_history():
-    cm = CameraManager()
-    cm.register_camera(CameraConfig(camera_id="cam_01", source="0"))
-    cm.set_main_camera("cam_01")
-    state = cm._cameras["cam_01"]
-    state.running = True
-
-    frame = np.zeros((100, 100, 3), dtype=np.uint8)
-    state.reader_queue.put_nowait(frame.copy())
-
-    scheduler = cm.decode_scheduler
-    scheduler._decode_one_frame("cam_01", time.time())
-
-    assert len(state.frame_history) == 1
-    ts, hist_frame = state.frame_history[0]
-    assert np.array_equal(hist_frame, frame)

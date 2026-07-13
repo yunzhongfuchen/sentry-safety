@@ -78,8 +78,8 @@ class CameraState:
     decode_queued: bool = False
     # 统计信息
     fps_stats: deque = field(default_factory=lambda: deque(maxlen=10))
-    # 时间窗口帧历史 (用于触发时保存前5秒帧；非主摄像头 1 FPS 时 10 帧已足够覆盖)
-    frame_history: deque = field(default_factory=lambda: deque(maxlen=10))
+    # 检测命中帧缓存：dtype -> deque[(timestamp, jpeg_bytes)]
+    detection_frames: Dict[str, "deque[Tuple[float, bytes]]"] = field(default_factory=dict)
     # 录制状态
     recording: bool = False
     record_writer: Optional[cv2.VideoWriter] = None
@@ -117,25 +117,6 @@ class CameraManager:
         self._global_frame_callback: Optional[Callable[[str, np.ndarray], None]] = None
         self._main_camera_id: Optional[str] = None
         self.decode_scheduler = DecodeScheduler(self, num_workers=4)
-
-    def _frame_history_maxlen(self, camera_id: str) -> int:
-        """根据是否主画面返回合适的帧历史长度。主画面 25 FPS 时需要约 150 帧覆盖 5 秒；
-        非主画面 1 FPS 时 10 帧已能覆盖 5 秒以上预录窗口。"""
-        return 150 if camera_id == self._main_camera_id else 10
-
-    def _recreate_frame_history(self, camera_id: str):
-        """切换主画面时按新角色重建 deque，尽量保留可用历史帧。"""
-        with self._lock:
-            if camera_id not in self._cameras:
-                return
-            state = self._cameras[camera_id]
-            new_maxlen = self._frame_history_maxlen(camera_id)
-            if state.frame_history.maxlen == new_maxlen:
-                return
-            old = list(state.frame_history)
-            state.frame_history = deque(maxlen=new_maxlen)
-            for ts, fr in old[-new_maxlen:]:
-                state.frame_history.append((ts, fr))
 
     def register_camera(self, config: CameraConfig) -> bool:
         """注册摄像头"""
@@ -188,7 +169,6 @@ class CameraManager:
             state.fps_stats.clear()
             state.reader_error_count = 0
             state.reader_stop.clear()
-            state.frame_history = deque(maxlen=self._frame_history_maxlen(camera_id))
 
             # 启动 DecodeScheduler（首次启动时）
             if not self.decode_scheduler._running.is_set():
@@ -234,6 +214,8 @@ class CameraManager:
                 if state.cap:
                     state.cap.release()
                     state.cap = None
+                # 停止线程后清空检测命中帧缓存
+                state.detection_frames.clear()
 
             state.status = CameraStatus.IDLE
             logger.info(f"Camera {camera_id} stopped")
@@ -374,9 +356,6 @@ class CameraManager:
 
             self._main_camera_id = camera_id
             self.decode_scheduler.set_main_camera(camera_id)
-            # 主画面切换后重新计算各摄像头的帧历史长度
-            for cid in list(self._cameras.keys()):
-                self._recreate_frame_history(cid)
             logger.info(f"Main camera set to {camera_id}")
             return True
 
@@ -385,22 +364,50 @@ class CameraManager:
         with self._lock:
             return self._main_camera_id
 
-    def get_window_frames(self, camera_id: str, start_time: float, end_time: float) -> List[Tuple[float, np.ndarray]]:
-        """
-        获取指定摄像头在某个时间窗口内的历史帧
-        返回 [(timestamp, frame), ...] 按时间升序排列
-        """
+    def add_detection_frame(
+        self,
+        camera_id: str,
+        dtype: str,
+        timestamp: float,
+        jpeg_bytes: bytes,
+        maxlen: int,
+    ) -> None:
+        with self._lock:
+            if camera_id not in self._cameras:
+                return
+            state = self._cameras[camera_id]
+            with state.lock:
+                existing = state.detection_frames.get(dtype)
+                if existing is None or existing.maxlen != maxlen:
+                    existing = deque(maxlen=maxlen)
+                    state.detection_frames[dtype] = existing
+                existing.append((timestamp, jpeg_bytes))
+
+    def clear_detection_frames(self, camera_id: str, dtype: str) -> None:
+        with self._lock:
+            if camera_id not in self._cameras:
+                return
+            state = self._cameras[camera_id]
+            with state.lock:
+                if dtype in state.detection_frames:
+                    state.detection_frames[dtype].clear()
+
+    def get_detection_frames(self, camera_id: str, dtype: str) -> List[Tuple[float, bytes]]:
         with self._lock:
             if camera_id not in self._cameras:
                 return []
-
             state = self._cameras[camera_id]
             with state.lock:
-                return [
-                    (ts, fr.copy()) for ts, fr in state.frame_history
-                    if start_time <= ts <= end_time
-                ]
-    
+                return list(state.detection_frames.get(dtype, []))
+
+    def clear_all_detection_frames(self, camera_id: str) -> None:
+        with self._lock:
+            if camera_id not in self._cameras:
+                return
+            state = self._cameras[camera_id]
+            with state.lock:
+                state.detection_frames.clear()
+
     def get_all_frames(self) -> Dict[str, np.ndarray]:
         """获取所有摄像头的当前帧"""
         frames = {}
