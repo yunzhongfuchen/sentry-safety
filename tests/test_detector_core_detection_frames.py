@@ -58,3 +58,28 @@ def test_vlm_review_gets_recent_five_frames():
 
     submitted = vlm_queue.submit.call_args[1]["task"]
     assert len(submitted["frames"]) == 5
+
+
+def test_sleep_detection_collects_frames_and_reason():
+    """睡岗检测复用标准检测逻辑：命中写帧，未命中清空，触发时 reason 为睡岗专用文案。"""
+    camera_manager = Mock()
+    camera_manager.get_detection_frames.return_value = []
+    md = MultiDetector(camera_manager=camera_manager, safety_detector=None, vlm_queue=None, strategy=None)
+    md.register_camera("cam1", {
+        "sleep": {"enabled": True, "interval": 1, "threshold": 0.5, "cooldown": 60, "consecutive_required": 3, "use_vlm": False},
+    })
+    schedule = md._schedules["cam1"]["sleep"]
+    result = {"detected": True, "scores": [0.9]}
+
+    md._handle_sleep_detection("cam1", make_frame(), result, schedule)
+    md._handle_sleep_detection("cam1", make_frame(), result, schedule)
+    md._handle_sleep_detection("cam1", make_frame(), result, schedule)
+
+    assert schedule.consecutive_count == 3
+    assert camera_manager.add_detection_frame.call_count == 3
+    assert camera_manager.get_detection_frames.called
+    assert "睡岗检测连续 3 次命中" in result["reason"]
+
+    md._handle_sleep_detection("cam1", make_frame(), {"detected": False}, schedule)
+    assert camera_manager.clear_detection_frames.called
+    assert schedule.consecutive_count == 0

@@ -515,7 +515,10 @@ class MultiDetector:
         # 把 level 和 reason 写入 result，供 trigger_callback 创建记录时使用
         result["level"] = "small_model_alarm"
         if not result.get("reason"):
-            result["reason"] = f"检测到 {dtype}，置信度 {max_conf:.2f}"
+            if dtype == "sleep":
+                result["reason"] = f"睡岗检测连续 {schedule.consecutive_required} 次命中"
+            else:
+                result["reason"] = f"检测到 {dtype}，置信度 {max_conf:.2f}"
 
         # 达到阈值，统一触发告警流程：先创建记录，再按需提交 VLM 复核
         # 告警记录会在 trigger_callback 中立即创建；VLM 复核结果通过 vlm_result_callback 更新同一条记录。
@@ -548,9 +551,6 @@ class MultiDetector:
     ) -> None:
         """睡岗检测统一为标准检测逻辑：命中写缓存，未命中清空，触发后清空。"""
         self._handle_standard_detection(camera_id, "sleep", frame, result, schedule)
-        # 睡岗 reason 兜底
-        if result.get("detected") and not result.get("reason"):
-            result["reason"] = f"睡岗检测连续 {schedule.consecutive_required} 次命中"
 
     # ------------------------------------------------------------------
     # VLM 提交辅助
