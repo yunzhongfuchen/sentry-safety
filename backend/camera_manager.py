@@ -494,6 +494,16 @@ class CameraManager:
         with self._lock:
             return list(self._cameras.keys())
 
+    def get_camera_ids_with_type(self, dtype: str) -> List[str]:
+        """获取配置中启用了指定检测类型的摄像头 ID 列表"""
+        matched = []
+        with self._lock:
+            for camera_id, state in self._cameras.items():
+                detection_types = state.config.detection_types
+                if detection_types and dtype in detection_types:
+                    matched.append(camera_id)
+        return matched
+
     def start_recording(self, camera_id: str, output_dir: Optional[str] = None) -> Optional[str]:
         """开始录制原始视频帧，返回高清录制文件路径。
         同时生成一份 640px 限制的 VP8 预览视频，供浏览器直接播放。"""

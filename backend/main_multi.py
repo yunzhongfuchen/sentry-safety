@@ -296,6 +296,7 @@ def init_components():
 
     # 2. 初始化摄像头管理器
     camera_manager = CameraManager()
+    app.state.camera_manager = camera_manager
 
     # 从配置加载摄像头（应用全局默认值）
     camera_globals = app_config.load_camera_globals()

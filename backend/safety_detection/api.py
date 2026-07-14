@@ -81,18 +81,19 @@ async def update_detection_type(dtype: str, data: dict):
 
     structural_fields = {"label", "color", "icon", "model_path", "npu_model_path",
                         "post_process", "classes", "model_confidence", "vlm_prompt_key", "inspection_label"}
+    allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
+                        "cooldown", "use_vlm", "min_box_count", "max_box_count"}
     structural_update = {k: v for k, v in data.items() if k in structural_fields}
-    defaults_update = {k: v for k, v in data.items() if k not in structural_fields}
+    defaults_update = {k: v for k, v in data.items() if k not in structural_fields and k in allowed_defaults}
+
+    if not structural_update and not defaults_update:
+        return JSONResponse({"error": "No valid fields to update"}, status_code=400)
 
     try:
         if structural_update:
             registry.update_type(dtype, structural_update)
         if defaults_update:
-            allowed_keys = {"enabled", "interval", "threshold", "consecutive_required",
-                            "cooldown", "use_vlm", "min_box_count", "max_box_count"}
             for k, v in defaults_update.items():
-                if k not in allowed_keys:
-                    continue
                 error = _validate_default_value(k, v)
                 if error:
                     return JSONResponse({"error": error}, status_code=400)
@@ -129,9 +130,10 @@ async def delete_detection_type(dtype: str, request: Request):
     # 检查摄像头引用
     camera_manager = getattr(request.app.state, "camera_manager", None)
     if camera_manager is not None:
-        for cam_id, cam in camera_manager._cameras.items():
-            if dtype in cam.config.detection_types:
-                return JSONResponse({"error": f"Type '{dtype}' is referenced by camera '{cam_id}'"}, status_code=409)
+        referencing_cameras = camera_manager.get_camera_ids_with_type(dtype)
+        if referencing_cameras:
+            cam_id = referencing_cameras[0]
+            return JSONResponse({"error": f"Type '{dtype}' is referenced by camera '{cam_id}'"}, status_code=409)
     registry.delete_type(dtype)
     return {"success": True, "dtype": dtype}
 
@@ -147,12 +149,10 @@ async def upload_model(dtype: str, file: UploadFile = File(...)):
     content = await file.read()
     registry.save_model(filename, content)
     # 自动填入对应路径字段
-    type_def = registry.get(dtype)
     if filename.endswith(".pt"):
-        type_def["model_path"] = filename
+        registry.update_type(dtype, {"model_path": filename})
     else:
-        type_def["npu_model_path"] = filename
-    registry._save(registry._types)
+        registry.update_type(dtype, {"npu_model_path": filename})
     return {"success": True, "model_path": filename, "dtype": dtype}
 
 
