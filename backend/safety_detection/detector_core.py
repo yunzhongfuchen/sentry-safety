@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 
 from backend import config
+from backend.detection_registry import registry
 from backend.frame_utils import encode_frame_to_jpg
 from inference_engine import SafetyDetector, detect_npu_cores
 
@@ -38,9 +39,71 @@ class TypeSchedule:
     use_vlm: bool = False
     # 当存在外部调度器（如 GPU scheduler）接管该类型推理时设为 True
     externally_managed: bool = False
+    roi: list = None
+    roi_invert: bool = False
+    min_box_count: int = None
+    max_box_count: int = None
 
     def is_due(self, now: float) -> bool:
         return now - self.last_run >= self.interval
+
+
+# ----------------------------------------------------------------------
+# ROI / box_count 过滤
+# ----------------------------------------------------------------------
+
+def filter_by_roi(result: dict, roi: list, roi_invert: bool,
+                  frame_width: int, frame_height: int) -> dict:
+    """按 ROI 多边形过滤检测框，保持 subjects 与 boxes 索引一致"""
+    if not roi:
+        return result
+
+    polygon = np.array([
+        [int(x * frame_width), int(y * frame_height)]
+        for x, y in roi
+    ], dtype=np.int32)
+
+    filtered_boxes, filtered_scores = [], []
+    filtered_subjects = []
+    subjects = result.get("subjects", [])
+
+    for i, (box, score) in enumerate(zip(result.get("boxes", []), result.get("scores", []))):
+        cx = (box[0] + box[2]) / 2
+        cy = (box[1] + box[3]) / 2
+        inside = cv2.pointPolygonTest(polygon, (cx, cy), False) >= 0
+        keep = inside if not roi_invert else not inside
+        if keep:
+            filtered_boxes.append(box)
+            filtered_scores.append(score)
+            if i < len(subjects):
+                filtered_subjects.append(subjects[i])
+
+    out = {
+        **result,
+        "boxes": filtered_boxes,
+        "scores": filtered_scores,
+        "detected": len(filtered_boxes) > 0,
+    }
+    if subjects:
+        out["subjects"] = filtered_subjects
+    return out
+
+
+def check_box_count(result: dict, min_box_count: int = None,
+                    max_box_count: int = None) -> dict:
+    """按框数量阈值判断检测结果，支持离岗（max=0）和人数超限场景"""
+    box_count = len(result.get("boxes", []))
+
+    if min_box_count is not None and box_count < min_box_count:
+        return {**result, "detected": False}
+
+    if max_box_count is not None:
+        if box_count > max_box_count:
+            return {**result, "detected": False}
+        # 在 max_box_count 范围内（含 0 框）视为检测到
+        return {**result, "detected": True}
+
+    return result
 
 
 # ----------------------------------------------------------------------
@@ -250,6 +313,10 @@ class MultiDetector:
                     cooldown=cfg.get("cooldown", 60.0),
                     consecutive_required=cfg.get("consecutive_required", 3),
                     use_vlm=cfg.get("use_vlm", False),
+                    roi=cfg.get("roi"),
+                    roi_invert=cfg.get("roi_invert", False),
+                    min_box_count=cfg.get("min_box_count"),
+                    max_box_count=cfg.get("max_box_count"),
                 )
                 self._schedules[camera_id][dtype] = schedule
             if self.camera_manager is not None:
@@ -285,23 +352,6 @@ class MultiDetector:
         annotated = frame.copy()
         h, w = annotated.shape[:2]
 
-        type_colors = {
-            "fire": (0, 0, 255),      # 红
-            "smoke": (128, 128, 128), # 灰
-            "uniform": (255, 0, 0),   # 蓝
-            "mask": (0, 255, 255),    # 黄
-            "cigarette": (0, 255, 0), # 绿
-            "sleep": (255, 0, 255),   # 紫
-        }
-        type_labels = {
-            "fire": "fire",
-            "smoke": "smoke",
-            "uniform": "uniform",
-            "mask": "mask",
-            "cigarette": "cigarette",
-            "sleep": "sleep",
-        }
-
         total_boxes = 0
         for dtype, result in results.items():
             boxes = result.get("boxes", [])
@@ -310,10 +360,12 @@ class MultiDetector:
             if not boxes:
                 continue
 
-            total_boxes += len(boxes)
-            base_color = type_colors.get(dtype, (0, 255, 0))
-            base_label = type_labels.get(dtype, dtype)
+            type_def = registry.get(dtype)
+            base_color = registry.get_color_bgr(dtype) if type_def else (0, 255, 0)
+            base_label = type_def.get("label", dtype) if type_def else dtype
+            is_pose = type_def.get("post_process") == "yolo_pose" if type_def else False
 
+            total_boxes += len(boxes)
             for i, box in enumerate(boxes):
                 if len(box) < 4:
                     continue
@@ -323,12 +375,11 @@ class MultiDetector:
                 x2 = max(0, min(x2, w - 1))
                 y2 = max(0, min(y2, h - 1))
 
-                # sleep 类型按 sleeping 状态区分颜色
-                if dtype == "sleep":
+                if is_pose:
                     subjects = result.get("subjects", [])
                     is_sleeping = subjects[i].get("sleeping", False) if i < len(subjects) else False
-                    color = base_color if is_sleeping else (255, 255, 0)  # 青色
-                    label = "sleep" if is_sleeping else "person"
+                    color = base_color if is_sleeping else (255, 255, 0)
+                    label = base_label if is_sleeping else "person"
                 else:
                     color = base_color
                     label = base_label
@@ -342,13 +393,12 @@ class MultiDetector:
                 cv2.putText(annotated, text, (x1 + 2, y1 - 3),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-            # 睡岗检测：绘制骨架
-            if dtype == "sleep":
+            if is_pose:
                 skeleton = [
-                    (0, 1), (0, 2), (1, 3), (2, 4),       # head
-                    (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),  # arms
-                    (5, 11), (6, 12), (11, 12),            # torso
-                    (11, 13), (13, 15), (12, 14), (14, 16),  # legs
+                    (0, 1), (0, 2), (1, 3), (2, 4),
+                    (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),
+                    (5, 11), (6, 12), (11, 12),
+                    (11, 13), (13, 15), (12, 14), (14, 16),
                 ]
                 subjects = result.get("subjects", [])
                 for subj in subjects:
@@ -365,12 +415,10 @@ class MultiDetector:
                                 pt_a = (int(xa), int(ya))
                                 pt_b = (int(xb), int(yb))
                                 cv2.line(annotated, pt_a, pt_b, sk_color, 2)
-                    # 关键点圆点
                     for idx, (kx, ky, kc) in enumerate(kpts[:17]):
                         if kc > 0.4:
                             cv2.circle(annotated, (int(kx), int(ky)), 3, sk_color, -1)
 
-            # 如果该类型有检测到目标，在右上角显示类型状态
             if detected:
                 status_text = f"[ALERT] {base_label}"
                 (tw, th), _ = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
@@ -378,7 +426,6 @@ class MultiDetector:
                 cv2.putText(annotated, status_text, (w - tw - 5, 5 + th + 3),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
-        # 左上角调试信息：始终显示，帮助确认画框逻辑在运行
         debug_lines = [f"cam:{camera_id}"]
         if due_types:
             debug_lines.append(f"detect:{','.join(due_types)}")
@@ -449,11 +496,30 @@ class MultiDetector:
 
         # 注：视频流渲染已拆分到独立 overlay 线程，此处不再送流
 
+    def _is_in_cooldown_unlocked(self, camera_id: str, dtype: str, now: float) -> bool:
+        last = self._cooldowns.get(camera_id, {}).get(dtype, 0)
+        schedule = self._schedules.get(camera_id, {}).get(dtype)
+        cooldown = schedule.cooldown if schedule else 3.0
+        return now - last < cooldown
+
     def _get_due_types(self, camera_id: str, now: float) -> List[str]:
-        """获取当前到期的检测类型（跳过由外部调度器管理的类型）"""
+        """获取当前到期的检测类型（跳过冷却中和由外部调度器管理的类型）"""
         with self._lock:
             schedules = self._schedules.get(camera_id, {})
-            return [dtype for dtype, s in schedules.items() if not s.externally_managed and s.is_due(now)]
+            due = []
+            for dtype, s in schedules.items():
+                if s.externally_managed:
+                    continue
+                if not s.is_due(now):
+                    continue
+                if self._is_in_cooldown_unlocked(camera_id, dtype, now):
+                    continue
+                due.append(dtype)
+            return due
+
+    def is_in_cooldown(self, camera_id: str, dtype: str, now: float) -> bool:
+        with self._lock:
+            return self._is_in_cooldown_unlocked(camera_id, dtype, now)
 
     # ------------------------------------------------------------------
     # 标准检测处理（fire / smoke / mask / cigarette）
@@ -463,10 +529,26 @@ class MultiDetector:
         self, camera_id: str, dtype: str, frame: np.ndarray,
         result: dict, schedule: TypeSchedule
     ) -> None:
+        # ROI 过滤
+        if schedule.roi:
+            h, w = frame.shape[:2]
+            result = filter_by_roi(result, schedule.roi, schedule.roi_invert, w, h)
+
+        # box_count 判断
+        if schedule.min_box_count is not None or schedule.max_box_count is not None:
+            result = check_box_count(result, schedule.min_box_count, schedule.max_box_count)
+
         detected = result.get("detected", False)
         max_conf = max(result.get("scores", [0]) or [0])
 
-        if not detected or max_conf < schedule.threshold:
+        # 对 max_box_count 模式（如离岗：0人报警），0 个框也算检测到，跳过 threshold
+        has_max_box_trigger = (
+            schedule.max_box_count is not None
+            and len(result.get("boxes", [])) <= schedule.max_box_count
+            and detected
+        )
+
+        if not detected or (max_conf < schedule.threshold and not has_max_box_trigger):
             if not detected and result.get("boxes"):
                 logger.warning(f"{camera_id} {dtype} has boxes but detected=False, resetting count")
             elif detected and max_conf < schedule.threshold:
@@ -497,9 +579,7 @@ class MultiDetector:
             return
 
         now = time.time()
-        if self.is_in_cooldown(camera_id, dtype, now):
-            logger.info(f"{camera_id} {dtype} blocked by cooldown")
-            return
+        # 冷却检查已前置到 _get_due_types
 
         # 达到阈值，触发告警流程
         logger.info(f"{camera_id} {dtype} TRIGGERING alarm (conf={max_conf:.2f})")
