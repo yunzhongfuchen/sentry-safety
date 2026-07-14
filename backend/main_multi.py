@@ -53,6 +53,7 @@ try:
     from understander import VideoUnderstander
     import performance_storage as storage
     import config as app_config
+    from backend.detection_registry import registry
     from video_stream import get_stream_server
     from safety_detection.api import router as safety_router
     from alarm_state import create_record, apply_vlm_review, confirm_alarm, confirm_false_positive
@@ -217,8 +218,11 @@ def on_trigger(camera_id: str, dtype: str, frame: Optional[np.ndarray], result: 
 
 def _convert_ultralytics_result(dtype: str, result) -> Optional[dict]:
     """将 ultralytics Results 转换为 SafetyDetector 风格的 dict"""
+    type_def = registry.get(dtype)
+    is_pose = type_def.get("post_process") == "yolo_pose" if type_def else False
+
     if result is None or result.boxes is None or len(result.boxes) == 0:
-        if dtype == "sleep":
+        if is_pose:
             return {"detected": False, "boxes": [], "scores": [], "subjects": [], "count": 0}
         return {"detected": False, "boxes": [], "scores": [], "max_confidence": 0.0}
 
@@ -228,7 +232,7 @@ def _convert_ultralytics_result(dtype: str, result) -> Optional[dict]:
         boxes.append(list(map(int, b.xyxy[0])))
         scores.append(float(b.conf[0]))
 
-    if dtype == "sleep":
+    if is_pose:
         subjects = []
         detected = False
         count = 0
@@ -403,7 +407,7 @@ def init_components():
     if use_gpu_scheduler and device == "gpu":
         try:
             from gpu_scheduler import ModelConfig, GPUDynamicScheduler
-            from inference_engine import _resolve_model_path, MASK_TARGET_CLASSES, CIGARETTE_TARGET_CLASSES, UNIFORM_TARGET_CLASSES
+            from inference_engine import _resolve_model_path
 
             def _gpu_on_result(cam_id: str, dtype: str, result):
                 if multi_detector is None:
@@ -424,22 +428,23 @@ def init_components():
                         logger.error(f"GPU scheduler result handling error [{cam_id}/{dtype}]: {e}")
 
             model_configs = {}
-            fire_path = _resolve_model_path("fire", use_npu=False)
-            if fire_path:
-                model_configs["fire"] = ModelConfig(fire_path, "fire", device="cuda", classes=[0])
-                model_configs["smoke"] = ModelConfig(fire_path, "smoke", device="cuda", classes=[1])
-            mask_path = _resolve_model_path("mask", use_npu=False)
-            if mask_path:
-                model_configs["mask"] = ModelConfig(mask_path, "mask", device="cuda", classes=MASK_TARGET_CLASSES)
-            cigarette_path = _resolve_model_path("cigarette", use_npu=False)
-            if cigarette_path:
-                model_configs["cigarette"] = ModelConfig(cigarette_path, "cigarette", device="cuda", classes=CIGARETTE_TARGET_CLASSES)
-            sleep_path = _resolve_model_path("sleep", use_npu=False)
-            if sleep_path:
-                model_configs["sleep"] = ModelConfig(sleep_path, "sleep", device="cuda", confidence=0.1)
-            uniform_path = _resolve_model_path("uniform", use_npu=False)
-            if uniform_path:
-                model_configs["uniform"] = ModelConfig(uniform_path, "uniform", device="cuda", classes=UNIFORM_TARGET_CLASSES)
+            seen_models = set()
+            for dtype in registry.all_types():
+                type_def = registry.get(dtype)
+                model_file = type_def["model_path"]
+                if model_file in seen_models:
+                    continue
+                model_path = _resolve_model_path(dtype, use_npu=False)
+                if not model_path:
+                    continue
+                seen_models.add(model_file)
+                classes = type_def.get("classes")
+                confidence = type_def.get("model_confidence", 0.5)
+                model_configs[dtype] = ModelConfig(
+                    model_path, dtype, device="cuda",
+                    confidence=confidence,
+                    classes=classes,
+                )
 
             num_queues = _global_settings.get("gpu_scheduler_num_queues", app_config.GPU_SCHEDULER_NUM_QUEUES) or None
             gpu_scheduler = GPUDynamicScheduler(
@@ -1128,7 +1133,7 @@ async def reset_camera_config(camera_id: str):
     restored["height"] = camera_globals.get("height", 480)
     restored["fps"] = camera_globals.get("fps", 15)
     restored["detection_types"] = {
-        k: dict(v) for k, v in camera_globals.get("detection_types", app_config.DEFAULT_TYPE_CONFIG).items()
+        k: dict(v) for k, v in camera_globals.get("detection_types", {dtype: registry.get_defaults(dtype) for dtype in registry.all_types()}).items()
     }
 
     # 更新内存中的摄像头配置
