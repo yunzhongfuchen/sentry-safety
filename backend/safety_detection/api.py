@@ -11,6 +11,32 @@ from backend.detection_registry import registry
 router = APIRouter(tags=["safety"])
 
 
+def _validate_default_value(key: str, value):
+    """校验 defaults 字段类型和范围，非法时返回错误信息，合法时返回 None"""
+    if key == "enabled":
+        if not isinstance(value, bool):
+            return f"{key} must be a boolean"
+    elif key == "interval":
+        if not isinstance(value, (int, float)) or value <= 0:
+            return f"{key} must be a positive number"
+    elif key == "threshold":
+        if not isinstance(value, (int, float)) or not (0 <= value <= 1):
+            return f"{key} must be a number between 0 and 1"
+    elif key == "consecutive_required":
+        if not isinstance(value, int) or value < 1:
+            return f"{key} must be an integer >= 1"
+    elif key == "cooldown":
+        if not isinstance(value, (int, float)) or value < 0:
+            return f"{key} must be a non-negative number"
+    elif key == "use_vlm":
+        if not isinstance(value, bool):
+            return f"{key} must be a boolean"
+    elif key in ("min_box_count", "max_box_count"):
+        if value is not None and (not isinstance(value, int) or value < 0):
+            return f"{key} must be a non-negative integer or null"
+    return None
+
+
 @router.get("/detector/types")
 async def list_detection_types():
     """获取所有检测类型定义"""
@@ -42,7 +68,14 @@ async def update_detection_type(dtype: str, data: dict):
 
     allowed_keys = {"enabled", "interval", "threshold", "consecutive_required",
                     "cooldown", "use_vlm", "min_box_count", "max_box_count"}
-    defaults_update = {k: v for k, v in data.items() if k in allowed_keys}
+    defaults_update = {}
+    for k, v in data.items():
+        if k not in allowed_keys:
+            continue
+        error = _validate_default_value(k, v)
+        if error:
+            return JSONResponse({"error": error}, status_code=400)
+        defaults_update[k] = v
 
     if not defaults_update:
         return JSONResponse({"error": "No valid fields to update"}, status_code=400)

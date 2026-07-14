@@ -421,23 +421,24 @@ def init_components():
                     schedule = multi_detector._schedules.get(cam_id, {}).get(dtype)
                     if schedule is None:
                         return
-                    schedule.last_run = time.time()
+                    now = time.time()
+                    if multi_detector.is_in_cooldown(cam_id, dtype, now):
+                        return
+                    schedule.last_run = now
                     try:
                         multi_detector._handle_standard_detection(cam_id, dtype, frame, res_dict, schedule)
                     except Exception as e:
                         logger.error(f"GPU scheduler result handling error [{cam_id}/{dtype}]: {e}")
 
             model_configs = {}
-            seen_models = set()
+            # 为每个检测类型单独创建 ModelConfig，即使它们共享同一个模型文件。
+            # 这样 GPUDynamicScheduler 才能为 fire/smoke 等共享模型的类型分别调度
+            # 并按各自的 classes 过滤结果；否则后加载的类型会被跳过，导致漏检。
             for dtype in registry.all_types():
                 type_def = registry.get(dtype)
-                model_file = type_def["model_path"]
-                if model_file in seen_models:
-                    continue
                 model_path = _resolve_model_path(dtype, use_npu=False)
                 if not model_path:
                     continue
-                seen_models.add(model_file)
                 classes = type_def.get("classes")
                 confidence = type_def.get("model_confidence", 0.5)
                 model_configs[dtype] = ModelConfig(

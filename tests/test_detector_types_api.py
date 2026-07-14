@@ -80,3 +80,24 @@ class TestUpdateDetectionType:
         with patch("backend.safety_detection.api.registry", mock_registry):
             resp = client.put("/detector/types/nope", json={"enabled": True})
             assert resp.status_code == 404
+
+    def test_invalid_values_return_400(self, client):
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = {"defaults": {"enabled": False, "threshold": 0.5}}
+
+        with patch("backend.safety_detection.api.registry", mock_registry):
+            invalid_cases = [
+                {"enabled": "yes"},
+                {"interval": 0},
+                {"threshold": -0.1},
+                {"threshold": 1.5},
+                {"consecutive_required": 0},
+                {"cooldown": -1},
+                {"use_vlm": "true"},
+                {"min_box_count": -1},
+                {"max_box_count": -1},
+            ]
+            for payload in invalid_cases:
+                resp = client.put("/detector/types/fire", json=payload)
+                assert resp.status_code == 400, f"expected 400 for {payload}, got {resp.status_code}"
+                mock_registry.update_defaults.reset_mock()

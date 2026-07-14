@@ -38,15 +38,21 @@ class ModelDetector:
         self.model = YOLO(cfg.model_path)
         self.device = cfg.device
         self.confidence = cfg.confidence
-        self.classes = cfg.classes if cfg.classes is not None else [0]
+        # None 表示不指定 classes，由模型输出全部类别（注册表中 classes 可为 null）
+        self.classes = cfg.classes
 
     def predict(self, frames: List[np.ndarray], half: bool = False):
-        """batch 推理，返回 ultralytics Results 列表"""
+        """batch 推理，返回 ultralytics Results 列表
+
+        显式指定 imgsz=640，避免同批次中不同摄像头帧尺寸不一致导致
+        YOLO head 拼接时抛出 tensor size mismatch（如 729 vs 256）。
+        """
         return self.model(
             frames,
             conf=self.confidence,
             classes=self.classes,
             device=self.device,
+            imgsz=640,
             verbose=False,
             half=half,
         )

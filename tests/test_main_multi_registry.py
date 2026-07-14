@@ -62,6 +62,8 @@ class TestGpuModelConfigsFromRegistry:
             }
 
         assert len(configs) == 3
+        assert "fire" in configs
+        assert "smoke" in configs
         assert configs["fire"]["classes"] == [0]
         assert configs["smoke"]["classes"] == [1]
         assert configs["fire"]["model_path"] == configs["smoke"]["model_path"]
