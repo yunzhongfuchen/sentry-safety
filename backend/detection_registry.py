@@ -5,6 +5,7 @@
 首次启动自动从 DEFAULT_DETECTION_TYPE_REGISTRY 生成配置文件。
 """
 
+import copy
 import json
 import logging
 from pathlib import Path
@@ -18,9 +19,28 @@ REGISTRY_FILE = CONFIG_DIR / "detection_types.json"
 
 def hex_to_bgr(hex_color: str) -> tuple[int, int, int]:
     """'#ef4444' → (68, 68, 239)"""
-    h = hex_color.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    if not isinstance(hex_color, str):
+        raise ValueError(f"hex_color must be a string, got {type(hex_color).__name__}")
+    if len(hex_color) != 7 or not hex_color.startswith("#"):
+        raise ValueError(f"hex_color must be a 7-character string starting with '#', got {hex_color!r}")
+    h = hex_color[1:]
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        raise ValueError(f"hex_color must contain valid hex digits, got {hex_color!r}")
     return (b, g, r)
+
+
+UNIVERSAL_DEFAULTS: dict[str, Any] = {
+    "enabled": False,
+    "interval": 1,
+    "threshold": 0.5,
+    "consecutive_required": 3,
+    "cooldown": 60,
+    "use_vlm": False,
+    "min_box_count": 1,
+    "max_box_count": None,
+}
 
 
 DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
@@ -172,19 +192,22 @@ class DetectionTypeRegistry:
         if REGISTRY_FILE.exists():
             with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
                 stored = json.load(f)
-            merged = json.loads(json.dumps(DEFAULT_DETECTION_TYPE_REGISTRY))
+            merged = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
             for dtype, type_def in stored.items():
                 if dtype in merged:
                     merged[dtype].update(type_def)
-                    for key, val in DEFAULT_DETECTION_TYPE_REGISTRY[dtype]["defaults"].items():
-                        merged[dtype]["defaults"].setdefault(key, val)
+                    base_defaults = DEFAULT_DETECTION_TYPE_REGISTRY[dtype]["defaults"]
                 else:
                     merged[dtype] = type_def
+                    base_defaults = UNIVERSAL_DEFAULTS
+                merged[dtype].setdefault("defaults", {})
+                for key, val in base_defaults.items():
+                    merged[dtype]["defaults"].setdefault(key, val)
             if merged != stored:
                 self._save(merged)
             self._types = merged
         else:
-            self._types = json.loads(json.dumps(DEFAULT_DETECTION_TYPE_REGISTRY))
+            self._types = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
             self._save(self._types)
 
         logger.info(f"Detection registry loaded: {list(self._types.keys())}")
@@ -206,14 +229,23 @@ class DetectionTypeRegistry:
         return [dt for dt, td in self._types.items() if td["model_path"] == model_path]
 
     def get_color_bgr(self, dtype: str) -> tuple[int, int, int]:
-        return hex_to_bgr(self.get(dtype)["color"])
+        td = self.get(dtype)
+        if td is None:
+            return (0, 255, 0)
+        return hex_to_bgr(td["color"])
 
-    def get_defaults(self, dtype: str) -> dict:
-        return dict(self.get(dtype)["defaults"])
+    def get_defaults(self, dtype: str) -> dict | None:
+        td = self.get(dtype)
+        if td is None:
+            return None
+        return dict(td["defaults"])
 
     def merge_camera_config(self, dtype: str, overrides: dict) -> dict:
         """合并摄像头级覆盖到注册表默认值"""
-        result = self.get_defaults(dtype)
+        defaults = self.get_defaults(dtype)
+        if defaults is None:
+            return dict(overrides)
+        result = dict(defaults)
         for key, val in overrides.items():
             if key in result or key in ("roi", "roi_invert"):
                 result[key] = val
@@ -251,6 +283,8 @@ class DetectionTypeRegistry:
     def update_defaults(self, dtype: str, new_defaults: dict) -> None:
         """更新类型的运行参数默认值并持久化"""
         td = self.get(dtype)
+        if td is None:
+            return
         allowed = set(DEFAULT_DETECTION_TYPE_REGISTRY.get(dtype, {}).get("defaults", {}).keys())
         if not allowed:
             allowed = set(td["defaults"].keys())

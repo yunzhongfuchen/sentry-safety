@@ -8,9 +8,10 @@ def test_hex_to_bgr_standard():
     assert hex_to_bgr("#ef4444") == (68, 68, 239)
 
 
-def test_hex_to_bgr_without_hash():
+def test_hex_to_bgr_without_hash_raises():
     from backend.detection_registry import hex_to_bgr
-    assert hex_to_bgr("ef4444") == (68, 68, 239)
+    with pytest.raises(ValueError):
+        hex_to_bgr("ef4444")
 
 
 def test_hex_to_bgr_white():
@@ -131,3 +132,55 @@ class TestDetectionTypeRegistry:
         r.update_defaults("fire", {"model_path": "hacked.pt", "threshold": 0.1})
         assert r.get("fire")["model_path"] != "hacked.pt"
         assert r.get_defaults("fire")["threshold"] == 0.1
+
+    def test_load_backfills_custom_type_defaults(self, tmp_path, monkeypatch):
+        custom = {"custom_type": {"label": "自定义", "color": "#123456", "model_path": "custom.pt",
+                                  "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
+                                  "vlm_prompt_key": "custom_review", "inspection_label": "自定义"}}
+        r = self._make_registry(tmp_path, monkeypatch, data=custom)
+        assert "custom_type" in r.all_types()
+        d = r.get_defaults("custom_type")
+        assert d["enabled"] is False
+        assert d["interval"] == 1
+        assert d["threshold"] == 0.5
+        assert d["consecutive_required"] == 3
+        assert d["cooldown"] == 60
+        assert d["use_vlm"] is False
+        assert d["min_box_count"] == 1
+        assert d["max_box_count"] is None
+
+    def test_get_color_bgr_unknown_returns_green(self, tmp_path, monkeypatch):
+        r = self._make_registry(tmp_path, monkeypatch)
+        assert r.get_color_bgr("unknown") == (0, 255, 0)
+
+    def test_get_defaults_unknown_returns_none(self, tmp_path, monkeypatch):
+        r = self._make_registry(tmp_path, monkeypatch)
+        assert r.get_defaults("unknown") is None
+
+    def test_merge_camera_config_unknown_returns_overrides(self, tmp_path, monkeypatch):
+        r = self._make_registry(tmp_path, monkeypatch)
+        overrides = {"enabled": True, "threshold": 0.8}
+        assert r.merge_camera_config("unknown", overrides) == overrides
+
+    def test_update_defaults_unknown_is_noop(self, tmp_path, monkeypatch):
+        r = self._make_registry(tmp_path, monkeypatch)
+        r.update_defaults("unknown", {"threshold": 0.1})
+        assert r.get("unknown") is None
+
+
+def test_hex_to_bgr_invalid_hex_raises():
+    from backend.detection_registry import hex_to_bgr
+    with pytest.raises(ValueError):
+        hex_to_bgr("#zz4444")
+
+
+def test_hex_to_bgr_invalid_type_raises():
+    from backend.detection_registry import hex_to_bgr
+    with pytest.raises(ValueError):
+        hex_to_bgr(None)
+
+
+def test_hex_to_bgr_wrong_length_raises():
+    from backend.detection_registry import hex_to_bgr
+    with pytest.raises(ValueError):
+        hex_to_bgr("#ef444")
