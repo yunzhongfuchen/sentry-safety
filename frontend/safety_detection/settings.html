@@ -326,11 +326,11 @@
         </main>
 
         <!-- Camera Modal -->
-        <div v-if="cameraDialog" class="gc-modal-overlay" @click.self="cameraDialog = null">
+        <div v-if="cameraDialog" class="gc-modal-overlay" @click.self="closeCameraDialog">
             <div class="gc-modal-box">
                 <div class="gc-modal-header">
                     <h3 style="font-size: 16px; font-weight: 700;">{{ cameraDialog._existing ? '编辑摄像头' : '添加摄像头' }}</h3>
-                    <button class="clay-button ghost" @click="cameraDialog = null">&times;</button>
+                    <button class="clay-button ghost" @click="closeCameraDialog">&times;</button>
                 </div>
                 <div class="gc-modal-body">
                     <div class="gc-form-grid">
@@ -415,7 +415,7 @@
                     </div>
                 </div>
                 <div class="gc-modal-footer">
-                    <button class="clay-button" @click="cameraDialog = null">取消</button>
+                    <button class="clay-button" @click="closeCameraDialog">取消</button>
                     <button class="clay-button" @click="resetCameraTypes">恢复默认</button>
                     <button class="clay-button primary" @click="saveCamera">保存</button>
                 </div>
@@ -630,6 +630,11 @@
                     } catch (e) { showToast('保存失败', 'error'); }
                 }
 
+                function closeCameraDialog() {
+                    cameraDialog.value = null;
+                    roiDialog.value = null;  // 联动关闭 ROI 弹窗
+                }
+
                 function openCameraDialog(cam = null) {
                     const baseTypes = settings.value.default_detection_types
                         ? JSON.parse(JSON.stringify(settings.value.default_detection_types))
@@ -663,6 +668,14 @@
                     cameraDialog.value.detection_types = settings.value.default_detection_types
                         ? JSON.parse(JSON.stringify(settings.value.default_detection_types))
                         : defaultDetectionTypes();
+                    // 转换人数条件为前端格式（与 openCameraDialog 保持一致）
+                    for (const key of Object.keys(cameraDialog.value.detection_types)) {
+                        const cfg = cameraDialog.value.detection_types[key];
+                        const fc = fieldsToBoxCountMode(cfg.min_box_count, cfg.max_box_count, cfg.box_count_mode);
+                        cfg.box_count_mode = fc.mode;
+                        cfg.box_count_a = fc.a;
+                        cfg.box_count_b = fc.b;
+                    }
                 }
 
                 async function saveCamera() {
@@ -676,6 +689,7 @@
                         cfg.min_box_count = fields.min_box_count;
                         cfg.max_box_count = fields.max_box_count;
                         cfg.box_count_mode = fields.box_count_mode;
+                        // 删除前端临时字段，避免发送到后端
                         delete cfg.box_count_a;
                         delete cfg.box_count_b;
                     }
@@ -693,7 +707,7 @@
                         });
                         if (res.ok) {
                             showToast('保存成功');
-                            cameraDialog.value = null;
+                            closeCameraDialog();
                             loadCameras();
                         } else showToast('保存失败', 'error');
                     } catch (e) { showToast('保存失败', 'error'); }
@@ -830,7 +844,7 @@
                     cameraDialog, expandedType, roiDialog, roiCanvas, batchDialog, batchTypes, toast, logs, systemMode, detectionTypes,
                     loadCameras, loadSettings, loadModels,
                     saveVlmSettings, saveDefaultTypes, saveSystemSettings,
-                    openCameraDialog, resetCameraTypes, saveCamera, deleteCamera,
+                    openCameraDialog, closeCameraDialog, resetCameraTypes, saveCamera, deleteCamera,
                     toggleTypeExpand, openRoiDialog, onSnapshotLoad, onRoiClick, onRoiDblClick, clearRoi, saveRoi,
                     openBatchDialog, saveBatchConfig, toggleSelectAll,
                     restartSystem, toggleSettingsNav

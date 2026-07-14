@@ -151,6 +151,7 @@ function defaultDetectionTypes() {
                 enabled: false, interval: 1, threshold: 0.5,
                 consecutive_required: 3, cooldown: 60, use_vlm: false,
                 min_box_count: 1, max_box_count: null,
+                box_count_mode: 'gte',
             };
         }
     }
