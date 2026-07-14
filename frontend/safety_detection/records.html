@@ -248,7 +248,7 @@
 
             <!-- Type distribution -->
             <div class="type-distribution">
-                <span v-for="t in DETECTION_TYPES" :key="t.key" class="type-badge" :class="t.key">
+                <span v-for="t in detectionTypes" :key="t.key" class="type-badge" :class="t.key">
                     {{ t.label }} {{ typeDistribution[t.key] || 0 }}
                 </span>
             </div>
@@ -276,7 +276,7 @@
                     <label>检测类型</label>
                     <select class="clay-select" v-model="filters.detection_type">
                         <option value="">全部</option>
-                        <option v-for="t in DETECTION_TYPES" :key="t.key" :value="t.key">{{ t.label }}</option>
+                        <option v-for="t in detectionTypes" :key="t.key" :value="t.key">{{ t.label }}</option>
                     </select>
                 </div>
                 <div class="filter-field">
@@ -331,7 +331,7 @@
                             <td style="white-space: nowrap;">{{ formatDateTime(r.time) }}</td>
                             <td>{{ r.camera_name }}</td>
                             <td>
-                                <span class="type-badge" :class="{ [r.detection_type]: DETECTION_TYPES.some(t => t.key === r.detection_type) }">
+                                <span class="type-badge" :class="{ [r.detection_type]: detectionTypes.some(t => t.key === r.detection_type) }">
                                     {{ getTypeLabel(r.detection_type) }}
                                 </span>
                             </td>
@@ -435,6 +435,7 @@
                 const currentFrame = ref(0);
                 const playing = ref(false);
                 const reverse = ref(false);
+                const detectionTypes = ref([]);
                 let playTimer = null;
 
                 const totalPages = computed(() => Math.ceil(pagination.value.total / pagination.value.page_size) || 1);
@@ -584,7 +585,9 @@
                     if (root) renderSidebar(root, value);
                 }, { deep: true });
 
-                onMounted(() => {
+                onMounted(async () => {
+                    await loadDetectionTypes();
+                    detectionTypes.value = DETECTION_TYPES;
                     const root = document.getElementById('sidebar-root');
                     if (root) renderSidebar(root, sidebar.value);
                     loadCameras().then(() => {
@@ -595,8 +598,7 @@
 
                 return {
                     sidebar, cameras, records, stats, typeDistribution, loading, filters, pagination,
-                    detail, snapshot, frames, currentFrame, playing, reverse, totalPages,
-                    DETECTION_TYPES,
+                    detail, snapshot, frames, currentFrame, playing, reverse, totalPages, detectionTypes,
                     getTypeLabel, getLevelLabel, getStatusLabel, formatDateTime,
                     toggleSettingsNav, loadRecords, prevPage, nextPage, showDetail, confirmAlert, ignoreAlert,
                     togglePlay, toggleReverse

@@ -459,7 +459,7 @@
                 const mainAlertType = computed(() => {
                     const cam = mainCameraObj.value;
                     if (!cam || !cam.detection) return null;
-                    for (const t of DETECTION_TYPES.map(x => x.key)) {
+                    for (const t of detectionTypes.value.map(x => x.key)) {
                         if (cam.detection[t]?.alert) return t;
                     }
                     return null;
@@ -601,7 +601,9 @@
 
                 window.toggleSettingsNav = toggleSettingsNav;
 
-                onMounted(() => {
+                onMounted(async () => {
+                    await loadDetectionTypes();
+                    detectionTypes.value = DETECTION_TYPES;
                     const root = document.getElementById('sidebar-root');
                     if (root) renderSidebar(root, sidebar.value);
                     fetchCameras();

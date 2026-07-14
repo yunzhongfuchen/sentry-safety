@@ -214,7 +214,7 @@
 
                         <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin: 28px 0 16px;">检测类型默认值</div>
                         <div class="type-cards-grid">
-                            <div v-for="t in DETECTION_TYPES" :key="t.key" class="glass-card type-card" :style="{ borderTopColor: t.color }">
+                            <div v-for="t in detectionTypes" :key="t.key" class="glass-card type-card" :style="{ borderTopColor: t.color }">
                                 <div class="type-card-header" :style="{ color: t.color }">{{ t.label }}</div>
                                 <div class="type-card-checkboxes">
                                     <label class="type-card-checkbox"><input type="checkbox" v-model="settings.default_detection_types[t.key].enabled" /> 启用</label>
@@ -356,7 +356,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="t in DETECTION_TYPES" :key="t.key">
+                                <tr v-for="t in detectionTypes" :key="t.key">
                                     <td :style="{ color: t.color, fontWeight: 600 }">{{ t.label }}</td>
                                     <td><input type="checkbox" v-model="cameraDialog.detection_types[t.key].enabled" /></td>
                                     <td><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].interval" style="width: 70px; padding: 6px 8px;" /></td>
@@ -391,7 +391,7 @@
                                 <tr><th>类型</th><th>启用</th><th>间隔</th><th>阈值</th><th>连续</th><th>冷却</th><th>VLM</th></tr>
                             </thead>
                             <tbody>
-                                <tr v-for="t in DETECTION_TYPES" :key="t.key">
+                                <tr v-for="t in detectionTypes" :key="t.key">
                                     <td :style="{ color: t.color, fontWeight: 600 }">{{ t.label }}</td>
                                     <td><input type="checkbox" v-model="batchTypes[t.key].enabled" /></td>
                                     <td><input type="number" class="clay-input" v-model.number="batchTypes[t.key].interval" style="width: 70px;" /></td>
@@ -433,6 +433,7 @@
                 const toast = ref(null);
                 const logs = ref([]);
                 const systemMode = ref('');
+                const detectionTypes = ref([]);
                 let logTimer = null;
 
                 function toggleSettingsNav() {
@@ -674,7 +675,9 @@
                     if (root) renderSidebar(root, value);
                 }, { deep: true });
 
-                onMounted(() => {
+                onMounted(async () => {
+                    await loadDetectionTypes();
+                    detectionTypes.value = DETECTION_TYPES;
                     const root = document.getElementById('sidebar-root');
                     if (root) renderSidebar(root, sidebar.value);
                     loadCameras();
@@ -691,8 +694,7 @@
 
                 return {
                     tab, sidebar, cameras, settings, models, detectorInfo, selectedCameras,
-                    cameraDialog, batchDialog, batchTypes, toast, logs, systemMode,
-                    DETECTION_TYPES,
+                    cameraDialog, batchDialog, batchTypes, toast, logs, systemMode, detectionTypes,
                     loadCameras, loadSettings, loadModels,
                     saveVlmSettings, saveDefaultTypes, saveSystemSettings,
                     openCameraDialog, resetCameraTypes, saveCamera, deleteCamera,

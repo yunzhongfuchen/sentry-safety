@@ -61,8 +61,8 @@ function createManagedInterval(fn, ms) {
     return { pause, resume };
 }
 
-// Type labels and colors shared across pages
-const DETECTION_TYPES = [
+// Type labels and colors shared across pages (loaded dynamically from API)
+const _BUILTIN_DETECTION_TYPES = [
     { key: 'fire', label: '明火', color: '#ef4444' },
     { key: 'smoke', label: '烟雾', color: '#f97316' },
     { key: 'uniform', label: '工服', color: '#22c55e' },
@@ -70,6 +70,28 @@ const DETECTION_TYPES = [
     { key: 'cigarette', label: '吸烟', color: '#a855f7' },
     { key: 'sleep', label: '睡岗', color: '#eab308' },
 ];
+
+let DETECTION_TYPES = [..._BUILTIN_DETECTION_TYPES];
+
+async function loadDetectionTypes() {
+    try {
+        const resp = await fetch('/detector/types');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        if (data.types && data.types.length > 0) {
+            DETECTION_TYPES = data.types.map(t => ({
+                key: t.key,
+                label: t.label,
+                color: t.color,
+                icon: t.icon || '',
+                defaults: t.defaults || {},
+            }));
+        }
+    } catch (e) {
+        console.warn('Failed to load detection types from API, using builtin defaults:', e.message);
+    }
+    return DETECTION_TYPES;
+}
 
 function getTypeLabel(type) {
     return DETECTION_TYPES.find(t => t.key === type)?.label || type || '未知';
@@ -120,14 +142,19 @@ function getStatusLabel(status) {
 
 // Default detection type configuration structure
 function defaultDetectionTypes() {
-    return {
-        fire: { enabled: false, interval: 1, threshold: 0.6, consecutive_required: 3, cooldown: 60, use_vlm: false },
-        smoke: { enabled: false, interval: 1, threshold: 0.55, consecutive_required: 3, cooldown: 60, use_vlm: false },
-        uniform: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 3, compliance_window_seconds: 30, cooldown: 60, use_vlm: false },
-        mask: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 3, cooldown: 60, use_vlm: false },
-        cigarette: { enabled: false, interval: 1, threshold: 0.5, consecutive_required: 3, cooldown: 60, use_vlm: false },
-        sleep: { enabled: false, interval: 60, threshold: 0.7, consecutive_required: 3, cooldown: 60, use_vlm: false },
-    };
+    const result = {};
+    for (const t of DETECTION_TYPES) {
+        if (t.defaults) {
+            result[t.key] = { ...t.defaults };
+        } else {
+            result[t.key] = {
+                enabled: false, interval: 1, threshold: 0.5,
+                consecutive_required: 3, cooldown: 60, use_vlm: false,
+                min_box_count: 1, max_box_count: null,
+            };
+        }
+    }
+    return result;
 }
 
 
