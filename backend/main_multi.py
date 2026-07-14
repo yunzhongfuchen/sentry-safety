@@ -27,7 +27,7 @@ for _path in (_project_root, _backend_dir):
 import cv2
 import numpy as np
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -661,6 +661,19 @@ async def camera_stream(camera_id: str, raw: bool = False):
         generate_camera_frames(camera_id, raw=raw),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+
+@app.get("/cameras/{camera_id}/snapshot")
+async def camera_snapshot(camera_id: str):
+    """获取摄像头当前帧快照（用于 ROI 绘制）"""
+    if camera_manager is None or camera_id not in camera_manager._cameras:
+        return JSONResponse({"error": "Camera not found"}, status_code=404)
+    frame = camera_manager.get_latest_frame(camera_id)
+    if frame is None:
+        return JSONResponse({"error": "No frame available"}, status_code=404)
+    quality = _global_settings.get("snapshot_quality", 70)
+    jpg_bytes = encode_frame_to_bytes(frame, quality=quality)
+    return Response(content=jpg_bytes, media_type="image/jpeg")
 
 
 @app.get("/status")
