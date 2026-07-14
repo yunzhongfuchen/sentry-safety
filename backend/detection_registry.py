@@ -284,7 +284,13 @@ class DetectionTypeRegistry:
                 "label": td.get("label", key),
                 "color": td.get("color", "#888888"),
                 "icon": td.get("icon", ""),
+                "model_path": td.get("model_path"),
+                "npu_model_path": td.get("npu_model_path"),
                 "post_process": td.get("post_process", "yolo_box"),
+                "classes": td.get("classes"),
+                "model_confidence": td.get("model_confidence", 0.5),
+                "vlm_prompt_key": td.get("vlm_prompt_key", ""),
+                "inspection_label": td.get("inspection_label", td.get("label", key)),
                 "defaults": dict(td.get("defaults", {})),
             })
         return result

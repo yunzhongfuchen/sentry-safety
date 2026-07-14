@@ -106,8 +106,13 @@ class TestDetectionTypeRegistry:
         assert fire_entry["label"] == "明火"
         assert fire_entry["color"] == "#ef4444"
         assert "defaults" in fire_entry
-        # structural fields not exposed
-        assert "model_path" not in fire_entry
+        # structural fields exposed so edit dialog can round-trip them
+        assert fire_entry["model_path"] == "fire_smoke.pt"
+        assert fire_entry["npu_model_path"] == "fire_smoke.rknn"
+        assert fire_entry["classes"] == [0]
+        assert fire_entry["model_confidence"] == 0.5
+        assert fire_entry["vlm_prompt_key"] == "fire_review"
+        assert fire_entry["inspection_label"] == "明火"
 
     def test_validate_warns_missing_model(self, tmp_path, monkeypatch):
         import backend.detection_registry as mod

@@ -33,6 +33,30 @@ class TestListDetectionTypes:
             assert len(data["types"]) == 1
             assert data["types"][0]["key"] == "fire"
 
+    def test_list_includes_structural_fields(self, client):
+        """Verify to_api_list returns all structural fields needed by the edit dialog."""
+        from backend.detection_registry import DetectionTypeRegistry
+        reg = DetectionTypeRegistry()
+        reg._types = {
+            "fire": {
+                "label": "明火", "color": "#ef4444", "icon": "flame",
+                "model_path": "fire_smoke.pt", "npu_model_path": "fire_smoke.rknn",
+                "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
+                "vlm_prompt_key": "fire_review", "inspection_label": "明火",
+                "defaults": {"enabled": False},
+            }
+        }
+        result = reg.to_api_list()
+        assert len(result) == 1
+        t = result[0]
+        assert t["key"] == "fire"
+        assert t["model_path"] == "fire_smoke.pt"
+        assert t["npu_model_path"] == "fire_smoke.rknn"
+        assert t["classes"] == [0]
+        assert t["model_confidence"] == 0.5
+        assert t["vlm_prompt_key"] == "fire_review"
+        assert t["inspection_label"] == "明火"
+
 
 class TestGetDetectionType:
     def test_existing_type(self, client):
@@ -46,6 +70,29 @@ class TestGetDetectionType:
             resp = client.get("/detector/types/fire")
             assert resp.status_code == 200
             assert resp.json()["key"] == "fire"
+
+    def test_get_includes_structural_fields(self, client):
+        """GET /detector/types/{dtype} must return all structural fields so edit-save does not wipe them."""
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = {
+            "label": "明火", "color": "#ef4444", "icon": "flame",
+            "model_path": "fire_smoke.pt", "npu_model_path": "fire_smoke.rknn",
+            "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
+            "vlm_prompt_key": "fire_review", "inspection_label": "明火",
+            "defaults": {"enabled": False},
+        }
+
+        with patch("backend.safety_detection.api.registry", mock_registry):
+            resp = client.get("/detector/types/fire")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["key"] == "fire"
+            assert data["model_path"] == "fire_smoke.pt"
+            assert data["npu_model_path"] == "fire_smoke.rknn"
+            assert data["classes"] == [0]
+            assert data["model_confidence"] == 0.5
+            assert data["vlm_prompt_key"] == "fire_review"
+            assert data["inspection_label"] == "明火"
 
     def test_unknown_type_404(self, client):
         mock_registry = MagicMock()

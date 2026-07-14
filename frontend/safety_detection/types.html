@@ -52,6 +52,24 @@
             max-height: 80vh;
             overflow-y: auto;
         }
+        .toast {
+            position: fixed;
+            top: 80px;
+            right: 24px;
+            padding: 12px 22px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 2000;
+            animation: toastin 0.3s ease;
+            box-shadow: var(--glass-shadow);
+        }
+        .toast.success { background: var(--success); color: white; }
+        .toast.error { background: var(--danger); color: white; }
+        @keyframes toastin {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -121,7 +139,7 @@
                 <h3 style="margin-bottom: 16px;">上传模型 — {{ uploadDialog.label }}</h3>
                 <div class="gc-form-field">
                     <label>选择文件 (.pt / .rknn)</label>
-                    <input type="file" accept=".pt,.rknn" @change="onFileChange" />
+                    <input type="file" accept=".pt,.rknn" :key="uploadDialog.key" ref="fileInput" @change="onFileChange" />
                 </div>
                 <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
                     <button class="clay-button" @click="uploadDialog = null">取消</button>
@@ -142,6 +160,7 @@
                 const uploadDialog = ref(null);
                 const toast = ref(null);
                 const sidebar = ref(getSidebarContext());
+                const fileInput = ref(null);
                 let uploadFile = null;
 
                 function showToast(msg, type = 'success') {
@@ -208,7 +227,10 @@
                     } catch (e) { showToast('删除失败', 'error'); }
                 }
 
-                function uploadModel(t) { uploadDialog.value = t; uploadFile = null; }
+                function uploadModel(t) {
+                    uploadDialog.value = t;
+                    uploadFile = null;
+                }
                 function onFileChange(e) { uploadFile = e.target.files[0]; }
 
                 async function doUpload() {
@@ -236,7 +258,7 @@
                     loadTypes();
                 });
 
-                return { types, dialog, uploadDialog, toast, sidebar, openDialog, saveType, deleteType, uploadModel, onFileChange, doUpload };
+                return { types, dialog, uploadDialog, toast, sidebar, fileInput, openDialog, saveType, deleteType, uploadModel, onFileChange, doUpload };
             }
         }).mount('#app');
     </script>

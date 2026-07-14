@@ -67,7 +67,13 @@ async def get_detection_type(dtype: str):
         "label": type_def.get("label", dtype),
         "color": type_def.get("color", "#888888"),
         "icon": type_def.get("icon", ""),
+        "model_path": type_def.get("model_path"),
+        "npu_model_path": type_def.get("npu_model_path"),
         "post_process": type_def.get("post_process", "yolo_box"),
+        "classes": type_def.get("classes"),
+        "model_confidence": type_def.get("model_confidence", 0.5),
+        "vlm_prompt_key": type_def.get("vlm_prompt_key", ""),
+        "inspection_label": type_def.get("inspection_label", type_def.get("label", dtype)),
         "defaults": type_def.get("defaults", {}),
     }
 
@@ -115,7 +121,13 @@ async def create_detection_type(data: dict):
             "label": type_def.get("label", key),
             "color": type_def.get("color", "#888888"),
             "icon": type_def.get("icon", ""),
+            "model_path": type_def.get("model_path"),
+            "npu_model_path": type_def.get("npu_model_path"),
             "post_process": type_def.get("post_process", "yolo_box"),
+            "classes": type_def.get("classes"),
+            "model_confidence": type_def.get("model_confidence", 0.5),
+            "vlm_prompt_key": type_def.get("vlm_prompt_key", ""),
+            "inspection_label": type_def.get("inspection_label", type_def.get("label", key)),
             "defaults": type_def.get("defaults", {}),
         }
     except ValueError as e:
