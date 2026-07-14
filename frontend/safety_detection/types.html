@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频诊断系统 类型管理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles/glass-clay.css">
+    <script src="/static/vue3.global.prod.js"></script>
+    <script src="/static/shared.js"></script>
+    <style>
+        .type-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            padding: 18px;
+        }
+        .type-card {
+            padding: 16px;
+            border-top: 4px solid;
+        }
+        .type-card-header {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .type-card-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .type-card-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-box {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 24px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="app-shell">
+        <div id="sidebar-root"></div>
+        <main class="app-main">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 18px;">
+                <h1 style="font-size: 20px; font-weight: 700;">检测类型管理</h1>
+                <button class="clay-button primary" @click="openDialog()">新增类型</button>
+            </div>
+            <div class="type-cards-grid">
+                <div v-for="t in types" :key="t.key" class="glass-card type-card" :style="{ borderTopColor: t.color }">
+                    <div class="type-card-header" :style="{ color: t.color }">{{ t.label }}</div>
+                    <div class="type-card-meta">模型: {{ t.model_path || '未设置' }}</div>
+                    <div class="type-card-meta">策略: {{ t.post_process }}</div>
+                    <div class="type-card-actions">
+                        <button class="clay-button" @click="openDialog(t)">编辑</button>
+                        <button class="clay-button" @click="deleteType(t)">删除</button>
+                        <button class="clay-button" @click="uploadModel(t)">上传模型</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 新增/编辑弹窗 -->
+        <div v-if="dialog" class="modal-overlay" @click.self="dialog = null">
+            <div class="modal-box">
+                <h3 style="margin-bottom: 16px;">{{ dialog._existing ? '编辑类型' : '新增类型' }}</h3>
+                <div class="gc-form-field">
+                    <label>显示名称 *</label>
+                    <input class="clay-input" v-model="dialog.label" placeholder="如：明火" />
+                </div>
+                <div class="gc-form-field">
+                    <label>颜色 *</label>
+                    <input type="color" class="clay-input" v-model="dialog.color" />
+                </div>
+                <div class="gc-form-field">
+                    <label>CPU 模型路径</label>
+                    <input class="clay-input" v-model="dialog.model_path" placeholder="如：fire_smoke.pt" />
+                </div>
+                <div class="gc-form-field">
+                    <label>后处理策略 *</label>
+                    <select class="clay-select" v-model="dialog.post_process">
+                        <option value="yolo_box">yolo_box</option>
+                        <option value="yolo_pose">yolo_pose</option>
+                    </select>
+                </div>
+                <details style="margin: 16px 0;">
+                    <summary style="cursor: pointer; color: var(--text-muted);">高级设置</summary>
+                    <div class="gc-form-field"><label>NPU 模型路径</label><input class="clay-input" v-model="dialog.npu_model_path" /></div>
+                    <div class="gc-form-field"><label>类别过滤</label><input class="clay-input" v-model="dialog.classesStr" placeholder="如：0,1" /></div>
+                    <div class="gc-form-field"><label>模型置信度</label><input type="number" step="0.1" class="clay-input" v-model.number="dialog.model_confidence" /></div>
+                    <div class="gc-form-field"><label>图标</label><input class="clay-input" v-model="dialog.icon" /></div>
+                    <div class="gc-form-field"><label>VLM 提示词键</label><input class="clay-input" v-model="dialog.vlm_prompt_key" /></div>
+                    <div class="gc-form-field"><label>巡检显示名</label><input class="clay-input" v-model="dialog.inspection_label" /></div>
+                </details>
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                    <button class="clay-button" @click="dialog = null">取消</button>
+                    <button class="clay-button primary" @click="saveType">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 上传模型弹窗 -->
+        <div v-if="uploadDialog" class="modal-overlay" @click.self="uploadDialog = null">
+            <div class="modal-box">
+                <h3 style="margin-bottom: 16px;">上传模型 — {{ uploadDialog.label }}</h3>
+                <div class="gc-form-field">
+                    <label>选择文件 (.pt / .rknn)</label>
+                    <input type="file" accept=".pt,.rknn" @change="onFileChange" />
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                    <button class="clay-button" @click="uploadDialog = null">取消</button>
+                    <button class="clay-button primary" @click="doUpload">上传</button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="toast" :class="['toast', toast.type]">{{ toast.message }}</div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+        createApp({
+            setup() {
+                const types = ref([]);
+                const dialog = ref(null);
+                const uploadDialog = ref(null);
+                const toast = ref(null);
+                const sidebar = ref(getSidebarContext());
+                let uploadFile = null;
+
+                function showToast(msg, type = 'success') {
+                    toast.value = { message: msg, type };
+                    setTimeout(() => toast.value = null, 2500);
+                }
+
+                async function loadTypes() {
+                    try {
+                        const data = await safeFetch('/detector/types');
+                        types.value = data.types || [];
+                    } catch (e) { showToast('加载类型失败', 'error'); }
+                }
+
+                function openDialog(t = null) {
+                    if (t) {
+                        dialog.value = { ...JSON.parse(JSON.stringify(t)), _existing: true, classesStr: (t.classes || []).join(',') };
+                    } else {
+                        dialog.value = {
+                            label: '', color: '#888888', model_path: '', npu_model_path: '',
+                            post_process: 'yolo_box', classesStr: '', model_confidence: 0.5,
+                            icon: '', vlm_prompt_key: '', inspection_label: '', _existing: false
+                        };
+                    }
+                }
+
+                async function saveType() {
+                    const d = dialog.value;
+                    if (!d.label || !d.color || !d.post_process) { showToast('请填写必填项', 'error'); return; }
+                    const payload = {
+                        label: d.label, color: d.color, model_path: d.model_path || null,
+                        npu_model_path: d.npu_model_path || null, post_process: d.post_process,
+                        classes: d.classesStr ? d.classesStr.split(',').map(Number) : null,
+                        model_confidence: d.model_confidence, icon: d.icon || '',
+                        vlm_prompt_key: d.vlm_prompt_key || '', inspection_label: d.inspection_label || d.label
+                    };
+                    try {
+                        const url = d._existing ? `/detector/types/${d.key}` : '/detector/types';
+                        const method = d._existing ? 'PUT' : 'POST';
+                        const res = await fetch(url, {
+                            method, headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            showToast('保存成功');
+                            dialog.value = null;
+                            loadTypes();
+                        } else {
+                            const err = await res.json();
+                            showToast(err.error || '保存失败', 'error');
+                        }
+                    } catch (e) { showToast('保存失败', 'error'); }
+                }
+
+                async function deleteType(t) {
+                    if (!confirm(`确定删除类型 "${t.label}"？`)) return;
+                    try {
+                        const res = await fetch(`/detector/types/${t.key}`, { method: 'DELETE' });
+                        if (res.ok) { showToast('删除成功'); loadTypes(); }
+                        else {
+                            const err = await res.json();
+                            showToast(err.error || '删除失败', 'error');
+                        }
+                    } catch (e) { showToast('删除失败', 'error'); }
+                }
+
+                function uploadModel(t) { uploadDialog.value = t; uploadFile = null; }
+                function onFileChange(e) { uploadFile = e.target.files[0]; }
+
+                async function doUpload() {
+                    if (!uploadFile) { showToast('请选择文件', 'error'); return; }
+                    const formData = new FormData();
+                    formData.append('file', uploadFile);
+                    try {
+                        const res = await fetch(`/detector/types/${uploadDialog.value.key}/model`, {
+                            method: 'POST', body: formData
+                        });
+                        if (res.ok) {
+                            showToast('上传成功');
+                            uploadDialog.value = null;
+                            loadTypes();
+                        } else {
+                            const err = await res.json();
+                            showToast(err.error || '上传失败', 'error');
+                        }
+                    } catch (e) { showToast('上传失败', 'error'); }
+                }
+
+                onMounted(() => {
+                    const root = document.getElementById('sidebar-root');
+                    if (root) renderSidebar(root, sidebar.value);
+                    loadTypes();
+                });
+
+                return { types, dialog, uploadDialog, toast, sidebar, openDialog, saveType, deleteType, uploadModel, onFileChange, doUpload };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

@@ -181,6 +181,9 @@ function getSidebarContext() {
     if (path.includes('settings')) {
         return { page: 'settings', tab: getSettingsTabFromQuery(), settingsExpanded: true };
     }
+    if (path.includes('types')) {
+        return { page: 'types', tab: 'cameras', settingsExpanded: true };
+    }
     if (path.includes('records')) {
         return { page: 'records', tab: 'cameras', settingsExpanded: true };
     }
@@ -220,6 +223,7 @@ function renderSidebar(container, context) {
                     <div class="nav-children ${expandedClass}">
                         <a href="/settings.html?tab=cameras" class="nav-item child ${context.page === 'settings' && context.tab === 'cameras' ? 'active' : ''}">摄像头</a>
                         <a href="/settings.html?tab=detection" class="nav-item child ${context.page === 'settings' && context.tab === 'detection' ? 'active' : ''}">检测配置</a>
+                        <a href="/types.html" class="nav-item child ${context.page === 'types' ? 'active' : ''}">类型管理</a>
                         <a href="/settings.html?tab=system" class="nav-item child ${context.page === 'settings' && context.tab === 'system' ? 'active' : ''}">系统设置</a>
                     </div>
                 </div>

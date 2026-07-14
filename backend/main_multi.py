@@ -1330,6 +1330,15 @@ async def settings_page():
     return {"error": "Settings page not found"}
 
 
+@app.get("/types.html")
+async def types_page():
+    """类型管理页面"""
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "types.html"
+    if fp.exists():
+        return HTMLResponse(fp.read_text(encoding="utf-8"))
+    return {"error": "Types page not found"}
+
+
 @app.get("/system/mode")
 async def get_system_mode():
     """获取当前运行模式和检测设备"""
