@@ -217,3 +217,61 @@ def test_hex_to_bgr_wrong_length_raises():
     from backend.detection_registry import hex_to_bgr
     with pytest.raises(ValueError):
         hex_to_bgr("#ef444")
+
+
+def test_add_type_generates_key_and_saves(tmp_path, monkeypatch):
+    import backend.detection_registry as mod
+    monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+    r = mod.DetectionTypeRegistry()
+    r.load()
+    key = r.add_type({"label": "测试类型", "color": "#ff0000", "model_path": "test.pt", "post_process": "yolo_box"})
+    assert key is not None
+    assert r.get(key)["label"] == "测试类型"
+
+
+def test_add_type_duplicate_label_raises(tmp_path, monkeypatch):
+    import backend.detection_registry as mod
+    monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+    r = mod.DetectionTypeRegistry()
+    r.load()
+    with pytest.raises(ValueError, match="already exists"):
+        r.add_type({"label": "明火", "color": "#ff0000", "model_path": "x.pt", "post_process": "yolo_box"})
+
+
+def test_delete_type_removes_and_saves(tmp_path, monkeypatch):
+    import backend.detection_registry as mod
+    monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+    r = mod.DetectionTypeRegistry()
+    r.load()
+    key = r.add_type({"label": "临时类型", "color": "#00ff00", "model_path": "tmp.pt", "post_process": "yolo_box"})
+    assert r.get(key) is not None
+    r.delete_type(key)
+    assert r.get(key) is None
+
+
+def test_update_type_structural_fields(tmp_path, monkeypatch):
+    import backend.detection_registry as mod
+    monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+    r = mod.DetectionTypeRegistry()
+    r.load()
+    key = r.add_type({"label": "旧名称", "color": "#111111", "model_path": "old.pt", "post_process": "yolo_box"})
+    r.update_type(key, {"label": "新名称", "color": "#222222", "model_path": "new.pt"})
+    td = r.get(key)
+    assert td["label"] == "新名称"
+    assert td["color"] == "#222222"
+    assert td["model_path"] == "new.pt"
+
+
+def test_save_model_writes_file(tmp_path, monkeypatch):
+    import backend.detection_registry as mod
+    monkeypatch.setattr(mod, "PROJECT_ROOT", tmp_path)
+    r = mod.DetectionTypeRegistry()
+    content = b"fake model content"
+    path = r.save_model("test_model.pt", content)
+    assert path.exists()
+    assert path.read_bytes() == content
+    assert path.parent.name == "weights"

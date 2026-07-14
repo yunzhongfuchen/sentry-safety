@@ -8,6 +8,7 @@
 import copy
 import json
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -300,6 +301,70 @@ class DetectionTypeRegistry:
             if key in allowed:
                 td["defaults"][key] = val
         self._save(self._types)
+
+    def add_type(self, type_def: dict) -> str:
+        """新增检测类型，自动生成唯一 key，返回 key"""
+        label = type_def.get("label", "").strip()
+        if not label:
+            raise ValueError("label is required")
+        for existing in self._types.values():
+            if existing.get("label") == label:
+                raise ValueError(f"label '{label}' already exists")
+        base = label.lower().replace(" ", "_")
+        key = f"{base}_{uuid.uuid4().hex[:6]}"
+        while key in self._types:
+            key = f"{base}_{uuid.uuid4().hex[:6]}"
+        merged = copy.deepcopy(UNIVERSAL_DEFAULTS)
+        merged.update(type_def.get("defaults", {}))
+        self._types[key] = {
+            "label": label,
+            "color": type_def.get("color", "#888888"),
+            "icon": type_def.get("icon", ""),
+            "model_path": type_def.get("model_path"),
+            "npu_model_path": type_def.get("npu_model_path"),
+            "post_process": type_def.get("post_process", "yolo_box"),
+            "classes": type_def.get("classes"),
+            "model_confidence": type_def.get("model_confidence", 0.5),
+            "vlm_prompt_key": type_def.get("vlm_prompt_key", ""),
+            "inspection_label": type_def.get("inspection_label", label),
+            "defaults": merged,
+        }
+        self._save(self._types)
+        return key
+
+    def update_type(self, dtype: str, updates: dict) -> None:
+        """更新检测类型的结构性字段（不更新 defaults）"""
+        td = self.get(dtype)
+        if td is None:
+            raise KeyError(f"Unknown detection type: {dtype}")
+        if "label" in updates:
+            new_label = updates["label"].strip()
+            if not new_label:
+                raise ValueError("label is required")
+            for k, existing in self._types.items():
+                if k != dtype and existing.get("label") == new_label:
+                    raise ValueError(f"label '{new_label}' already exists")
+            td["label"] = new_label
+        for field in ("color", "icon", "model_path", "npu_model_path", "post_process",
+                      "classes", "model_confidence", "vlm_prompt_key", "inspection_label"):
+            if field in updates:
+                td[field] = updates[field]
+        self._save(self._types)
+
+    def delete_type(self, dtype: str) -> None:
+        """删除检测类型"""
+        if dtype not in self._types:
+            raise KeyError(f"Unknown detection type: {dtype}")
+        del self._types[dtype]
+        self._save(self._types)
+
+    def save_model(self, filename: str, content: bytes) -> Path:
+        """保存模型文件到 weights/ 目录"""
+        weights_dir = PROJECT_ROOT / "weights"
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        path = weights_dir / filename
+        path.write_bytes(content)
+        return path
 
 
 registry = DetectionTypeRegistry()
