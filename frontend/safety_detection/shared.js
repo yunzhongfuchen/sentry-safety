@@ -227,3 +227,69 @@ function renderSidebar(container, context) {
         </aside>
     `;
 }
+
+/**
+ * 将人数条件模式转换为后端字段
+ * @param {string} mode - 'gte' | 'lte' | 'between' | 'outside'
+ * @param {number} a - 下界
+ * @param {number} b - 上界（可选）
+ * @returns {{min_box_count: number|null, max_box_count: number|null, box_count_mode: string}}
+ */
+function boxCountModeToFields(mode, a, b) {
+    switch (mode) {
+        case 'gte': return { min_box_count: a, max_box_count: null, box_count_mode: 'gte' };
+        case 'lte': return { min_box_count: null, max_box_count: a, box_count_mode: 'lte' };
+        case 'between': return { min_box_count: a, max_box_count: b, box_count_mode: 'between' };
+        case 'outside': return { min_box_count: a, max_box_count: b, box_count_mode: 'outside' };
+        default: return { min_box_count: null, max_box_count: null, box_count_mode: null };
+    }
+}
+
+/**
+ * 将后端字段转换为人数条件模式
+ * @param {number|null} min - min_box_count
+ * @param {number|null} max - max_box_count
+ * @param {string|null} mode - box_count_mode
+ * @returns {{mode: string, a: number|null, b: number|null}}
+ */
+function fieldsToBoxCountMode(min, max, mode) {
+    if (mode === 'outside') return { mode: 'outside', a: min, b: max };
+    if (min !== null && max !== null) return { mode: 'between', a: min, b: max };
+    if (min !== null) return { mode: 'gte', a: min, b: null };
+    if (max !== null) return { mode: 'lte', a: max, b: null };
+    return { mode: 'gte', a: null, b: null };
+}
+
+/**
+ * 在 canvas 上绘制 ROI 多边形
+ * @param {HTMLCanvasElement} canvas
+ * @param {Array<[number, number]>} points - 归一化坐标点 [[x1,y1], [x2,y2], ...]
+ * @param {boolean} closed - 是否闭合
+ */
+function drawRoiOnCanvas(canvas, points, closed = false) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    if (points.length === 0) return;
+    ctx.strokeStyle = '#22c55e';
+    ctx.fillStyle = 'rgba(34, 197, 94, 0.2)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(points[0][0] * w, points[0][1] * h);
+    for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i][0] * w, points[i][1] * h);
+    }
+    if (closed && points.length >= 3) {
+        ctx.closePath();
+        ctx.fill();
+    }
+    ctx.stroke();
+    // 绘制顶点
+    ctx.fillStyle = '#22c55e';
+    for (const [x, y] of points) {
+        ctx.beginPath();
+        ctx.arc(x * w, y * h, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
