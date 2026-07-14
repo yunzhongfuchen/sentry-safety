@@ -1,7 +1,7 @@
 """
 多类型安全检测器
-支持 fire、smoke、uniform、mask、cigarette、sleep 六种检测类型
 采用懒加载策略，CPU 模型全局单例，NPU 模型每核心独立实例
+检测类型由 backend/detection_registry 配置驱动
 """
 
 import logging
@@ -38,98 +38,28 @@ except ImportError:
     ULTRALYTICS_AVAILABLE = False
     logger.warning("ultralytics not available, CPU YOLO fallback disabled")
 
+from backend.detection_registry import registry
+
 
 # 项目根目录（用于解析相对路径）
 PROJECT_ROOT = Path(__file__).parent.parent
 WEIGHTS_DIR = PROJECT_ROOT / "weights"
 
-# 模型默认路径配置
-MODEL_PATHS = {
-    "fire": {
-        "cpu": [
-            str(WEIGHTS_DIR / "fire_smoke.pt"),
-            str(PROJECT_ROOT / "fire_smoke.pt"),
-            "models/fire.pt",
-        ],
-        "npu": [
-            str(WEIGHTS_DIR / "fire_smoke.rknn"),
-            str(PROJECT_ROOT / "fire_smoke.rknn"),
-            "models/fire.rknn",
-        ],
-    },
-    "uniform": {
-        "cpu": [
-            str(WEIGHTS_DIR / "uniform.pt"),
-            str(PROJECT_ROOT / "uniform.pt"),
-            "models/uniform.pt",
-        ],
-        "npu": [
-            str(WEIGHTS_DIR / "uniform.rknn"),
-            str(PROJECT_ROOT / "uniform.rknn"),
-            "models/uniform.rknn",
-        ],
-    },
-    "person": {
-        "cpu": [
-            str(WEIGHTS_DIR / "yolov8n.pt"),
-            str(PROJECT_ROOT / "yolov8n.pt"),
-            "models/yolov8n.pt",
-        ],
-        "npu": [
-            str(WEIGHTS_DIR / "yolov8n.rknn"),
-            str(PROJECT_ROOT / "yolov8n.rknn"),
-            "models/yolov8n.rknn",
-        ],
-    },
-    "sleep": {
-        "cpu": [
-            str(WEIGHTS_DIR / "yolov8s-pose.pt"),
-            str(WEIGHTS_DIR / "yolov8n-pose.pt"),
-            str(PROJECT_ROOT / "yolov8s-pose.pt"),
-            str(PROJECT_ROOT / "yolov8n-pose.pt"),
-            "models/yolov8s-pose.pt",
-            "models/yolov8n-pose.pt",
-        ],
-        "npu": [
-            str(WEIGHTS_DIR / "yolov8s-pose.rknn"),
-            str(WEIGHTS_DIR / "yolov8n-pose.rknn"),
-            str(PROJECT_ROOT / "yolov8s-pose.rknn"),
-            str(PROJECT_ROOT / "yolov8n-pose.rknn"),
-            "models/yolov8s-pose.rknn",
-            "models/yolov8n-pose.rknn",
-        ],
-    },
-    "mask": {
-        "cpu": [
-            str(WEIGHTS_DIR / "mask.pt"),
-            str(PROJECT_ROOT / "mask.pt"),
-            "models/mask.pt",
-        ],
-        "npu": [
-            str(WEIGHTS_DIR / "mask.rknn"),
-            str(PROJECT_ROOT / "mask.rknn"),
-            "models/mask.rknn",
-        ],
-    },
-    "cigarette": {
-        "cpu": [
-            str(WEIGHTS_DIR / "cigarette.pt"),
-            str(PROJECT_ROOT / "cigarette.pt"),
-            "models/cigarette.pt",
-        ],
-        "npu": [
-            str(WEIGHTS_DIR / "cigarette.rknn"),
-            str(PROJECT_ROOT / "cigarette.rknn"),
-            "models/cigarette.rknn",
-        ],
-    },
+
+# 内部 person 模型路径（person 不在检测类型注册表中）
+_PERSON_PATHS = {
+    "cpu": [
+        str(WEIGHTS_DIR / "yolov8n.pt"),
+        str(PROJECT_ROOT / "yolov8n.pt"),
+        "models/yolov8n.pt",
+    ],
+    "npu": [
+        str(WEIGHTS_DIR / "yolov8n.rknn"),
+        str(PROJECT_ROOT / "yolov8n.rknn"),
+        "models/yolov8n.rknn",
+    ],
 }
 
-# YOLOv8 自定义模型目标类别（逗号分隔 class id，默认 1 表示未戴口罩）
-MASK_TARGET_CLASSES = [int(x) for x in os.getenv("MASK_TARGET_CLASSES", "1").split(",") if x.strip()] or [1]
-CIGARETTE_TARGET_CLASSES = [int(x) for x in os.getenv("CIGARETTE_TARGET_CLASSES", "0").split(",") if x.strip()] or [0]
-# 工服检测：默认 class 1 表示未穿工服/反光背心（class 0 表示已穿），可通过环境变量调整
-UNIFORM_TARGET_CLASSES = [int(x) for x in os.getenv("UNIFORM_TARGET_CLASSES", "1").split(",") if x.strip()] or [1]
 
 def detect_npu_cores() -> int:
     """检测可用的 NPU 核心数（RK3588 为 3）。
@@ -190,23 +120,83 @@ def _device_fallback_order(preferred: str) -> List[str]:
 
 
 def _resolve_model_path(dtype: str, use_npu: bool) -> Optional[str]:
-    """解析模型路径：优先环境变量，其次按候选列表查找"""
-    env_key = f"{dtype.upper()}_MODEL" if not use_npu else f"{dtype.upper()}_RKNN_MODEL"
+    """解析模型路径：优先环境变量，其次按注册表文件名在标准目录中查找"""
+    env_key = f"{dtype.upper()}_RKNN_MODEL" if use_npu else f"{dtype.upper()}_MODEL"
     env_path = os.getenv(env_key)
     if env_path and os.path.exists(env_path):
         return env_path
 
-    key = "npu" if use_npu else "cpu"
-    candidates = MODEL_PATHS.get(dtype, {}).get(key)
-    if candidates is None:
+    type_def = registry.get(dtype)
+    if type_def is not None:
+        filename = type_def.get("npu_model_path") if use_npu else type_def.get("model_path")
+        if filename is None:
+            return None
+        candidates = [
+            str(WEIGHTS_DIR / filename),
+            str(PROJECT_ROOT / filename),
+            f"models/{filename}",
+        ]
+    elif dtype == "person":
+        # 内部 person 模型不在注册表中，使用硬编码候选路径
+        key = "npu" if use_npu else "cpu"
+        candidates = _PERSON_PATHS.get(key, [])
+    else:
         return None
-    if isinstance(candidates, str):
-        candidates = [candidates]
 
     for path in candidates:
         if os.path.exists(path):
             return path
     return None
+
+
+def _process_yolo_box(raw_boxes: list, type_def: dict) -> dict:
+    """yolo_box 后处理：按 classes 过滤框"""
+    result = {"detected": False, "boxes": [], "scores": []}
+    target_classes = type_def.get("classes")
+    for box in raw_boxes:
+        if target_classes is not None and box.get("class_id") not in target_classes:
+            continue
+        result["boxes"].append(box["xyxy"])
+        result["scores"].append(box["confidence"])
+    result["detected"] = len(result["boxes"]) > 0
+    if result["scores"]:
+        result["max_confidence"] = max(result["scores"])
+    else:
+        result["max_confidence"] = 0.0
+    return result
+
+
+def _process_yolo_pose(raw_output, type_def: dict, frame: np.ndarray) -> dict:
+    """yolo_pose 后处理：姿态模型 + sleep_detect 分析"""
+    result = {"detected": False, "boxes": [], "scores": [], "subjects": [], "count": 0}
+    try:
+        from safety_detection.sleep_detect import process_frame
+        model = raw_output  # yolo_pose 时 raw_output 就是模型实例
+        subjects = process_frame(model, frame, conf=type_def.get("model_confidence", 0.1))
+        for s in subjects:
+            result["boxes"].append(s["box"])
+            result["scores"].append(s.get("sleep_confidence", 0))
+            result["subjects"].append({
+                "box": s["box"],
+                "score": s.get("score", 0),
+                "sleep_confidence": s.get("sleep_confidence", 0),
+                "posture": s.get("posture_label", ""),
+                "keypoints": s.get("keypoints"),
+                "sleeping": s.get("sleeping", False),
+            })
+            if s.get("sleeping"):
+                result["detected"] = True
+                result["count"] += 1
+        result["max_confidence"] = max(result["scores"]) if result["scores"] else 0.0
+    except Exception as e:
+        logger.error(f"Pose post-process error: {e}")
+    return result
+
+
+POST_PROCESSORS = {
+    "yolo_box": _process_yolo_box,
+    "yolo_pose": _process_yolo_pose,
+}
 
 
 class SafetyDetector:
@@ -226,8 +216,8 @@ class SafetyDetector:
     def __init__(self, npu_cores: int = 0, device: str = "cpu"):
         self._npu_cores = npu_cores
         self.device = device
-        self._cpu_models: Dict[str, Any] = {}          # dtype -> model instance (also holds GPU models)
-        self._npu_models: Dict[str, Dict[int, Any]] = {} # dtype -> {core_id: rknn}
+        self._cpu_models: Dict[str, Any] = {}          # model_key -> model instance (also holds GPU models)
+        self._npu_models: Dict[str, Dict[int, Any]] = {} # model_key -> {core_id: rknn}
         self._model_lock = threading.RLock()
         logger.info(f"SafetyDetector initialized (device={device}, npu_cores={npu_cores})")
 
@@ -236,113 +226,74 @@ class SafetyDetector:
     # ------------------------------------------------------------------
 
     def ensure_models_loaded(self, detection_types: List[str], device: str = None) -> None:
-        """懒加载指定类型所需的模型（支持 gpu / npu / cpu）"""
+        """懒加载指定类型所需的模型，共享 model_path 的类型只加载一次"""
         if device is None:
             device = self.device
+        loaded_paths = set()
         with self._model_lock:
             for dtype in detection_types:
-                if dtype in ("fire", "smoke"):
-                    self._load_fire_smoke_model(device)
-                elif dtype == "uniform":
-                    self._load_uniform_model(device)
-                elif dtype == "mask":
-                    self._load_mask_model(device)
-                elif dtype == "cigarette":
-                    self._load_cigarette_model(device)
-                elif dtype == "sleep":
-                    self._load_sleep_model(device)
+                type_def = registry.get(dtype)
+                if type_def is None:
+                    logger.warning(f"Unknown detection type: {dtype}")
+                    continue
+                model_key = type_def["model_path"]
+                if model_key in loaded_paths:
+                    continue
+                loaded_paths.add(model_key)
+                self._load_model(model_key, device)
 
-    def _load_fire_smoke_model(self, device: str = None) -> None:
-        """加载 fire/smoke 模型（共用同一个模型文件）"""
-        if device is None:
-            device = self.device
-        dtype = "fire"
+    def _load_model(self, model_key: str, device: str) -> None:
+        """通用模型加载：npu / gpu / cpu 三分支"""
         if device == "npu" and self._npu_cores > 0:
-            if dtype not in self._npu_models:
-                path = _resolve_model_path(dtype, use_npu=True)
+            if model_key not in self._npu_models:
+                # 找到使用此模型的第一个类型来解析路径
+                dtypes = registry.get_types_by_model(model_key)
+                if not dtypes:
+                    return
+                path = _resolve_model_path(dtypes[0], use_npu=True)
                 if path and RKNN_AVAILABLE:
-                    self._npu_models[dtype] = {}
+                    self._npu_models[model_key] = {}
                     for core_id in range(self._npu_cores):
                         rknn = RKNNLite(verbose=False)
                         ret = rknn.load_rknn(path)
                         if ret != 0:
-                            logger.error(f"Failed to load fire RKNN for core {core_id}")
+                            logger.error(f"Failed to load {model_key} RKNN for core {core_id}")
                             continue
                         ret = rknn.init_runtime(core_mask=self.CORE_MASKS[core_id])
                         if ret != 0:
-                            logger.error(f"Failed to init fire RKNN runtime for core {core_id}")
+                            logger.error(f"Failed to init {model_key} RKNN runtime for core {core_id}")
                             continue
-                        self._npu_models[dtype][core_id] = rknn
-                        logger.info(f"Fire RKNN loaded on core {core_id}")
+                        self._npu_models[model_key][core_id] = rknn
+                        logger.info(f"{model_key} RKNN loaded on core {core_id}")
                 else:
-                    logger.warning("Fire RKNN model not found, falling back to CPU")
+                    logger.warning(f"{model_key} RKNN not found, falling back to CPU")
         elif device == "gpu":
-            if dtype not in self._cpu_models:
-                path = _resolve_model_path(dtype, use_npu=False)
+            if model_key not in self._cpu_models:
+                dtypes = registry.get_types_by_model(model_key)
+                if not dtypes:
+                    return
+                path = _resolve_model_path(dtypes[0], use_npu=False)
                 if path and ULTRALYTICS_AVAILABLE:
                     model = YOLO(path)
                     try:
                         model = model.to("cuda")
-                        logger.info(f"Fire GPU model loaded from {path}")
+                        logger.info(f"{model_key} GPU model loaded from {path}")
                     except Exception as e:
-                        logger.warning(f"Failed to move fire model to GPU, using CPU: {e}")
-                    self._cpu_models[dtype] = model
+                        logger.warning(f"Failed to move {model_key} to GPU: {e}")
+                    self._cpu_models[model_key] = model
                 else:
-                    logger.warning("Fire GPU model not found")
+                    logger.warning(f"{model_key} GPU model not found")
         else:
-            if dtype not in self._cpu_models:
-                path = _resolve_model_path(dtype, use_npu=False)
+            if model_key not in self._cpu_models:
+                dtypes = registry.get_types_by_model(model_key)
+                if not dtypes:
+                    return
+                path = _resolve_model_path(dtypes[0], use_npu=False)
                 if path and ULTRALYTICS_AVAILABLE:
-                    self._cpu_models[dtype] = YOLO(path)
-                    logger.info(f"Fire CPU model loaded from {path}")
+                    self._cpu_models[model_key] = YOLO(path)
+                    logger.info(f"{model_key} CPU model loaded from {path}")
                 else:
-                    logger.warning("Fire CPU model not found")
-
-    def _load_uniform_model(self, device: str = None) -> None:
-        """加载工服检测模型（YOLOv8 自训练模型）"""
-        if device is None:
-            device = self.device
-        dtype = "uniform"
-        if device == "npu" and self._npu_cores > 0:
-            if dtype not in self._npu_models:
-                path = _resolve_model_path(dtype, use_npu=True)
-                if path and RKNN_AVAILABLE:
-                    self._npu_models[dtype] = {}
-                    for core_id in range(self._npu_cores):
-                        rknn = RKNNLite(verbose=False)
-                        ret = rknn.load_rknn(path)
-                        if ret != 0:
-                            logger.error(f"Failed to load uniform RKNN for core {core_id}")
-                            continue
-                        ret = rknn.init_runtime(core_mask=self.CORE_MASKS[core_id])
-                        if ret != 0:
-                            logger.error(f"Failed to init uniform RKNN runtime for core {core_id}")
-                            continue
-                        self._npu_models[dtype][core_id] = rknn
-                        logger.info(f"Uniform RKNN loaded on core {core_id}")
-                else:
-                    logger.warning("Uniform RKNN model not found, falling back to CPU/GPU")
-        elif device == "gpu":
-            if dtype not in self._cpu_models:
-                path = _resolve_model_path(dtype, use_npu=False)
-                if path and ULTRALYTICS_AVAILABLE:
-                    model = YOLO(path)
-                    try:
-                        model = model.to("cuda")
-                        logger.info(f"Uniform GPU model loaded from {path}")
-                    except Exception as e:
-                        logger.warning(f"Failed to move uniform model to GPU, using CPU: {e}")
-                    self._cpu_models[dtype] = model
-                else:
-                    logger.warning("Uniform GPU model not found")
-        else:
-            if dtype not in self._cpu_models:
-                path = _resolve_model_path(dtype, use_npu=False)
-                if path and ULTRALYTICS_AVAILABLE:
-                    self._cpu_models[dtype] = YOLO(path)
-                    logger.info(f"Uniform CPU model loaded from {path}")
-                else:
-                    logger.warning("Uniform CPU model not found")
+                    logger.warning(f"{model_key} model not found")
 
     def _load_person_model(self, device: str = None) -> None:
         """加载通用人员检测模型（yolov8n.pt / yolov8n.rknn），按 gpu>npu>cpu 自动适应"""
@@ -409,182 +360,40 @@ class SafetyDetector:
         if not loaded:
             logger.error("Failed to load person model on any device")
 
-    def _load_mask_model(self, device: str = None) -> None:
-        """加载口罩检测模型（YOLOv8 自训练模型）"""
-        if device is None:
-            device = self.device
-        dtype = "mask"
-        if device == "npu" and self._npu_cores > 0:
-            if dtype not in self._npu_models:
-                path = _resolve_model_path(dtype, use_npu=True)
-                if path and RKNN_AVAILABLE:
-                    self._npu_models[dtype] = {}
-                    for core_id in range(self._npu_cores):
-                        rknn = RKNNLite(verbose=False)
-                        ret = rknn.load_rknn(path)
-                        if ret != 0:
-                            logger.error(f"Failed to load mask RKNN for core {core_id}")
-                            continue
-                        ret = rknn.init_runtime(core_mask=self.CORE_MASKS[core_id])
-                        if ret != 0:
-                            logger.error(f"Failed to init mask RKNN runtime for core {core_id}")
-                            continue
-                        self._npu_models[dtype][core_id] = rknn
-                        logger.info(f"Mask RKNN loaded on core {core_id}")
-                else:
-                    logger.warning("Mask RKNN model not found, falling back to CPU/GPU")
-        elif device == "gpu":
-            if dtype not in self._cpu_models:
-                path = _resolve_model_path(dtype, use_npu=False)
-                if path and ULTRALYTICS_AVAILABLE:
-                    model = YOLO(path)
-                    try:
-                        model = model.to("cuda")
-                        logger.info(f"Mask GPU model loaded from {path}")
-                    except Exception as e:
-                        logger.warning(f"Failed to move mask model to GPU, using CPU: {e}")
-                    self._cpu_models[dtype] = model
-                else:
-                    logger.warning("Mask GPU model not found")
-        else:
-            if dtype not in self._cpu_models:
-                path = _resolve_model_path(dtype, use_npu=False)
-                if path and ULTRALYTICS_AVAILABLE:
-                    self._cpu_models[dtype] = YOLO(path)
-                    logger.info(f"Mask CPU model loaded from {path}")
-                else:
-                    logger.warning("Mask CPU model not found")
-
-    def _load_cigarette_model(self, device: str = None) -> None:
-        """加载吸烟检测模型（YOLOv8 自训练模型）"""
-        if device is None:
-            device = self.device
-        dtype = "cigarette"
-        if device == "npu" and self._npu_cores > 0:
-            if dtype not in self._npu_models:
-                path = _resolve_model_path(dtype, use_npu=True)
-                if path and RKNN_AVAILABLE:
-                    self._npu_models[dtype] = {}
-                    for core_id in range(self._npu_cores):
-                        rknn = RKNNLite(verbose=False)
-                        ret = rknn.load_rknn(path)
-                        if ret != 0:
-                            logger.error(f"Failed to load cigarette RKNN for core {core_id}")
-                            continue
-                        ret = rknn.init_runtime(core_mask=self.CORE_MASKS[core_id])
-                        if ret != 0:
-                            logger.error(f"Failed to init cigarette RKNN runtime for core {core_id}")
-                            continue
-                        self._npu_models[dtype][core_id] = rknn
-                        logger.info(f"Cigarette RKNN loaded on core {core_id}")
-                else:
-                    logger.warning("Cigarette RKNN model not found, falling back to CPU/GPU")
-        elif device == "gpu":
-            if dtype not in self._cpu_models:
-                path = _resolve_model_path(dtype, use_npu=False)
-                if path and ULTRALYTICS_AVAILABLE:
-                    model = YOLO(path)
-                    try:
-                        model = model.to("cuda")
-                        logger.info(f"Cigarette GPU model loaded from {path}")
-                    except Exception as e:
-                        logger.warning(f"Failed to move cigarette model to GPU, using CPU: {e}")
-                    self._cpu_models[dtype] = model
-                else:
-                    logger.warning("Cigarette GPU model not found")
-        else:
-            if dtype not in self._cpu_models:
-                path = _resolve_model_path(dtype, use_npu=False)
-                if path and ULTRALYTICS_AVAILABLE:
-                    self._cpu_models[dtype] = YOLO(path)
-                    logger.info(f"Cigarette CPU model loaded from {path}")
-                else:
-                    logger.warning("Cigarette CPU model not found")
-
-    def _load_sleep_model(self, device: str = None) -> None:
-        """加载睡岗检测姿态模型（yolov8-pose，自动下载）"""
-        if device is None:
-            device = self.device
-        dtype = "sleep"
-        if device == "npu" and self._npu_cores > 0:
-            logger.warning("Sleep pose model NPU not supported, using CPU/GPU")
-        if dtype not in self._cpu_models:
-            path = _resolve_model_path(dtype, use_npu=False)
-            if path and ULTRALYTICS_AVAILABLE:
-                model = YOLO(path)
-                if device == "gpu":
-                    try:
-                        model = model.to("cuda")
-                        logger.info(f"Sleep pose GPU model loaded from {path}")
-                    except Exception as e:
-                        logger.warning(f"Failed to move sleep model to GPU, using CPU: {e}")
-                else:
-                    logger.info(f"Sleep pose CPU model loaded from {path}")
-                self._cpu_models[dtype] = model
-            else:
-                logger.warning("Sleep pose model not found, will try auto-download if available")
-
     # ------------------------------------------------------------------
     # 推理
     # ------------------------------------------------------------------
 
-    def detect(self, frame: np.ndarray, detection_types: List[str], core_id: int = 0) -> Dict[str, dict]:
-        """
-        对单帧执行多类型检测
-
-        Returns:
-            {
-                "fire": {"detected": bool, "boxes": List[List[int]], "scores": List[float]},
-                "smoke": {"detected": bool, "boxes": List[List[int]], "scores": List[float]},
-                ...
-            }
-        """
-        results: Dict[str, dict] = {}
-        for dtype in detection_types:
-            if dtype in ("fire", "smoke"):
-                fire_res, smoke_res = self._detect_fire_smoke(frame, core_id)
-                results["fire"] = fire_res
-                results["smoke"] = smoke_res
-            elif dtype == "uniform":
-                results[dtype] = self._detect_uniform(frame, core_id)
-            elif dtype == "mask":
-                results[dtype] = self._detect_mask(frame, core_id)
-            elif dtype == "cigarette":
-                results[dtype] = self._detect_cigarette(frame, core_id)
-            elif dtype == "sleep":
-                results[dtype] = self._detect_sleep(frame)
-        return results
-
-    def _detect_fire_smoke(self, frame: np.ndarray, core_id: int) -> Tuple[dict, dict]:
-        """
-        fire/smoke 检测：共用模型，按类别分离结果
-        fire=cls0, smoke=cls1（约定）
-        """
-        fire_result = {"detected": False, "boxes": [], "scores": []}
-        smoke_result = {"detected": False, "boxes": [], "scores": []}
-
+    def _run_model(self, model_key: str, frame: np.ndarray,
+                   type_def: dict, core_id: int = 0):
+        """执行模型推理，返回原始检测结果"""
         model = None
         use_npu = False
         with self._model_lock:
-            if "fire" in self._npu_models and core_id in self._npu_models["fire"]:
-                model = self._npu_models["fire"][core_id]
+            if model_key in self._npu_models and core_id in self._npu_models[model_key]:
+                model = self._npu_models[model_key][core_id]
                 use_npu = True
-            elif "fire" in self._cpu_models:
-                model = self._cpu_models["fire"]
+            elif model_key in self._cpu_models:
+                model = self._cpu_models[model_key]
 
         if model is None:
-            logger.warning("Fire/smoke model not loaded")
-            return fire_result, smoke_result
+            logger.warning(f"Model {model_key} not loaded")
+            return [] if type_def["post_process"] == "yolo_box" else model
 
+        # yolo_pose 直接返回模型实例（由 _process_yolo_pose 自行调用 process_frame）
+        if type_def["post_process"] == "yolo_pose":
+            return model
+
+        # yolo_box：统一推理流程
         try:
             if use_npu:
-                # NPU 推理
                 input_frame = self._preprocess(frame)
                 outputs = model.inference(inputs=[input_frame])
-                boxes = self._postprocess_rknn(outputs, frame.shape[:2])
+                conf = type_def.get("model_confidence", 0.5)
+                return self._postprocess_rknn(outputs, frame.shape[:2], conf_threshold=conf)
             else:
-                # CPU YOLO 推理
-                pred = model.predict(frame, verbose=False)
+                conf = type_def.get("model_confidence", 0.5)
+                pred = model.predict(frame, conf=conf, verbose=False)
                 boxes = []
                 if pred and pred[0].boxes is not None:
                     for b in pred[0].boxes:
@@ -592,24 +401,51 @@ class SafetyDetector:
                         cls = int(b.cls[0])
                         score = float(b.conf[0])
                         boxes.append({"xyxy": [x1, y1, x2, y2], "class_id": cls, "confidence": score})
-
-            for box in boxes:
-                if box.get("class_id") == 0:
-                    fire_result["boxes"].append(box["xyxy"])
-                    fire_result["scores"].append(box["confidence"])
-                elif box.get("class_id") == 1:
-                    smoke_result["boxes"].append(box["xyxy"])
-                    smoke_result["scores"].append(box["confidence"])
-
-            fire_result["detected"] = len(fire_result["boxes"]) > 0
-            fire_result["max_confidence"] = max(fire_result["scores"]) if fire_result["scores"] else 0.0
-            smoke_result["detected"] = len(smoke_result["boxes"]) > 0
-            smoke_result["max_confidence"] = max(smoke_result["scores"]) if smoke_result["scores"] else 0.0
-
+                return boxes
         except Exception as e:
-            logger.error(f"Fire/smoke detection error: {e}")
+            logger.error(f"Model {model_key} inference error: {e}")
+            return []
 
-        return fire_result, smoke_result
+    def detect(self, frame: np.ndarray, detection_types: List[str],
+               core_id: int = 0) -> Dict[str, dict]:
+        """
+        对单帧执行多类型检测（注册表驱动）
+
+        共享 model_path 的类型只推理一次，各自按 classes 过滤。
+        """
+        results: Dict[str, dict] = {}
+        processed_models = set()
+
+        for dtype in detection_types:
+            type_def = registry.get(dtype)
+            if type_def is None:
+                logger.warning(f"Unknown detection type: {dtype}")
+                continue
+
+            model_key = type_def["model_path"]
+            if model_key in processed_models:
+                continue
+
+            raw_output = self._run_model(model_key, frame, type_def, core_id)
+
+            # 对共享此模型的所有请求类型执行后处理
+            for related_dtype in registry.get_types_by_model(model_key):
+                if related_dtype not in detection_types:
+                    continue
+                related_def = registry.get(related_dtype)
+                strategy = related_def["post_process"]
+                processor = POST_PROCESSORS.get(strategy)
+                if processor is None:
+                    logger.warning(f"Unknown post_process strategy: {strategy}")
+                    continue
+                if strategy == "yolo_pose":
+                    results[related_dtype] = processor(raw_output, related_def, frame)
+                else:
+                    results[related_dtype] = processor(raw_output, related_def)
+
+            processed_models.add(model_key)
+
+        return results
 
     def _detect_persons(self, frame: np.ndarray, core_id: int = 0) -> List[dict]:
         """通用人员检测（yolov8n / yolov8n.rknn），仅返回 person 类别"""
@@ -650,155 +486,6 @@ class SafetyDetector:
         except Exception as e:
             logger.error(f"Person detection error: {e}")
             return []
-
-    def _detect_uniform(self, frame: np.ndarray, core_id: int = 0) -> dict:
-        """工服检测：检测未穿工服/反光背心的人员"""
-        result = {"detected": False, "boxes": [], "scores": [], "missing_vest": False}
-        model = None
-        use_npu = False
-        with self._model_lock:
-            if "uniform" in self._npu_models and core_id in self._npu_models["uniform"]:
-                model = self._npu_models["uniform"][core_id]
-                use_npu = True
-            elif "uniform" in self._cpu_models:
-                model = self._cpu_models["uniform"]
-
-        if model is None:
-            logger.warning("Uniform model not loaded")
-            return result
-
-        try:
-            if use_npu:
-                input_frame = self._preprocess(frame)
-                outputs = model.inference(inputs=[input_frame])
-                boxes = self._postprocess_rknn(outputs, frame.shape[:2])
-                for box in boxes:
-                    if box.get("class_id") not in UNIFORM_TARGET_CLASSES:
-                        continue
-                    result["boxes"].append(box["xyxy"])
-                    result["scores"].append(box["confidence"])
-            else:
-                pred = model.predict(frame, classes=UNIFORM_TARGET_CLASSES, verbose=False)
-                if pred and pred[0].boxes is not None:
-                    for b in pred[0].boxes:
-                        x1, y1, x2, y2 = map(int, b.xyxy[0])
-                        score = float(b.conf[0])
-                        result["boxes"].append([x1, y1, x2, y2])
-                        result["scores"].append(score)
-            result["detected"] = len(result["boxes"]) > 0
-            result["missing_vest"] = result["detected"]
-            result["max_confidence"] = max(result["scores"]) if result["scores"] else 0.0
-        except Exception as e:
-            logger.error(f"Uniform detection error: {e}")
-        return result
-
-    def _detect_mask(self, frame: np.ndarray, core_id: int = 0) -> dict:
-        """口罩检测（YOLOv8 自训练模型）"""
-        result = {"detected": False, "boxes": [], "scores": []}
-        model = None
-        use_npu = False
-        with self._model_lock:
-            if "mask" in self._npu_models and core_id in self._npu_models["mask"]:
-                model = self._npu_models["mask"][core_id]
-                use_npu = True
-            elif "mask" in self._cpu_models:
-                model = self._cpu_models["mask"]
-        if model is None:
-            return result
-        try:
-            if use_npu:
-                input_frame = self._preprocess(frame)
-                outputs = model.inference(inputs=[input_frame])
-                boxes = self._postprocess_rknn(outputs, frame.shape[:2])
-                for box in boxes:
-                    if box.get("class_id") not in MASK_TARGET_CLASSES:
-                        continue
-                    result["boxes"].append(box["xyxy"])
-                    result["scores"].append(box["confidence"])
-            else:
-                pred = model.predict(frame, verbose=False)
-                if pred and pred[0].boxes is not None:
-                    for b in pred[0].boxes:
-                        cls = int(b.cls[0])
-                        if cls not in MASK_TARGET_CLASSES:
-                            continue
-                        x1, y1, x2, y2 = map(int, b.xyxy[0])
-                        score = float(b.conf[0])
-                        result["boxes"].append([x1, y1, x2, y2])
-                        result["scores"].append(score)
-            result["detected"] = len(result["boxes"]) > 0
-            result["max_confidence"] = max(result["scores"]) if result["scores"] else 0.0
-        except Exception as e:
-            logger.error(f"Mask detection error: {e}")
-        return result
-
-    def _detect_cigarette(self, frame: np.ndarray, core_id: int = 0) -> dict:
-        """吸烟检测（YOLOv8 自训练模型）"""
-        result = {"detected": False, "boxes": [], "scores": []}
-        model = None
-        use_npu = False
-        with self._model_lock:
-            if "cigarette" in self._npu_models and core_id in self._npu_models["cigarette"]:
-                model = self._npu_models["cigarette"][core_id]
-                use_npu = True
-            elif "cigarette" in self._cpu_models:
-                model = self._cpu_models["cigarette"]
-        if model is None:
-            return result
-        try:
-            if use_npu:
-                input_frame = self._preprocess(frame)
-                outputs = model.inference(inputs=[input_frame])
-                boxes = self._postprocess_rknn(outputs, frame.shape[:2])
-                for box in boxes:
-                    if box.get("class_id") not in CIGARETTE_TARGET_CLASSES:
-                        continue
-                    result["boxes"].append(box["xyxy"])
-                    result["scores"].append(box["confidence"])
-            else:
-                pred = model.predict(frame, verbose=False)
-                if pred and pred[0].boxes is not None:
-                    for b in pred[0].boxes:
-                        cls = int(b.cls[0])
-                        if cls not in CIGARETTE_TARGET_CLASSES:
-                            continue
-                        x1, y1, x2, y2 = map(int, b.xyxy[0])
-                        score = float(b.conf[0])
-                        result["boxes"].append([x1, y1, x2, y2])
-                        result["scores"].append(score)
-            result["detected"] = len(result["boxes"]) > 0
-            result["max_confidence"] = max(result["scores"]) if result["scores"] else 0.0
-        except Exception as e:
-            logger.error(f"Cigarette detection error: {e}")
-        return result
-
-    def _detect_sleep(self, frame: np.ndarray) -> dict:
-        """睡岗检测（基于 YOLOv8-pose + sleep_detect 分析）"""
-        result = {"detected": False, "boxes": [], "scores": [], "subjects": [], "count": 0}
-        model = self._cpu_models.get("sleep")
-        if model is None:
-            return result
-        try:
-            from safety_detection.sleep_detect import process_frame
-            subjects = process_frame(model, frame, conf=0.1)
-            for s in subjects:
-                result["boxes"].append(s["box"])
-                result["scores"].append(s.get("sleep_confidence", 0))
-                result["subjects"].append({
-                    "box": s["box"],
-                    "score": s.get("score", 0),
-                    "sleep_confidence": s.get("sleep_confidence", 0),
-                    "posture": s.get("posture_label", ""),
-                    "keypoints": s.get("keypoints"),
-                    "sleeping": s.get("sleeping", False),
-                })
-                if s.get("sleeping"):
-                    result["detected"] = True
-                    result["count"] += 1
-            result["max_confidence"] = max(result["scores"]) if result["scores"] else 0.0
-        except Exception as e:
-            logger.error(f"Sleep detection error: {e}")
-        return result
 
     # ------------------------------------------------------------------
     # 预处理 / 后处理（NPU）
@@ -856,46 +543,54 @@ class SafetyDetector:
     def release(self) -> None:
         """释放所有模型资源"""
         with self._model_lock:
-            for dtype, core_map in self._npu_models.items():
+            for model_key, core_map in self._npu_models.items():
                 for core_id, rknn in core_map.items():
                     try:
                         rknn.release()
-                        logger.info(f"Released {dtype} RKNN on core {core_id}")
+                        logger.info(f"Released {model_key} RKNN on core {core_id}")
                     except Exception as e:
-                        logger.error(f"Error releasing {dtype} RKNN core {core_id}: {e}")
+                        logger.error(f"Error releasing {model_key} RKNN core {core_id}: {e}")
             self._npu_models.clear()
             self._cpu_models.clear()
 
     @property
     def loaded_models(self) -> List[str]:
-        """返回已加载的模型列表（不含内部 person 模型）"""
+        """返回已加载的模型列表（model_key，不含内部 person 模型）"""
         models = []
         with self._model_lock:
             models.extend([k for k in self._cpu_models.keys() if k != "person"])
             models.extend(self._npu_models.keys())
-        return list(dict.fromkeys(models))  # 去重
+        return list(dict.fromkeys(models))
 
     def get_model_status(self) -> List[Dict[str, Any]]:
-        """返回模型状态详情（用于 API /detector/models）"""
+        """返回模型状态详情（注册表驱动）"""
         status = []
         with self._model_lock:
-            for dtype, model in self._cpu_models.items():
-                if dtype == "person":
-                    continue
-                status.append({
-                    "type": dtype,
-                    "backend": "cpu",
-                    "device": "pytorch",
-                    "loaded": True,
-                })
-            for dtype, core_map in self._npu_models.items():
-                status.append({
-                    "type": dtype,
-                    "backend": "npu",
-                    "device": "rk3588",
-                    "cores": len(core_map),
-                    "loaded": True,
-                })
+            for dtype in registry.all_types():
+                type_def = registry.get(dtype)
+                model_key = type_def["model_path"]
+                # 检查是否已加载
+                is_loaded = model_key in self._cpu_models or model_key in self._npu_models
+                if is_loaded:
+                    if model_key in self._cpu_models:
+                        model = self._cpu_models[model_key]
+                        model_device = getattr(model, "device", None)
+                        if model_device is not None:
+                            device_type = str(model_device).split(":")[0]
+                        else:
+                            device_type = "cpu"
+                        if device_type == "cuda":
+                            entry = {"type": dtype, "backend": "gpu", "device": "cuda", "loaded": True}
+                        else:
+                            entry = {"type": dtype, "backend": "cpu", "device": "pytorch", "loaded": True}
+                    else:
+                        core_map = self._npu_models.get(model_key, {})
+                        entry = {"type": dtype, "backend": "npu", "device": "rk3588",
+                                 "cores": len(core_map), "loaded": True}
+                else:
+                    entry = {"type": dtype, "backend": self.device,
+                             "device": self.device, "loaded": False}
+                status.append(entry)
         return status
 
 
