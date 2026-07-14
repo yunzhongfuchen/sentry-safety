@@ -6,7 +6,49 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from backend.detection_registry import registry
+
 router = APIRouter(tags=["safety"])
+
+
+@router.get("/detector/types")
+async def list_detection_types():
+    """获取所有检测类型定义"""
+    return {"types": registry.to_api_list()}
+
+
+@router.get("/detector/types/{dtype}")
+async def get_detection_type(dtype: str):
+    """获取单个检测类型定义"""
+    type_def = registry.get(dtype)
+    if type_def is None:
+        return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
+    return {
+        "key": dtype,
+        "label": type_def.get("label", dtype),
+        "color": type_def.get("color", "#888888"),
+        "icon": type_def.get("icon", ""),
+        "post_process": type_def.get("post_process", "yolo_box"),
+        "defaults": type_def.get("defaults", {}),
+    }
+
+
+@router.put("/detector/types/{dtype}")
+async def update_detection_type(dtype: str, data: dict):
+    """更新检测类型的默认运行参数"""
+    type_def = registry.get(dtype)
+    if type_def is None:
+        return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
+
+    allowed_keys = {"enabled", "interval", "threshold", "consecutive_required",
+                    "cooldown", "use_vlm", "min_box_count", "max_box_count"}
+    defaults_update = {k: v for k, v in data.items() if k in allowed_keys}
+
+    if not defaults_update:
+        return JSONResponse({"error": "No valid fields to update"}, status_code=400)
+
+    registry.update_defaults(dtype, defaults_update)
+    return {"success": True, "dtype": dtype, "defaults": registry.get_defaults(dtype)}
 
 
 @router.get("/detector/status")
