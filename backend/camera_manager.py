@@ -445,6 +445,8 @@ class CameraManager:
                 "source": state.config.source,
                 "status": actual_status,
                 "enabled": state.config.enabled,
+                "width": state.config.width,
+                "height": state.config.height,
                 "fps": state.get_avg_fps(),
                 "frame_count": state.frame_count,
                 "error_count": state.error_count,

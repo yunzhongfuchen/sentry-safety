@@ -274,9 +274,12 @@
                                 <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 14px;">图像质量</div>
                                 <div class="gc-form-field"><label>快照质量 (1-100)</label><input type="number" class="clay-input" v-model.number="settings.snapshot_quality" min="1" max="100" /></div>
                                 <div class="gc-form-field"><label>帧质量 (1-100)</label><input type="number" class="clay-input" v-model.number="settings.frame_quality" min="1" max="100" /></div>
-                                <div class="gc-form-field" style="display: flex; align-items: center; justify-content: space-between;">
-                                    <label>保存图像时叠加时间戳</label>
-                                    <input type="checkbox" v-model="settings.save_image_timestamp" />
+                                <div class="gc-form-field">
+                                    <label>加时间戳</label>
+                                    <select class="clay-select" v-model="settings.save_image_timestamp">
+                                        <option :value="true">是</option>
+                                        <option :value="false">否</option>
+                                    </select>
                                 </div>
                             </div>
                         </div>
@@ -335,9 +338,11 @@
                         <div class="gc-form-field"><label>宽</label><input type="number" class="clay-input" v-model.number="cameraDialog.width" /></div>
                         <div class="gc-form-field"><label>高</label><input type="number" class="clay-input" v-model.number="cameraDialog.height" /></div>
                         <div class="gc-form-field">
-                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                <input type="checkbox" v-model="cameraDialog.enabled" /> 启用摄像头
-                            </label>
+                            <label>启用摄像头</label>
+                            <select class="clay-select" v-model="cameraDialog.enabled">
+                                <option :value="true">启用</option>
+                                <option :value="false">禁用</option>
+                            </select>
                         </div>
                     </div>
 

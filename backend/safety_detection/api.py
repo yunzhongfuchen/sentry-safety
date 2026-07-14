@@ -113,11 +113,31 @@ async def detector_status(request: Request):
 
 @router.get("/detector/models")
 async def list_models(request: Request):
-    """获取已加载模型列表"""
+    """获取已加载模型列表（覆盖 safety_detector 与 GPU scheduler）"""
     safety_detector = getattr(request.app.state, "safety_detector", None)
-    if safety_detector is None:
+    gpu_scheduler = getattr(request.app.state, "gpu_scheduler", None)
+
+    if safety_detector is None and gpu_scheduler is None:
         return {"models": []}
-    return {"models": safety_detector.get_model_status()}
+
+    models = []
+    if safety_detector is not None:
+        models = safety_detector.get_model_status()
+
+    if gpu_scheduler is not None:
+        loaded_types = set(gpu_scheduler.model_configs.keys())
+        models_by_type = {m["type"]: m for m in models}
+        for dtype in loaded_types:
+            cfg = gpu_scheduler.model_configs[dtype]
+            entry = models_by_type.get(dtype)
+            if entry is None:
+                entry = {"type": dtype, "loaded": False}
+                models.append(entry)
+            entry["backend"] = "gpu"
+            entry["device"] = cfg.device
+            entry["loaded"] = True
+
+    return {"models": models}
 
 
 @router.post("/cameras/{camera_id}/test-alert")

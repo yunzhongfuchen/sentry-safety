@@ -15,6 +15,15 @@ from typing import Dict, List, Optional, Tuple
 from collections import deque
 from pathlib import Path
 
+# 把项目根目录和 backend 目录都加入 sys.path，确保：
+# 1. 直接运行 python backend/main_multi.py 时，子模块中的 `from backend import xxx` 能解析。
+# 2. 以模块方式 python -m backend.main_multi 运行时，`from camera_manager` 等能解析。
+_project_root = Path(__file__).resolve().parent.parent
+_backend_dir = _project_root / "backend"
+for _path in (_project_root, _backend_dir):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+
 import cv2
 import numpy as np
 from fastapi import FastAPI
@@ -404,6 +413,7 @@ def init_components():
 
     # 7.5 初始化 GPU 动态调度器（可选，仅 GPU 模式）
     gpu_scheduler = None
+    app.state.gpu_scheduler = None
     if use_gpu_scheduler and device == "gpu":
         try:
             from gpu_scheduler import ModelConfig, GPUDynamicScheduler
@@ -458,6 +468,7 @@ def init_components():
                 cooldown_checker=multi_detector.is_in_cooldown,
             )
             log_message(f"GPU scheduler initialized: {len(model_configs)} models, {gpu_scheduler.num_queues} queues")
+            app.state.gpu_scheduler = gpu_scheduler
 
             # 让 MultiDetector 跳过已由 GPU scheduler 推理的类型，避免重复检测
             scheduler_types = list(model_configs.keys())

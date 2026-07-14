@@ -53,9 +53,12 @@ class TestResolveModelPath:
         assert result is not None
         assert "fire_smoke.rknn" in result
 
-    def test_resolve_returns_none_for_missing(self, fake_registry):
+    def test_resolve_returns_none_for_missing(self, fake_registry, tmp_path, monkeypatch):
         """模型文件不存在时返回 None"""
         from backend.inference_engine import _resolve_model_path
+        import backend.inference_engine as ie_mod
+        monkeypatch.setattr(ie_mod, "WEIGHTS_DIR", tmp_path / "weights")
+        monkeypatch.setattr(ie_mod, "PROJECT_ROOT", tmp_path)
         result = _resolve_model_path("fire", use_npu=False)
         # 文件不存在于任何候选路径，应返回 None
         assert result is None

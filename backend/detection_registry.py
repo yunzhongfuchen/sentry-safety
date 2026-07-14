@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 REGISTRY_FILE = CONFIG_DIR / "detection_types.json"
+PROJECT_ROOT = Path(__file__).parent.parent
 
 
 def hex_to_bgr(hex_color: str) -> tuple[int, int, int]:
@@ -261,8 +262,8 @@ class DetectionTypeRegistry:
     def validate(self) -> list[str]:
         """校验注册表（模型文件是否存在等），返回警告列表"""
         warnings = []
-        models_dir = Path(__file__).parent.parent / "models"
-        weights_dir = Path(__file__).parent.parent / "weights"
+        models_dir = PROJECT_ROOT / "models"
+        weights_dir = PROJECT_ROOT / "weights"
         for dtype, td in self._types.items():
             mp = td.get("model_path")
             if mp:

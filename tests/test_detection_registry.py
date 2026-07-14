@@ -110,6 +110,8 @@ class TestDetectionTypeRegistry:
         assert "model_path" not in fire_entry
 
     def test_validate_warns_missing_model(self, tmp_path, monkeypatch):
+        import backend.detection_registry as mod
+        monkeypatch.setattr(mod, "PROJECT_ROOT", tmp_path)
         r = self._make_registry(tmp_path, monkeypatch)
         warnings = r.validate()
         # models don't exist in test env, so should have warnings
