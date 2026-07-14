@@ -166,6 +166,38 @@ class TestDetectionTypeRegistry:
         r.update_defaults("unknown", {"threshold": 0.1})
         assert r.get("unknown") is None
 
+    def test_get_types_by_model_missing_model_path(self, tmp_path, monkeypatch):
+        custom = {"custom_no_model": {"label": "自定义"}}
+        r = self._make_registry(tmp_path, monkeypatch, data=custom)
+        # should not raise
+        assert r.get_types_by_model("anything.pt") == []
+        assert r.get_types_by_model("") == []
+
+    def test_to_api_list_missing_structural_fields(self, tmp_path, monkeypatch):
+        custom = {"custom_sparse": {"defaults": {"enabled": True}}}
+        r = self._make_registry(tmp_path, monkeypatch, data=custom)
+        entry = next(e for e in r.to_api_list() if e["key"] == "custom_sparse")
+        assert entry["label"] == "custom_sparse"
+        assert entry["color"] == "#888888"
+        assert entry["icon"] == ""
+        assert entry["post_process"] == "yolo_box"
+        assert entry["defaults"]["enabled"] is True
+        assert entry["defaults"]["interval"] == 1
+        assert entry["defaults"]["threshold"] == 0.5
+
+    def test_load_malformed_json_regenerates_defaults(self, tmp_path, monkeypatch):
+        (tmp_path / "detection_types.json").write_text("not json at all", encoding="utf-8")
+        import backend.detection_registry as mod
+        monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+        r = mod.DetectionTypeRegistry()
+        r.load()
+        assert set(r.all_types()) == {"fire", "smoke", "uniform", "mask", "cigarette", "sleep"}
+        # corrupted file overwritten
+        with open(tmp_path / "detection_types.json", "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        assert "fire" in saved
+
 
 def test_hex_to_bgr_invalid_hex_raises():
     from backend.detection_registry import hex_to_bgr

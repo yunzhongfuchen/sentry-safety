@@ -190,8 +190,15 @@ class DetectionTypeRegistry:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
         if REGISTRY_FILE.exists():
-            with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
-                stored = json.load(f)
+            try:
+                with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
+                    stored = json.load(f)
+            except json.JSONDecodeError:
+                logger.warning("Registry file corrupted, regenerating from defaults")
+                self._types = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
+                self._save(self._types)
+                logger.info(f"Detection registry loaded: {list(self._types.keys())}")
+                return
             merged = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
             for dtype, type_def in stored.items():
                 if dtype in merged:
@@ -226,7 +233,7 @@ class DetectionTypeRegistry:
         return list(self._types.keys())
 
     def get_types_by_model(self, model_path: str) -> list[str]:
-        return [dt for dt, td in self._types.items() if td["model_path"] == model_path]
+        return [dt for dt, td in self._types.items() if td.get("model_path") == model_path]
 
     def get_color_bgr(self, dtype: str) -> tuple[int, int, int]:
         td = self.get(dtype)
@@ -272,11 +279,11 @@ class DetectionTypeRegistry:
         for key, td in self._types.items():
             result.append({
                 "key": key,
-                "label": td["label"],
-                "color": td["color"],
+                "label": td.get("label", key),
+                "color": td.get("color", "#888888"),
                 "icon": td.get("icon", ""),
-                "post_process": td["post_process"],
-                "defaults": dict(td["defaults"]),
+                "post_process": td.get("post_process", "yolo_box"),
+                "defaults": dict(td.get("defaults", {})),
             })
         return result
 
