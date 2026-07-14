@@ -145,7 +145,7 @@ function defaultDetectionTypes() {
     const result = {};
     for (const t of DETECTION_TYPES) {
         if (t.defaults) {
-            result[t.key] = { ...t.defaults };
+            result[t.key] = { box_count_mode: 'gte', ...t.defaults };
         } else {
             result[t.key] = {
                 enabled: false, interval: 1, threshold: 0.5,
