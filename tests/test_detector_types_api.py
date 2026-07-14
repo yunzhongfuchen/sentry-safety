@@ -96,6 +96,7 @@ class TestUpdateDetectionType:
                 {"use_vlm": "true"},
                 {"min_box_count": -1},
                 {"max_box_count": -1},
+                {"min_box_count": True},
             ]
             for payload in invalid_cases:
                 resp = client.put("/detector/types/fire", json=payload)

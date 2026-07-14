@@ -455,6 +455,7 @@ def init_components():
                 interval=_global_settings.get("gpu_scheduler_interval", app_config.GPU_SCHEDULER_INTERVAL),
                 on_result=_gpu_on_result,
                 half=_global_settings.get("gpu_scheduler_half", app_config.GPU_SCHEDULER_HALF),
+                cooldown_checker=multi_detector.is_in_cooldown,
             )
             log_message(f"GPU scheduler initialized: {len(model_configs)} models, {gpu_scheduler.num_queues} queues")
 

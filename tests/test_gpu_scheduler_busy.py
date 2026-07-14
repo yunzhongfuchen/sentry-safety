@@ -61,3 +61,27 @@ def test_scheduler_sets_busy_during_inference():
         finally:
             block_event.set()
             scheduler.stop()
+
+
+def test_collect_due_frames_skips_cooldown_types():
+    """_collect_due_frames 应跳过处于冷却期的类型"""
+    cm = MagicMock()
+    cam_state = MagicMock()
+    cam_state.config.enabled = True
+    cam_state.config.detection_enabled = True
+    cam_state.config.detection_types = {"fire": {"enabled": True, "interval": 0.1}}
+    cm._cameras = {"cam1": cam_state}
+    cm.get_latest_frame = MagicMock(return_value=np.zeros((10, 10, 3), dtype=np.uint8))
+
+    with patch("backend.gpu_scheduler.YOLO"):
+        scheduler = GPUDynamicScheduler(
+            cm,
+            {"fire": ModelConfig("dummy.pt", "fire", device="cpu")},
+            num_queues=1,
+            interval=0.1,
+            warmup=False,
+            cooldown_checker=lambda cam_id, dtype, now: True,
+        )
+
+        tasks = scheduler._collect_due_frames(time.time())
+        assert "fire" not in tasks or tasks["fire"] == []

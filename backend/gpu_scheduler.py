@@ -146,6 +146,7 @@ class GPUDynamicScheduler(threading.Thread):
         on_result: Optional[Callable[[str, str, Any], None]] = None,
         half: bool = False,
         warmup: bool = True,
+        cooldown_checker: Optional[Callable[[str, str, float], bool]] = None,
     ):
         super().__init__(daemon=True)
         self.camera_manager = camera_manager
@@ -154,6 +155,7 @@ class GPUDynamicScheduler(threading.Thread):
         self.on_result = on_result
         self.half = half
         self.warmup = warmup
+        self.cooldown_checker = cooldown_checker
         self.running = True
         self._busy = False
         # (camera_id, detection_type) -> last_infer_timestamp
@@ -267,8 +269,11 @@ class GPUDynamicScheduler(threading.Thread):
                 )
                 key = (cam_id, dtype)
                 last = self.last_infer.get(key, 0.0)
-                if now - last >= interval:
-                    tasks.setdefault(dtype, []).append((cam_id, frame.copy()))
+                if now - last < interval:
+                    continue
+                if self.cooldown_checker is not None and self.cooldown_checker(cam_id, dtype, now):
+                    continue
+                tasks.setdefault(dtype, []).append((cam_id, frame.copy()))
         return tasks
 
     def _infer_batch(self, tasks: Dict[str, List[Tuple[str, np.ndarray]]]) -> None:

@@ -6,6 +6,8 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+import math
+
 from backend.detection_registry import registry
 
 router = APIRouter(tags=["safety"])
@@ -13,27 +15,38 @@ router = APIRouter(tags=["safety"])
 
 def _validate_default_value(key: str, value):
     """校验 defaults 字段类型和范围，非法时返回错误信息，合法时返回 None"""
-    if key == "enabled":
+    if key in ("enabled", "use_vlm"):
         if not isinstance(value, bool):
             return f"{key} must be a boolean"
-    elif key == "interval":
-        if not isinstance(value, (int, float)) or value <= 0:
-            return f"{key} must be a positive number"
-    elif key == "threshold":
-        if not isinstance(value, (int, float)) or not (0 <= value <= 1):
-            return f"{key} must be a number between 0 and 1"
-    elif key == "consecutive_required":
-        if not isinstance(value, int) or value < 1:
-            return f"{key} must be an integer >= 1"
-    elif key == "cooldown":
-        if not isinstance(value, (int, float)) or value < 0:
-            return f"{key} must be a non-negative number"
-    elif key == "use_vlm":
-        if not isinstance(value, bool):
-            return f"{key} must be a boolean"
-    elif key in ("min_box_count", "max_box_count"):
-        if value is not None and (not isinstance(value, int) or value < 0):
+        return None
+
+    if key in ("min_box_count", "max_box_count"):
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             return f"{key} must be a non-negative integer or null"
+        return None
+
+    if key == "consecutive_required":
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            return f"{key} must be an integer >= 1"
+        return None
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return f"{key} must be a number"
+
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return f"{key} must be a finite number"
+
+    if key == "interval" and value <= 0:
+        return f"{key} must be a positive number"
+
+    if key == "threshold" and not (0 <= value <= 1):
+        return f"{key} must be a number between 0 and 1"
+
+    if key == "cooldown" and value < 0:
+        return f"{key} must be a non-negative number"
+
     return None
 
 
