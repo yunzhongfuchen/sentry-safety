@@ -3,6 +3,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from backend.detection_registry import registry
 from dotenv import load_dotenv
 
 # 找到项目根目录的.env文件
@@ -92,92 +93,104 @@ GLOBAL_CONFIG_FILE = CONFIG_DIR / "global.json"
 CAMERAS_CONFIG_FILE = CONFIG_DIR / "cameras.json"
 
 # ==================== 默认检测类型配置 ====================
-DEFAULT_TYPE_CONFIG = {
-    "fire": {
-        "enabled": False,
-        "interval": 1,
-        "threshold": 0.6,
-        "consecutive_required": 3,
-        "cooldown": 60,
-        "use_vlm": False,
-    },
-    "smoke": {
-        "enabled": False,
-        "interval": 1,
-        "threshold": 0.55,
-        "consecutive_required": 3,
-        "cooldown": 60,
-        "use_vlm": False,
-    },
-    "uniform": {
-        "enabled": False,
-        "interval": 1,
-        "threshold": 0.5,
-        "consecutive_required": 3,
-        "cooldown": 60,
-        "use_vlm": False,
-    },
-    "mask": {
-        "enabled": False,
-        "interval": 1,
-        "threshold": 0.5,
-        "consecutive_required": 3,
-        "cooldown": 60,
-        "use_vlm": False,
-    },
-    "cigarette": {
-        "enabled": False,
-        "interval": 1,
-        "threshold": 0.5,
-        "consecutive_required": 3,
-        "cooldown": 60,
-        "use_vlm": False,
-    },
-    "sleep": {
-        "enabled": False,
-        "interval": 60,
-        "threshold": 0.7,
-        "consecutive_required": 3,
-        "cooldown": 60,
-        "use_vlm": False,
-    },
-}
+def get_default_type_config() -> dict:
+    """从注册表动态生成默认检测类型配置（运行参数部分）"""
+    dtc = {}
+    for dtype in registry.all_types():
+        defaults = registry.get_defaults(dtype)
+        dtc[dtype] = {
+            "enabled": defaults.get("enabled", False),
+            "interval": defaults.get("interval", 1),
+            "threshold": defaults.get("threshold", 0.5),
+            "consecutive_required": defaults.get("consecutive_required", 3),
+            "cooldown": defaults.get("cooldown", 60),
+            "use_vlm": defaults.get("use_vlm", False),
+            "min_box_count": defaults.get("min_box_count"),
+            "max_box_count": defaults.get("max_box_count"),
+        }
+    return dtc
+
+
+# 向后兼容：模块级变量，首次访问时从注册表生成
+try:
+    DEFAULT_TYPE_CONFIG = get_default_type_config()
+except Exception:
+    DEFAULT_TYPE_CONFIG = {
+        "fire": {"enabled": False, "interval": 1, "threshold": 0.6, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
+        "smoke": {"enabled": False, "interval": 1, "threshold": 0.55, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
+        "uniform": {"enabled": False, "interval": 1, "threshold": 0.5, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
+        "mask": {"enabled": False, "interval": 1, "threshold": 0.5, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
+        "cigarette": {"enabled": False, "interval": 1, "threshold": 0.5, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
+        "sleep": {"enabled": False, "interval": 60, "threshold": 0.7, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
+    }
 
 # ==================== 默认全局配置 ====================
-DEFAULT_GLOBAL_SETTINGS = {
-    "vlm_max_concurrent": 3,
-    "vlm_inspection_interval": 30,
-    "max_records": 100000,
-    "max_storage_mb": 500,
-    "memory_threshold_percent": 80,
-    "emergency_cleanup_ratio": 0.2,
-    "snapshot_quality": 70,
-    "frame_quality": 60,
-    "detection_resolution": [640, 480],
-    "use_gpu_scheduler": False,
-    "gpu_scheduler_num_queues": 0,
-    "gpu_scheduler_interval": 0.5,
-    "gpu_scheduler_half": False,
-    "display_detection_types": {
-        "fire": True,
-        "smoke": True,
-        "uniform": True,
-        "mask": True,
-        "cigarette": True,
-        "sleep": True,
-    },
-    "display_detection_interval": 1.0,
-    "save_image_timestamp": True,
-}
+def get_default_global_settings() -> dict:
+    """动态生成全局默认设置，display_detection_types 从注册表读取"""
+    try:
+        ddt = {dtype: True for dtype in registry.all_types()}
+    except Exception:
+        ddt = {"fire": True, "smoke": True, "uniform": True, "mask": True, "cigarette": True, "sleep": True}
+    return {
+        "vlm_max_concurrent": 3,
+        "vlm_inspection_interval": 30,
+        "max_records": 100000,
+        "max_storage_mb": 500,
+        "memory_threshold_percent": 80,
+        "emergency_cleanup_ratio": 0.2,
+        "snapshot_quality": 70,
+        "frame_quality": 60,
+        "detection_resolution": [640, 480],
+        "use_gpu_scheduler": False,
+        "gpu_scheduler_num_queues": 0,
+        "gpu_scheduler_interval": 0.5,
+        "gpu_scheduler_half": False,
+        "display_detection_types": ddt,
+        "display_detection_interval": 1.0,
+        "save_image_timestamp": True,
+    }
+
+
+# 向后兼容
+try:
+    DEFAULT_GLOBAL_SETTINGS = get_default_global_settings()
+except Exception:
+    DEFAULT_GLOBAL_SETTINGS = {
+        "vlm_max_concurrent": 3,
+        "vlm_inspection_interval": 30,
+        "max_records": 100000,
+        "max_storage_mb": 500,
+        "memory_threshold_percent": 80,
+        "emergency_cleanup_ratio": 0.2,
+        "snapshot_quality": 70,
+        "frame_quality": 60,
+        "detection_resolution": [640, 480],
+        "use_gpu_scheduler": False,
+        "gpu_scheduler_num_queues": 0,
+        "gpu_scheduler_interval": 0.5,
+        "gpu_scheduler_half": False,
+        "display_detection_types": {"fire": True, "smoke": True, "uniform": True, "mask": True, "cigarette": True, "sleep": True},
+        "display_detection_interval": 1.0,
+        "save_image_timestamp": True,
+    }
 
 # ==================== 默认摄像头参数（全局模板） ====================
-DEFAULT_CAMERA_GLOBALS = {
-    "width": 640,
-    "height": 480,
-    "fps": 15,
-    "source_type": "auto",
-    "detection_types": dict(DEFAULT_TYPE_CONFIG),
-}
+try:
+    DEFAULT_CAMERA_GLOBALS = {
+        "width": 640,
+        "height": 480,
+        "fps": 15,
+        "source_type": "auto",
+        "detection_types": get_default_type_config(),
+    }
+except Exception:
+    DEFAULT_CAMERA_GLOBALS = {
+        "width": 640,
+        "height": 480,
+        "fps": 15,
+        "source_type": "auto",
+        "detection_types": dict(DEFAULT_TYPE_CONFIG),
+    }
 
 
 def load_camera_globals() -> dict:
@@ -191,7 +204,7 @@ def load_camera_globals() -> dict:
             merged.update(data)
             # detection_types 需要深合并
             if "detection_types" in data:
-                merged_dt = dict(DEFAULT_TYPE_CONFIG)
+                merged_dt = get_default_type_config()
                 for k, v in data["detection_types"].items():
                     if isinstance(v, dict):
                         merged_dt[k] = {**merged_dt.get(k, {}), **v}
@@ -228,15 +241,16 @@ def apply_camera_globals(cam_config: dict, globals_data: dict = None) -> dict:
 
     # detection_types：若缺失或为空则填充全局默认值
     dt = result.get("detection_types")
+    default_dtc = get_default_type_config()
     if not dt:
         result["detection_types"] = {
-            k: dict(v) for k, v in globals_data.get("detection_types", DEFAULT_TYPE_CONFIG).items()
+            k: dict(v) for k, v in globals_data.get("detection_types", default_dtc).items()
         }
     else:
         # 逐个类型深合并：摄像头已有字段保留，缺失字段用全局填充
         merged_dt = {}
-        global_dt = globals_data.get("detection_types", DEFAULT_TYPE_CONFIG)
-        for dtype, default_cfg in DEFAULT_TYPE_CONFIG.items():
+        global_dt = globals_data.get("detection_types", default_dtc)
+        for dtype, default_cfg in default_dtc.items():
             cam_cfg = dt.get(dtype, {})
             merged_cfg = dict(default_cfg)
             # 先应用全局默认值
@@ -461,7 +475,7 @@ def load_camera_configs() -> List[Dict[str, Any]]:
     for cam in cameras:
         # 旧格式迁移：没有 detection_types 字段时注入默认配置
         if "detection_types" not in cam:
-            cam["detection_types"] = dict(DEFAULT_TYPE_CONFIG)
+            cam["detection_types"] = get_default_type_config()
             # 根据旧版的 detection_enabled 调整
             if cam.get("detection_enabled") is False:
                 for dtype in cam["detection_types"]:
@@ -480,7 +494,7 @@ def load_camera_configs() -> List[Dict[str, Any]]:
                 del cfg["level"]
                 migrated = True
             if "cooldown" not in cfg:
-                cfg["cooldown"] = DEFAULT_TYPE_CONFIG.get(dtype, {}).get("cooldown", 3)
+                cfg["cooldown"] = get_default_type_config().get(dtype, {}).get("cooldown", 3)
                 migrated = True
 
         # 确保新字段存在
