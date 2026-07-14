@@ -18,12 +18,12 @@ REGISTRY_FILE = CONFIG_DIR / "detection_types.json"
 
 
 def hex_to_bgr(hex_color: str) -> tuple[int, int, int]:
-    """'#ef4444' → (68, 68, 239)"""
+    """'#ef4444' or 'ef4444' → (68, 68, 239)"""
     if not isinstance(hex_color, str):
         raise ValueError(f"hex_color must be a string, got {type(hex_color).__name__}")
-    if len(hex_color) != 7 or not hex_color.startswith("#"):
-        raise ValueError(f"hex_color must be a 7-character string starting with '#', got {hex_color!r}")
-    h = hex_color[1:]
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        raise ValueError(f"hex_color must be 6 hex digits optionally preceded by '#', got {hex_color!r}")
     try:
         r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
     except ValueError:
@@ -234,17 +234,17 @@ class DetectionTypeRegistry:
             return (0, 255, 0)
         return hex_to_bgr(td["color"])
 
-    def get_defaults(self, dtype: str) -> dict | None:
+    def get_defaults(self, dtype: str) -> dict:
         td = self.get(dtype)
         if td is None:
-            return None
+            return {}
         return dict(td["defaults"])
 
     def merge_camera_config(self, dtype: str, overrides: dict) -> dict:
         """合并摄像头级覆盖到注册表默认值"""
-        defaults = self.get_defaults(dtype)
-        if defaults is None:
+        if self.get(dtype) is None:
             return dict(overrides)
+        defaults = self.get_defaults(dtype)
         result = dict(defaults)
         for key, val in overrides.items():
             if key in result or key in ("roi", "roi_invert"):
@@ -295,3 +295,4 @@ class DetectionTypeRegistry:
 
 
 registry = DetectionTypeRegistry()
+registry.load()

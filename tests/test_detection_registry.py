@@ -8,10 +8,9 @@ def test_hex_to_bgr_standard():
     assert hex_to_bgr("#ef4444") == (68, 68, 239)
 
 
-def test_hex_to_bgr_without_hash_raises():
+def test_hex_to_bgr_without_hash():
     from backend.detection_registry import hex_to_bgr
-    with pytest.raises(ValueError):
-        hex_to_bgr("ef4444")
+    assert hex_to_bgr("ef4444") == (68, 68, 239)
 
 
 def test_hex_to_bgr_white():
@@ -153,9 +152,9 @@ class TestDetectionTypeRegistry:
         r = self._make_registry(tmp_path, monkeypatch)
         assert r.get_color_bgr("unknown") == (0, 255, 0)
 
-    def test_get_defaults_unknown_returns_none(self, tmp_path, monkeypatch):
+    def test_get_defaults_unknown_returns_empty(self, tmp_path, monkeypatch):
         r = self._make_registry(tmp_path, monkeypatch)
-        assert r.get_defaults("unknown") is None
+        assert r.get_defaults("unknown") == {}
 
     def test_merge_camera_config_unknown_returns_overrides(self, tmp_path, monkeypatch):
         r = self._make_registry(tmp_path, monkeypatch)
