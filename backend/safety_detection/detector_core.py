@@ -551,15 +551,26 @@ class MultiDetector:
 
         detected = result.get("detected", False)
         max_conf = max(result.get("scores", [0]) or [0])
+        box_count = len(result.get("boxes", []))
 
         # 对 max_box_count 模式（如离岗：0人报警），0 个框也算检测到，跳过 threshold
         has_max_box_trigger = (
             schedule.max_box_count is not None
-            and len(result.get("boxes", [])) <= schedule.max_box_count
+            and box_count <= schedule.max_box_count
             and detected
         )
 
-        if not detected or (max_conf < schedule.threshold and not has_max_box_trigger):
+        # outside 模式下，框数量超出 [min, max] 区间即触发，跳过 threshold
+        has_outside_trigger = (
+            schedule.box_count_mode == "outside"
+            and detected
+            and (
+                (schedule.min_box_count is not None and box_count < schedule.min_box_count)
+                or (schedule.max_box_count is not None and box_count > schedule.max_box_count)
+            )
+        )
+
+        if not detected or (max_conf < schedule.threshold and not has_max_box_trigger and not has_outside_trigger):
             if not detected and result.get("boxes"):
                 logger.warning(f"{camera_id} {dtype} has boxes but detected=False, resetting count")
             elif detected and max_conf < schedule.threshold:

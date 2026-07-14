@@ -240,6 +240,40 @@ class TestHandleDetectionRoiBoxCount:
         assert s.consecutive_count == 0
 
 
+def test_handle_standard_detection_outside_min_box_count_bypasses_threshold():
+    """outside 模式下，框数低于 min_box_count 时应跳过置信度阈值，触发告警"""
+    from backend.safety_detection.detector_core import MultiDetector, TypeSchedule
+    import threading
+    from collections import defaultdict
+
+    md = MultiDetector.__new__(MultiDetector)
+    md._lock = threading.RLock()
+    md._schedules = {}
+    md._cooldowns = defaultdict(dict)
+    md._alert_states = defaultdict(dict)
+    md._latest_results = {}
+    md.camera_manager = None
+    md.trigger_callback = None
+    md.vlm_queue = None
+
+    s = TypeSchedule(
+        dtype="person", enabled=True, interval=1, threshold=0.5, cooldown=60,
+        consecutive_required=2,
+        min_box_count=3,
+        box_count_mode="outside",
+    )
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    result = {"detected": False, "boxes": [], "scores": []}
+
+    md._handle_standard_detection("cam1", "person", frame, result.copy(), s)
+    assert s.consecutive_count == 1
+    assert md._cooldowns.get("cam1", {}).get("person") is None
+
+    md._handle_standard_detection("cam1", "person", frame, result.copy(), s)
+    assert s.consecutive_count == 2
+    assert md._cooldowns["cam1"]["person"] > 0
+
+
 def test_check_box_count_outside_mode():
     from backend.safety_detection.detector_core import check_box_count
     result = {"boxes": [[0, 0, 10, 10]] * 5, "scores": [0.9] * 5, "detected": True}
