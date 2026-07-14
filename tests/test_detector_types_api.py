@@ -1,5 +1,6 @@
 """detector types API 端点测试"""
 
+import io
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
@@ -11,6 +12,8 @@ from fastapi import FastAPI
 def client():
     app = FastAPI()
     app.include_router(router)
+    app.state.camera_manager = MagicMock()
+    app.state.camera_manager._cameras = {}
     return TestClient(app)
 
 
@@ -56,7 +59,7 @@ class TestGetDetectionType:
 class TestUpdateDetectionType:
     def test_update_defaults(self, client):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"defaults": {"enabled": False, "threshold": 0.5}}
+        mock_registry.get.return_value = {"defaults": {"enabled": False, "threshold": 0.5}, "label": "明火"}
         mock_registry.get_defaults.return_value = {"enabled": True, "threshold": 0.8}
 
         with patch("backend.safety_detection.api.registry", mock_registry):
@@ -65,13 +68,14 @@ class TestUpdateDetectionType:
             assert resp.json()["success"] is True
             mock_registry.update_defaults.assert_called_once()
 
-    def test_structural_fields_ignored(self, client):
+    def test_update_structural_fields(self, client):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"defaults": {"enabled": False}}
+        mock_registry.get.return_value = {"defaults": {"enabled": False}, "label": "明火"}
 
         with patch("backend.safety_detection.api.registry", mock_registry):
             resp = client.put("/detector/types/fire", json={"model_path": "evil.pt"})
-            assert resp.status_code == 400
+            assert resp.status_code == 200
+            mock_registry.update_type.assert_called_once()
 
     def test_unknown_type_404(self, client):
         mock_registry = MagicMock()
@@ -83,7 +87,7 @@ class TestUpdateDetectionType:
 
     def test_invalid_values_return_400(self, client):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"defaults": {"enabled": False, "threshold": 0.5}}
+        mock_registry.get.return_value = {"defaults": {"enabled": False, "threshold": 0.5}, "label": "明火"}
 
         with patch("backend.safety_detection.api.registry", mock_registry):
             invalid_cases = [
@@ -102,3 +106,71 @@ class TestUpdateDetectionType:
                 resp = client.put("/detector/types/fire", json=payload)
                 assert resp.status_code == 400, f"expected 400 for {payload}, got {resp.status_code}"
                 mock_registry.update_defaults.reset_mock()
+
+
+class TestCreateDetectionType:
+    def test_create_type_returns_key(self, client):
+        payload = {"label": "新类型", "color": "#123456", "model_path": "new.pt", "post_process": "yolo_box"}
+        mock_registry = MagicMock()
+        mock_registry.add_type.return_value = "xin_lei_xing_123abc"
+        mock_registry.get.return_value = {
+            "label": "新类型", "color": "#123456", "icon": "",
+            "post_process": "yolo_box", "defaults": {},
+        }
+
+        with patch("backend.safety_detection.api.registry", mock_registry):
+            resp = client.post("/detector/types", json=payload)
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "key" in data
+            assert data["label"] == "新类型"
+
+    def test_create_type_duplicate_label_400(self, client):
+        payload = {"label": "明火", "color": "#123456", "model_path": "x.pt", "post_process": "yolo_box"}
+        mock_registry = MagicMock()
+        mock_registry.add_type.side_effect = ValueError("label '明火' already exists")
+
+        with patch("backend.safety_detection.api.registry", mock_registry):
+            resp = client.post("/detector/types", json=payload)
+            assert resp.status_code == 400
+
+
+class TestDeleteDetectionType:
+    def test_delete_type_success(self, client):
+        mock_registry = MagicMock()
+        mock_registry.add_type.return_value = "dai_shan_chu_123abc"
+        mock_registry.get.return_value = {"label": "待删除"}
+
+        with patch("backend.safety_detection.api.registry", mock_registry):
+            resp = client.post("/detector/types", json={"label": "待删除", "color": "#000000", "model_path": "d.pt", "post_process": "yolo_box"})
+            key = resp.json()["key"]
+            client.app.state.camera_manager._cameras = {}
+            resp = client.delete(f"/detector/types/{key}")
+            assert resp.status_code == 200
+            mock_registry.delete_type.assert_called_once()
+
+    def test_delete_referenced_type_409(self, client):
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = {"label": "明火"}
+        mock_camera = MagicMock()
+        mock_camera.config.detection_types = ["fire"]
+        client.app.state.camera_manager._cameras = {"cam1": mock_camera}
+
+        with patch("backend.safety_detection.api.registry", mock_registry):
+            resp = client.delete("/detector/types/fire")
+            assert resp.status_code == 409
+
+
+class TestUploadModel:
+    def test_upload_model_success(self, client, tmp_path):
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = {"label": "明火", "model_path": "old.pt", "npu_model_path": "old.rknn"}
+
+        with patch("backend.safety_detection.api.registry", mock_registry):
+            resp = client.post(
+                "/detector/types/fire/model",
+                files={"file": ("test_model.pt", io.BytesIO(b"fake"), "application/octet-stream")}
+            )
+            assert resp.status_code == 200
+            assert resp.json()["model_path"] == "test_model.pt"
+            mock_registry.save_model.assert_called_once_with("test_model.pt", b"fake")

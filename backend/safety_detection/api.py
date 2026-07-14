@@ -3,7 +3,7 @@
 包含检测器状态、模型管理、测试告警注入等安全检测特有端点
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 import math
@@ -74,27 +74,86 @@ async def get_detection_type(dtype: str):
 
 @router.put("/detector/types/{dtype}")
 async def update_detection_type(dtype: str, data: dict):
-    """更新检测类型的默认运行参数"""
+    """更新检测类型（结构性字段 + defaults）"""
     type_def = registry.get(dtype)
     if type_def is None:
         return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
 
-    allowed_keys = {"enabled", "interval", "threshold", "consecutive_required",
-                    "cooldown", "use_vlm", "min_box_count", "max_box_count"}
-    defaults_update = {}
-    for k, v in data.items():
-        if k not in allowed_keys:
-            continue
-        error = _validate_default_value(k, v)
-        if error:
-            return JSONResponse({"error": error}, status_code=400)
-        defaults_update[k] = v
+    structural_fields = {"label", "color", "icon", "model_path", "npu_model_path",
+                        "post_process", "classes", "model_confidence", "vlm_prompt_key", "inspection_label"}
+    structural_update = {k: v for k, v in data.items() if k in structural_fields}
+    defaults_update = {k: v for k, v in data.items() if k not in structural_fields}
 
-    if not defaults_update:
-        return JSONResponse({"error": "No valid fields to update"}, status_code=400)
+    try:
+        if structural_update:
+            registry.update_type(dtype, structural_update)
+        if defaults_update:
+            allowed_keys = {"enabled", "interval", "threshold", "consecutive_required",
+                            "cooldown", "use_vlm", "min_box_count", "max_box_count"}
+            for k, v in defaults_update.items():
+                if k not in allowed_keys:
+                    continue
+                error = _validate_default_value(k, v)
+                if error:
+                    return JSONResponse({"error": error}, status_code=400)
+            registry.update_defaults(dtype, defaults_update)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
-    registry.update_defaults(dtype, defaults_update)
-    return {"success": True, "dtype": dtype, "defaults": registry.get_defaults(dtype)}
+    return {"success": True, "dtype": dtype, "type": registry.get(dtype)}
+
+
+@router.post("/detector/types")
+async def create_detection_type(data: dict):
+    """新增检测类型"""
+    try:
+        key = registry.add_type(data)
+        type_def = registry.get(key)
+        return {
+            "key": key,
+            "label": type_def.get("label", key),
+            "color": type_def.get("color", "#888888"),
+            "icon": type_def.get("icon", ""),
+            "post_process": type_def.get("post_process", "yolo_box"),
+            "defaults": type_def.get("defaults", {}),
+        }
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@router.delete("/detector/types/{dtype}")
+async def delete_detection_type(dtype: str, request: Request):
+    """删除检测类型（检查摄像头引用）"""
+    if registry.get(dtype) is None:
+        return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
+    # 检查摄像头引用
+    camera_manager = getattr(request.app.state, "camera_manager", None)
+    if camera_manager is not None:
+        for cam_id, cam in camera_manager._cameras.items():
+            if dtype in cam.config.detection_types:
+                return JSONResponse({"error": f"Type '{dtype}' is referenced by camera '{cam_id}'"}, status_code=409)
+    registry.delete_type(dtype)
+    return {"success": True, "dtype": dtype}
+
+
+@router.post("/detector/types/{dtype}/model")
+async def upload_model(dtype: str, file: UploadFile = File(...)):
+    """上传模型文件"""
+    if registry.get(dtype) is None:
+        return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
+    filename = file.filename
+    if not filename.endswith((".pt", ".rknn")):
+        return JSONResponse({"error": "Only .pt and .rknn files are allowed"}, status_code=400)
+    content = await file.read()
+    registry.save_model(filename, content)
+    # 自动填入对应路径字段
+    type_def = registry.get(dtype)
+    if filename.endswith(".pt"):
+        type_def["model_path"] = filename
+    else:
+        type_def["npu_model_path"] = filename
+    registry._save(registry._types)
+    return {"success": True, "model_path": filename, "dtype": dtype}
 
 
 @router.get("/detector/status")
