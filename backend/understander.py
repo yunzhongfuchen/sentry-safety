@@ -7,6 +7,7 @@ import numpy as np
 import cv2
 import requests
 from backend import config
+from backend.detection_registry import registry
 
 logger = logging.getLogger(__name__)
 
@@ -297,15 +298,11 @@ class VideoUnderstander:
     def _build_inspection_prompt(self, extra_context: dict) -> str:
         """动态构建巡检 prompt"""
         types = extra_context.get("enabled_types", [])
-        type_desc = {
-            "fire": "明火",
-            "smoke": "烟雾",
-            "uniform": "未穿工服",
-            "mask": "未戴口罩",
-            "cigarette": "吸烟",
-            "sleep": "睡岗/打盹",
-        }
-        checks = [f"- {type_desc.get(t, t)}" for t in types]
+        checks = []
+        for t in types:
+            type_def = registry.get(t)
+            desc = type_def.get("inspection_label", t) if type_def else t
+            checks.append(f"- {desc}")
         checks_str = "\n".join(checks)
         detections_json = "\n".join(
             [f'    "{t}": {{"detected": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}}' for t in types]
