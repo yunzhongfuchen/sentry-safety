@@ -43,6 +43,7 @@ class TypeSchedule:
     roi_invert: bool = False
     min_box_count: int = None
     max_box_count: int = None
+    box_count_mode: str | None = None  # gte | lte | between | outside
 
     def is_due(self, now: float) -> bool:
         return now - self.last_run >= self.interval
@@ -90,10 +91,19 @@ def filter_by_roi(result: dict, roi: list, roi_invert: bool,
 
 
 def check_box_count(result: dict, min_box_count: int = None,
-                    max_box_count: int = None) -> dict:
-    """按框数量阈值判断检测结果，支持离岗（max=0）和人数超限场景"""
+                    max_box_count: int = None, box_count_mode: str | None = None) -> dict:
+    """按框数量阈值判断检测结果，支持离岗（max=0）、人数超限和 outside 区间外模式"""
     box_count = len(result.get("boxes", []))
 
+    if box_count_mode == "outside":
+        # 目标数 < a 或 > b 时报警
+        if min_box_count is not None and box_count < min_box_count:
+            return {**result, "detected": True}
+        if max_box_count is not None and box_count > max_box_count:
+            return {**result, "detected": True}
+        return {**result, "detected": False}
+
+    # 原有逻辑（gte / lte / between）
     if min_box_count is not None and box_count < min_box_count:
         return {**result, "detected": False}
 
@@ -317,6 +327,7 @@ class MultiDetector:
                     roi_invert=cfg.get("roi_invert", False),
                     min_box_count=cfg.get("min_box_count"),
                     max_box_count=cfg.get("max_box_count"),
+                    box_count_mode=cfg.get("box_count_mode"),
                 )
                 self._schedules[camera_id][dtype] = schedule
             if self.camera_manager is not None:
@@ -536,7 +547,7 @@ class MultiDetector:
 
         # box_count 判断
         if schedule.min_box_count is not None or schedule.max_box_count is not None:
-            result = check_box_count(result, schedule.min_box_count, schedule.max_box_count)
+            result = check_box_count(result, schedule.min_box_count, schedule.max_box_count, schedule.box_count_mode)
 
         detected = result.get("detected", False)
         max_conf = max(result.get("scores", [0]) or [0])

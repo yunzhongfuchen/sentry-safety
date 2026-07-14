@@ -238,3 +238,26 @@ class TestHandleDetectionRoiBoxCount:
 
         md._handle_standard_detection("cam1", "person", frame, result, s)
         assert s.consecutive_count == 0
+
+
+def test_check_box_count_outside_mode():
+    from backend.safety_detection.detector_core import check_box_count
+    result = {"boxes": [[0, 0, 10, 10]] * 5, "scores": [0.9] * 5, "detected": True}
+    # outside: < 3 或 > 8 时报警，5 在区间内，不报警
+    out = check_box_count(result, min_box_count=3, max_box_count=8, box_count_mode="outside")
+    assert out["detected"] is False
+    # outside: 2 < 3，报警
+    result2 = {"boxes": [[0, 0, 10, 10]] * 2, "scores": [0.9] * 2, "detected": False}
+    out2 = check_box_count(result2, min_box_count=3, max_box_count=8, box_count_mode="outside")
+    assert out2["detected"] is True
+    # outside: 10 > 8，报警
+    result3 = {"boxes": [[0, 0, 10, 10]] * 10, "scores": [0.9] * 10, "detected": True}
+    out3 = check_box_count(result3, min_box_count=3, max_box_count=8, box_count_mode="outside")
+    assert out3["detected"] is True
+
+
+def test_type_schedule_has_box_count_mode():
+    from backend.safety_detection.detector_core import TypeSchedule
+    s = TypeSchedule(dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=60)
+    assert hasattr(s, "box_count_mode")
+    assert s.box_count_mode is None
