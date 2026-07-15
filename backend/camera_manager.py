@@ -758,11 +758,14 @@ class CameraManager:
         logger.info(f"Camera {camera_id} connected")
 
     def _reopen_capture(self, camera_id: str):
-        """重新打开视频源"""
+        """重新打开视频源（指数退避，stop 后放弃）"""
         with self._lock:
             if camera_id not in self._cameras:
                 return
             state = self._cameras[camera_id]
+            # 竞态防护：stop/set_camera_source 后旧 reader 线程的 reopen 直接放弃
+            if not state.running:
+                return
             state.status = CameraStatus.RECONNECTING
             state.reconnect_attempts += 1
 
@@ -787,6 +790,15 @@ class CameraManager:
                 except Exception:
                     pass
                 state.cap = None
+
+        # 指数退避：1s→2s→4s→…→30s 封顶，压住 reopen 风暴（连接成功后 attempts 重置）
+        backoff = min(30.0, 2.0 ** (state.reconnect_attempts - 1))
+        time.sleep(backoff)
+
+        # 退避期间摄像头可能已被停止/换源，放弃本次 reopen
+        with self._lock:
+            if camera_id not in self._cameras or not self._cameras[camera_id].running:
+                return
 
         try:
             self._open_capture(camera_id)

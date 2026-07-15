@@ -32,6 +32,12 @@ def test_main_camera_stream_buffers_are_kept_across_switches():
             mock_stream_server.unregister_camera.assert_not_called()
 
             mock_stream_server.reset_mock()
+            # 重置 set_main_camera 节流窗口，让第二次切换立即生效
+            with main_multi._main_switch_lock:
+                if main_multi._main_switch_timer is not None:
+                    main_multi._main_switch_timer.cancel()
+                    main_multi._main_switch_timer = None
+                main_multi._main_switch_pending = main_multi._MAIN_SWITCH_UNSET
             main_multi.set_main_camera("cam_02")
             assert cm.get_main_camera() == "cam_02"
             assert cm.decode_scheduler._main_camera == "cam_02"

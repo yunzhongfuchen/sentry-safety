@@ -539,8 +539,38 @@ def _pick_default_main_camera() -> Optional[str]:
     return cam_ids[0]
 
 
+_MAIN_SWITCH_UNSET = object()
+_main_switch_lock = threading.Lock()
+_main_switch_timer: Optional[threading.Timer] = None
+_main_switch_pending: object = _MAIN_SWITCH_UNSET
+
+
 def set_main_camera(camera_id: Optional[str]):
-    """切换选中的摄像头，同步更新显示模块。保留旧流缓冲，避免前端切换时连接抖动。"""
+    """切换选中的摄像头。500ms 节流：窗口期内的连续切换只保留最新目标，
+    避免主画面 reader session 被高频重建（疯狂点击/异常循环调用防护）。"""
+    global _main_switch_timer, _main_switch_pending
+    with _main_switch_lock:
+        if _main_switch_timer is None:
+            _do_set_main_camera(camera_id)
+            _main_switch_timer = threading.Timer(0.5, _end_main_switch_throttle)
+            _main_switch_timer.daemon = True
+            _main_switch_timer.start()
+        else:
+            _main_switch_pending = camera_id
+
+
+def _end_main_switch_throttle():
+    global _main_switch_timer, _main_switch_pending
+    with _main_switch_lock:
+        pending = _main_switch_pending
+        _main_switch_pending = _MAIN_SWITCH_UNSET
+        _main_switch_timer = None
+    if pending is not _MAIN_SWITCH_UNSET:
+        set_main_camera(pending)
+
+
+def _do_set_main_camera(camera_id: Optional[str]):
+    """实际执行主画面切换，同步更新显示模块。保留旧流缓冲，避免前端切换时连接抖动。"""
     global stream_server
 
     if camera_manager:
@@ -1083,7 +1113,10 @@ async def update_camera_config(camera_id: str, data: dict):
         if "enabled" in data:
             cfg.enabled = bool(data["enabled"])
             if cfg.enabled:
-                camera_manager.start_camera(camera_id)
+                # set_camera_source 已重启时跳过，避免 "already running" 重复启动
+                cam_state = camera_manager._cameras.get(camera_id)
+                if cam_state is None or not cam_state.running:
+                    camera_manager.start_camera(camera_id)
             else:
                 camera_manager.stop_camera(camera_id)
         if detection_types:
