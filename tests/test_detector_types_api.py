@@ -40,7 +40,7 @@ class TestListDetectionTypes:
         reg._types = {
             "fire": {
                 "label": "明火", "color": "#ef4444", "icon": "flame",
-                "model_path": "fire_smoke.pt", "npu_model_path": "fire_smoke.rknn",
+                "model_path": "fire_smoke.pt",
                 "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
                 "vlm_prompt_key": "fire_review", "inspection_label": "明火",
                 "defaults": {"enabled": False},
@@ -51,7 +51,6 @@ class TestListDetectionTypes:
         t = result[0]
         assert t["key"] == "fire"
         assert t["model_path"] == "fire_smoke.pt"
-        assert t["npu_model_path"] == "fire_smoke.rknn"
         assert t["classes"] == [0]
         assert t["model_confidence"] == 0.5
         assert t["vlm_prompt_key"] == "fire_review"
@@ -76,7 +75,7 @@ class TestGetDetectionType:
         mock_registry = MagicMock()
         mock_registry.get.return_value = {
             "label": "明火", "color": "#ef4444", "icon": "flame",
-            "model_path": "fire_smoke.pt", "npu_model_path": "fire_smoke.rknn",
+            "model_path": "fire_smoke.pt",
             "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
             "vlm_prompt_key": "fire_review", "inspection_label": "明火",
             "defaults": {"enabled": False},
@@ -88,7 +87,6 @@ class TestGetDetectionType:
             data = resp.json()
             assert data["key"] == "fire"
             assert data["model_path"] == "fire_smoke.pt"
-            assert data["npu_model_path"] == "fire_smoke.rknn"
             assert data["classes"] == [0]
             assert data["model_confidence"] == 0.5
             assert data["vlm_prompt_key"] == "fire_review"
@@ -225,7 +223,7 @@ class TestDeleteDetectionType:
 class TestUploadModel:
     def test_upload_model_success(self, client, tmp_path):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"label": "明火", "model_path": "old.pt", "npu_model_path": "old.rknn"}
+        mock_registry.get.return_value = {"label": "明火", "model_path": "old.pt"}
 
         with patch("backend.safety_detection.api.registry", mock_registry):
             resp = client.post(
@@ -239,7 +237,7 @@ class TestUploadModel:
 
     def test_upload_rknn_model_success(self, client, tmp_path):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"label": "明火", "model_path": "old.pt", "npu_model_path": "old.rknn"}
+        mock_registry.get.return_value = {"label": "明火", "model_path": "old.pt"}
 
         with patch("backend.safety_detection.api.registry", mock_registry):
             resp = client.post(
@@ -249,7 +247,7 @@ class TestUploadModel:
             assert resp.status_code == 200
             assert resp.json()["model_path"] == "test_model.rknn"
             mock_registry.save_model.assert_called_once_with("test_model.rknn", b"rknn")
-            mock_registry.update_type.assert_called_with("fire", {"npu_model_path": "test_model.rknn"})
+            mock_registry.update_type.assert_called_with("fire", {"model_path": "test_model.rknn"})
 
     def test_upload_invalid_extension_400(self, client):
         mock_registry = MagicMock()

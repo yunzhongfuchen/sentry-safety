@@ -75,7 +75,6 @@ async def get_detection_type(dtype: str):
         "color": type_def.get("color", "#888888"),
         "icon": type_def.get("icon", ""),
         "model_path": type_def.get("model_path"),
-        "npu_model_path": type_def.get("npu_model_path"),
         "post_process": type_def.get("post_process", "yolo_box"),
         "classes": type_def.get("classes"),
         "model_confidence": type_def.get("model_confidence", 0.5),
@@ -92,7 +91,7 @@ async def update_detection_type(dtype: str, data: dict):
     if type_def is None:
         return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
 
-    structural_fields = {"label", "color", "icon", "model_path", "npu_model_path",
+    structural_fields = {"label", "color", "icon", "model_path",
                         "post_process", "classes", "model_confidence", "vlm_prompt_key", "inspection_label"}
     allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
                         "cooldown", "use_vlm", "min_box_count", "max_box_count", "box_count_mode"}
@@ -129,7 +128,6 @@ async def create_detection_type(data: dict):
             "color": type_def.get("color", "#888888"),
             "icon": type_def.get("icon", ""),
             "model_path": type_def.get("model_path"),
-            "npu_model_path": type_def.get("npu_model_path"),
             "post_process": type_def.get("post_process", "yolo_box"),
             "classes": type_def.get("classes"),
             "model_confidence": type_def.get("model_confidence", 0.5),
@@ -167,11 +165,8 @@ async def upload_model(dtype: str, file: UploadFile = File(...)):
         return JSONResponse({"error": "Only .pt and .rknn files are allowed"}, status_code=400)
     content = await file.read()
     registry.save_model(filename, content)
-    # 自动填入对应路径字段
-    if filename.endswith(".pt"):
-        registry.update_type(dtype, {"model_path": filename})
-    else:
-        registry.update_type(dtype, {"npu_model_path": filename})
+    # model_path 直接指向当前环境实际的模型文件（.pt 或 .rknn）
+    registry.update_type(dtype, {"model_path": filename})
     return {"success": True, "model_path": filename, "dtype": dtype}
 
 

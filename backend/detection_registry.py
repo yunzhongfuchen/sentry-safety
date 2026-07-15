@@ -51,7 +51,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
         "color": "#ef4444",
         "icon": "flame",
         "model_path": "fire_smoke.pt",
-        "npu_model_path": "fire_smoke.rknn",
         "post_process": "yolo_box",
         "classes": [0],
         "model_confidence": 0.5,
@@ -73,7 +72,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
         "color": "#f97316",
         "icon": "cloud",
         "model_path": "fire_smoke.pt",
-        "npu_model_path": "fire_smoke.rknn",
         "post_process": "yolo_box",
         "classes": [1],
         "model_confidence": 0.5,
@@ -95,7 +93,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
         "color": "#22c55e",
         "icon": "shirt",
         "model_path": "uniform.pt",
-        "npu_model_path": "uniform.rknn",
         "post_process": "yolo_box",
         "classes": [1],
         "model_confidence": 0.5,
@@ -117,7 +114,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
         "color": "#0ea5e9",
         "icon": "shield",
         "model_path": "mask.pt",
-        "npu_model_path": "mask.rknn",
         "post_process": "yolo_box",
         "classes": [1],
         "model_confidence": 0.5,
@@ -139,7 +135,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
         "color": "#a855f7",
         "icon": "cigarette",
         "model_path": "cigarette.pt",
-        "npu_model_path": "cigarette.rknn",
         "post_process": "yolo_box",
         "classes": [0],
         "model_confidence": 0.5,
@@ -161,7 +156,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
         "color": "#eab308",
         "icon": "moon",
         "model_path": "yolov8n-pose.pt",
-        "npu_model_path": None,
         "post_process": "yolo_pose",
         "classes": None,
         "model_confidence": 0.1,
@@ -218,6 +212,10 @@ class DetectionTypeRegistry:
         else:
             self._types = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
             self._save(self._types)
+
+        # 清理已废弃字段（向后兼容：旧配置文件中的 npu_model_path 不再使用）
+        for td in self._types.values():
+            td.pop("npu_model_path", None)
 
         logger.info(f"Detection registry loaded: {list(self._types.keys())}")
 
@@ -285,7 +283,6 @@ class DetectionTypeRegistry:
                 "color": td.get("color", "#888888"),
                 "icon": td.get("icon", ""),
                 "model_path": td.get("model_path"),
-                "npu_model_path": td.get("npu_model_path"),
                 "post_process": td.get("post_process", "yolo_box"),
                 "classes": td.get("classes"),
                 "model_confidence": td.get("model_confidence", 0.5),
@@ -327,7 +324,6 @@ class DetectionTypeRegistry:
             "color": type_def.get("color", "#888888"),
             "icon": type_def.get("icon", ""),
             "model_path": type_def.get("model_path"),
-            "npu_model_path": type_def.get("npu_model_path"),
             "post_process": type_def.get("post_process", "yolo_box"),
             "classes": type_def.get("classes"),
             "model_confidence": type_def.get("model_confidence", 0.5),
@@ -351,7 +347,7 @@ class DetectionTypeRegistry:
                 if k != dtype and existing.get("label") == new_label:
                     raise ValueError(f"label '{new_label}' already exists")
             td["label"] = new_label
-        for field in ("color", "icon", "model_path", "npu_model_path", "post_process",
+        for field in ("color", "icon", "model_path", "post_process",
                       "classes", "model_confidence", "vlm_prompt_key", "inspection_label"):
             if field in updates:
                 td[field] = updates[field]

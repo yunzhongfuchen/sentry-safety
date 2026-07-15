@@ -43,15 +43,15 @@ class TestResolveModelPath:
         assert "fire_smoke" in result
 
     def test_resolve_npu_path(self, fake_registry, tmp_path, monkeypatch):
-        """NPU 模型路径从注册表 npu_model_path 读取"""
+        """NPU 环境同样从注册表 model_path 解析（不再有独立 npu 路径字段）"""
         from backend.inference_engine import _resolve_model_path
-        rknn_file = tmp_path / "fire_smoke.rknn"
-        rknn_file.touch()
+        model_file = tmp_path / "fire_smoke.pt"
+        model_file.touch()
         import backend.inference_engine as ie_mod
         monkeypatch.setattr(ie_mod, "WEIGHTS_DIR", tmp_path)
         result = _resolve_model_path("fire", use_npu=True)
         assert result is not None
-        assert "fire_smoke.rknn" in result
+        assert "fire_smoke.pt" in result
 
     def test_resolve_returns_none_for_missing(self, fake_registry, tmp_path, monkeypatch):
         """模型文件不存在时返回 None"""

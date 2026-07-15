@@ -108,7 +108,7 @@ class TestDetectionTypeRegistry:
         assert "defaults" in fire_entry
         # structural fields exposed so edit dialog can round-trip them
         assert fire_entry["model_path"] == "fire_smoke.pt"
-        assert fire_entry["npu_model_path"] == "fire_smoke.rknn"
+        assert "npu_model_path" not in fire_entry
         assert fire_entry["classes"] == [0]
         assert fire_entry["model_confidence"] == 0.5
         assert fire_entry["vlm_prompt_key"] == "fire_review"

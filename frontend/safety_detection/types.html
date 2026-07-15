@@ -170,8 +170,7 @@
                     <div class="type-card-grid">
                         <div class="type-card-field"><label>显示名称 *</label><input v-model="dialog.label" placeholder="如：明火" /></div>
                         <div class="type-card-field"><label>颜色 *</label><input type="color" v-model="dialog.color" /></div>
-                        <div class="type-card-field"><label>CPU 模型路径</label><input v-model="dialog.model_path" placeholder="如：fire_smoke.pt" /></div>
-                        <div class="type-card-field"><label>NPU 模型路径</label><input v-model="dialog.npu_model_path" placeholder="如：fire_smoke.rknn" /></div>
+                        <div class="type-card-field"><label>模型路径</label><input v-model="dialog.model_path" placeholder="如：fire_smoke.pt / fire_smoke.rknn" /></div>
                         <div class="type-card-field">
                             <label>后处理策略 *</label>
                             <select v-model="dialog.post_process">
@@ -275,7 +274,7 @@
                         dialog.value = copy;
                     } else {
                         dialog.value = {
-                            label: '', color: '#888888', model_path: '', npu_model_path: '',
+                            label: '', color: '#888888', model_path: '',
                             post_process: 'yolo_box', classesStr: '', model_confidence: 0.5,
                             icon: '', vlm_prompt_key: '', inspection_label: '', _existing: false,
                             defaults: defaultDefaults()
@@ -288,7 +287,7 @@
                     if (!d.label || !d.color || !d.post_process) { showToast('请填写必填项', 'error'); return; }
                     const payload = {
                         label: d.label, color: d.color, model_path: d.model_path || null,
-                        npu_model_path: d.npu_model_path || null, post_process: d.post_process,
+                        post_process: d.post_process,
                         classes: d.classesStr ? d.classesStr.split(',').map(Number) : null,
                         model_confidence: d.model_confidence, icon: d.icon || '',
                         vlm_prompt_key: d.vlm_prompt_key || '', inspection_label: d.inspection_label || d.label

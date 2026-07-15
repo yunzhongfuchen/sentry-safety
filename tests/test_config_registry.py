@@ -45,7 +45,7 @@ class TestGetDefaultTypeConfig:
         """不包含 model_path 等结构性字段"""
         from backend.config import get_default_type_config
         dtc = get_default_type_config()
-        structural = {"model_path", "npu_model_path", "post_process", "classes", "model_confidence"}
+        structural = {"model_path", "post_process", "classes", "model_confidence"}
         for dtype, cfg in dtc.items():
             for field in structural:
                 assert field not in cfg, f"{dtype} should not contain {field}"

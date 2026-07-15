@@ -120,7 +120,11 @@ def _device_fallback_order(preferred: str) -> List[str]:
 
 
 def _resolve_model_path(dtype: str, use_npu: bool) -> Optional[str]:
-    """解析模型路径：优先环境变量，其次按注册表文件名在标准目录中查找"""
+    """解析模型路径：优先环境变量，其次按注册表文件名在标准目录中查找
+
+    model_path 存储当前环境实际的模型文件名（NPU 部署配 .rknn，CPU/GPU 部署配 .pt），
+    程序不做后缀推导，读什么用什么。
+    """
     env_key = f"{dtype.upper()}_RKNN_MODEL" if use_npu else f"{dtype.upper()}_MODEL"
     env_path = os.getenv(env_key)
     if env_path and os.path.exists(env_path):
@@ -128,7 +132,7 @@ def _resolve_model_path(dtype: str, use_npu: bool) -> Optional[str]:
 
     type_def = registry.get(dtype)
     if type_def is not None:
-        filename = type_def.get("npu_model_path") if use_npu else type_def.get("model_path")
+        filename = type_def.get("model_path")
         if filename is None:
             return None
         candidates = [
