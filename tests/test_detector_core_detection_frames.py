@@ -23,7 +23,7 @@ def test_standard_detection_collects_frames():
     md._handle_standard_detection("cam1", "fire", make_frame(), result, schedule)
     md._handle_standard_detection("cam1", "fire", make_frame(), result, schedule)
 
-    assert schedule.consecutive_count == 3
+    assert schedule.consecutive_count == 0  # 第 3 次触发后计数清零
     assert camera_manager.add_detection_frame.call_count == 3
     assert camera_manager.get_detection_frames.called
 
@@ -75,7 +75,7 @@ def test_sleep_detection_uses_standard_logic_and_generic_reason():
     md._handle_standard_detection("cam1", "sleep", make_frame(), result, schedule)
     md._handle_standard_detection("cam1", "sleep", make_frame(), result, schedule)
 
-    assert schedule.consecutive_count == 3
+    assert schedule.consecutive_count == 0  # 第 3 次触发后计数清零
     assert camera_manager.add_detection_frame.call_count == 3
     assert camera_manager.get_detection_frames.called
     assert "检测到 sleep" in result["reason"]

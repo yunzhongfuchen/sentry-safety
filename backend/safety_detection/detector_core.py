@@ -586,6 +586,9 @@ class MultiDetector:
         # 达到阈值，触发告警流程
         logger.info(f"{camera_id} {dtype} TRIGGERING alarm (conf={max_conf:.2f})")
         self._cooldowns[camera_id][dtype] = now
+        # 重置连续计数：否则冷却结束后第一次命中会立即再次触发，
+        # 且此时帧缓存只有 1 帧，导致告警记录的帧序列只有一帧
+        schedule.consecutive_count = 0
 
         # 把 level 和 reason 写入 result，供 trigger_callback 创建记录时使用
         result["level"] = "small_model_alarm"

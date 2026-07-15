@@ -270,8 +270,8 @@ def test_handle_standard_detection_outside_min_box_count_bypasses_threshold():
     assert md._cooldowns.get("cam1", {}).get("person") is None
 
     md._handle_standard_detection("cam1", "person", frame, result.copy(), s)
-    assert s.consecutive_count == 2
-    assert md._cooldowns["cam1"]["person"] > 0
+    assert s.consecutive_count == 0  # 触发告警后计数清零
+    assert md._cooldowns["cam1"]["person"] > 0  # 冷却已设置，说明确实触发了
 
 
 def test_check_box_count_outside_mode():
@@ -295,3 +295,43 @@ def test_type_schedule_has_box_count_mode():
     s = TypeSchedule(dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=60)
     assert hasattr(s, "box_count_mode")
     assert s.box_count_mode is None
+
+
+def test_consecutive_count_reset_after_trigger():
+    """触发后连续计数必须清零：否则冷却结束后第一次命中会立即再次触发，
+    且帧缓存只有 1 帧，导致告警记录帧序列只有一帧（回归测试）"""
+    from backend.safety_detection.detector_core import MultiDetector, TypeSchedule
+    import threading
+    from collections import defaultdict
+
+    md = MultiDetector.__new__(MultiDetector)
+    md._lock = threading.RLock()
+    md._schedules = {}
+    md._cooldowns = defaultdict(dict)
+    md._alert_states = defaultdict(dict)
+    md._latest_results = {}
+    md.camera_manager = MagicMock()
+    md.trigger_callback = None
+    md.vlm_queue = None
+
+    s = TypeSchedule(
+        dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=60,
+        consecutive_required=2,
+    )
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    hit = {"detected": True, "boxes": [[10, 10, 50, 50]], "scores": [0.9]}
+
+    # 第一次命中：count=1，不触发
+    md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
+    assert s.consecutive_count == 1
+    assert md._cooldowns.get("cam1", {}).get("fire") is None
+
+    # 第二次命中：count=2，触发，计数清零
+    md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
+    assert md._cooldowns["cam1"]["fire"] > 0
+    assert s.consecutive_count == 0, "触发后 consecutive_count 必须清零"
+
+    # 冷却结束后第一次命中：count=1，不能立即再次触发
+    s.last_run = 0
+    md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
+    assert s.consecutive_count == 1, "冷却结束后的第一次命中应重新累计，不能立即再次触发"
