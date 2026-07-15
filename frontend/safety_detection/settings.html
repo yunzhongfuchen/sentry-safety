@@ -379,10 +379,10 @@
                                     <div class="type-param"><label>冷却</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].cooldown" /></div>
                                     <div class="type-param"><label>VLM</label><input type="checkbox" v-model="cameraDialog.detection_types[t.key].use_vlm" /></div>
                                 </div>
-                                <!-- 人数条件 -->
+                                <!-- 报警条件 -->
                                 <div class="type-param-row">
                                     <div class="type-param">
-                                        <label>人数条件</label>
+                                        <label>报警条件</label>
                                         <select class="clay-select" v-model="cameraDialog.detection_types[t.key].box_count_mode">
                                             <option value="gte">目标数 ≥ a</option>
                                             <option value="lte">目标数 ≤ b</option>
