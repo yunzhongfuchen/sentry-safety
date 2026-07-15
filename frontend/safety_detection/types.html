@@ -208,8 +208,25 @@
                                 <div class="type-card-field"><label>冷却</label><input type="number" min="0" v-model.number="dialog.defaults.cooldown" /></div>
                             </div>
                             <div class="type-card-grid">
-                                <div class="type-card-field"><label>最小目标数</label><input type="number" min="0" v-model.number="dialog.defaults.min_box_count" /></div>
-                                <div class="type-card-field"><label>最大目标数</label><input type="number" min="0" placeholder="留空不限" v-model.number="dialog.defaults.max_box_count" /></div>
+                                <div class="type-card-field">
+                                    <label>人数条件</label>
+                                    <select v-model="dialog.defaults.box_count_mode">
+                                        <option value="gte">目标数 ≥ a</option>
+                                        <option value="lte">目标数 ≤ b</option>
+                                        <option value="between">a ≤ 目标数 ≤ b</option>
+                                        <option value="outside">目标数 < a 或 > b</option>
+                                    </select>
+                                </div>
+                                <div class="type-card-field" v-if="dialog.defaults.box_count_mode === 'gte'">
+                                    <label>a</label><input type="number" min="0" v-model.number="dialog.defaults.box_count_a" />
+                                </div>
+                                <div class="type-card-field" v-if="dialog.defaults.box_count_mode === 'lte'">
+                                    <label>b</label><input type="number" min="0" v-model.number="dialog.defaults.box_count_a" />
+                                </div>
+                                <template v-if="dialog.defaults.box_count_mode === 'between' || dialog.defaults.box_count_mode === 'outside'">
+                                    <div class="type-card-field"><label>a</label><input type="number" min="0" v-model.number="dialog.defaults.box_count_a" /></div>
+                                    <div class="type-card-field"><label>b</label><input type="number" min="0" v-model.number="dialog.defaults.box_count_b" /></div>
+                                </template>
                             </div>
 
                             <div class="form-card-title" style="margin-top: 16px;">高级参数</div>
@@ -280,7 +297,8 @@
                     const defaultDefaults = () => ({
                         enabled: false, interval: 1, threshold: 0.5,
                         consecutive_required: 3, cooldown: 60, use_vlm: false,
-                        min_box_count: 1, max_box_count: null
+                        min_box_count: 1, max_box_count: null,
+                        box_count_mode: 'gte', box_count_a: 1, box_count_b: null
                     });
                     if (t) {
                         const copy = JSON.parse(JSON.stringify(t));
@@ -288,6 +306,11 @@
                         copy.classesStr = (t.classes || []).join(',');
                         // 确保 defaults 所有字段都有值，便于 v-model 双向绑定
                         copy.defaults = Object.assign(defaultDefaults(), copy.defaults || {});
+                        // 后端 min/max/mode 字段转换为前端 mode/a/b
+                        const fc = fieldsToBoxCountMode(copy.defaults.min_box_count, copy.defaults.max_box_count, copy.defaults.box_count_mode);
+                        copy.defaults.box_count_mode = fc.mode;
+                        copy.defaults.box_count_a = fc.a ?? 1;
+                        copy.defaults.box_count_b = fc.b;
                         dialog.value = copy;
                     } else {
                         dialog.value = {
@@ -309,6 +332,8 @@
                         model_confidence: d.model_confidence,
                         vlm_prompt: d.vlm_prompt || '', inspection_label: d.inspection_label || d.label
                     };
+                    // 前端 mode/a/b 转换为后端 min/max/mode 字段
+                    const bc = boxCountModeToFields(d.defaults.box_count_mode || 'gte', d.defaults.box_count_a ?? 1, d.defaults.box_count_b);
                     const defaultsPayload = {
                         enabled: d.defaults.enabled,
                         interval: d.defaults.interval,
@@ -316,8 +341,9 @@
                         consecutive_required: d.defaults.consecutive_required,
                         cooldown: d.defaults.cooldown,
                         use_vlm: d.defaults.use_vlm,
-                        min_box_count: d.defaults.min_box_count,
-                        max_box_count: (d.defaults.max_box_count === '' || d.defaults.max_box_count === undefined) ? null : d.defaults.max_box_count
+                        min_box_count: bc.min_box_count,
+                        max_box_count: bc.max_box_count,
+                        box_count_mode: bc.box_count_mode
                     };
                     if (d._existing) {
                         // PUT 接口：defaults 字段平铺在顶层

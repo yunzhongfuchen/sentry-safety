@@ -42,6 +42,7 @@ UNIVERSAL_DEFAULTS: dict[str, Any] = {
     "use_vlm": False,
     "min_box_count": 1,
     "max_box_count": None,
+    "box_count_mode": None,
 }
 
 
@@ -124,6 +125,7 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "use_vlm": False,
             "min_box_count": 1,
             "max_box_count": None,
+            "box_count_mode": None,
         },
     },
     "smoke": {
@@ -144,6 +146,7 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "use_vlm": False,
             "min_box_count": 1,
             "max_box_count": None,
+            "box_count_mode": None,
         },
     },
     "uniform": {
@@ -164,6 +167,7 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "use_vlm": False,
             "min_box_count": 1,
             "max_box_count": None,
+            "box_count_mode": None,
         },
     },
     "mask": {
@@ -184,6 +188,7 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "use_vlm": False,
             "min_box_count": 1,
             "max_box_count": None,
+            "box_count_mode": None,
         },
     },
     "cigarette": {
@@ -204,6 +209,7 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "use_vlm": False,
             "min_box_count": 1,
             "max_box_count": None,
+            "box_count_mode": None,
         },
     },
     "sleep": {
@@ -224,6 +230,7 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "use_vlm": False,
             "min_box_count": 1,
             "max_box_count": None,
+            "box_count_mode": None,
         },
     },
 }

@@ -107,6 +107,7 @@ def get_default_type_config() -> dict:
             "use_vlm": defaults.get("use_vlm", False),
             "min_box_count": defaults.get("min_box_count"),
             "max_box_count": defaults.get("max_box_count"),
+            "box_count_mode": defaults.get("box_count_mode"),
         }
     return dtc
 
