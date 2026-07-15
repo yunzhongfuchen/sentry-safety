@@ -430,8 +430,11 @@
                     <button class="clay-button ghost" @click="roiDialog = null">&times;</button>
                 </div>
                 <div class="gc-modal-body">
-                    <div style="position: relative; display: inline-block;">
-                        <img :src="roiDialog.snapshotUrl" style="max-width: 100%; display: block;" @load="onSnapshotLoad" />
+                    <div v-if="roiDialog.snapshotFailed" style="padding: 40px; text-align: center; color: var(--text-muted);">
+                        无法获取摄像头画面
+                    </div>
+                    <div v-else style="position: relative; display: inline-block;">
+                        <img :src="roiDialog.snapshotUrl" style="max-width: 100%; display: block;" @load="onSnapshotLoad" @error="onSnapshotError" />
                         <canvas ref="roiCanvas" style="position: absolute; top: 0; left: 0; cursor: crosshair;" @click="onRoiClick" @dblclick="onRoiDblClick"></canvas>
                     </div>
                 </div>
@@ -719,7 +722,7 @@
 
                 function openRoiDialog(dtype) {
                     const camId = cameraDialog.value.camera_id;
-                    roiDialog.value = { dtype, snapshotUrl: `/cameras/${camId}/snapshot?t=${Date.now()}` };
+                    roiDialog.value = { dtype, snapshotUrl: `/cameras/${camId}/snapshot?t=${Date.now()}`, snapshotFailed: false };
                     roiPoints = cameraDialog.value.detection_types[dtype].roi
                         ? JSON.parse(JSON.stringify(cameraDialog.value.detection_types[dtype].roi))
                         : [];
@@ -733,8 +736,14 @@
                     drawRoiOnCanvas(canvas, roiPoints, roiPoints.length >= 3);
                 }
 
+                function onSnapshotError() {
+                    if (roiDialog.value) roiDialog.value.snapshotFailed = true;
+                }
+
                 function onRoiClick(e) {
+                    if (roiDialog.value && roiDialog.value.snapshotFailed) return;
                     const canvas = roiCanvas.value;
+                    if (!canvas) return;
                     const rect = canvas.getBoundingClientRect();
                     const x = (e.clientX - rect.left) / rect.width;
                     const y = (e.clientY - rect.top) / rect.height;
@@ -747,9 +756,14 @@
                     drawRoiOnCanvas(roiCanvas.value, roiPoints, true);
                 }
 
-                function clearRoi() { roiPoints = []; drawRoiOnCanvas(roiCanvas.value, [], false); }
+                function clearRoi() {
+                    if (roiDialog.value && roiDialog.value.snapshotFailed) return;
+                    roiPoints = [];
+                    drawRoiOnCanvas(roiCanvas.value, [], false);
+                }
 
                 function saveRoi() {
+                    if (roiDialog.value && roiDialog.value.snapshotFailed) { showToast('无法获取摄像头画面，不能保存 ROI', 'error'); return; }
                     if (roiPoints.length < 3) { showToast('至少需要 3 个顶点', 'error'); return; }
                     cameraDialog.value.detection_types[roiDialog.value.dtype].roi = roiPoints;
                     roiDialog.value = null;
@@ -845,7 +859,7 @@
                     loadCameras, loadSettings, loadModels,
                     saveVlmSettings, saveDefaultTypes, saveSystemSettings,
                     openCameraDialog, closeCameraDialog, resetCameraTypes, saveCamera, deleteCamera,
-                    toggleTypeExpand, openRoiDialog, onSnapshotLoad, onRoiClick, onRoiDblClick, clearRoi, saveRoi,
+                    toggleTypeExpand, openRoiDialog, onSnapshotLoad, onSnapshotError, onRoiClick, onRoiDblClick, clearRoi, saveRoi,
                     openBatchDialog, saveBatchConfig, toggleSelectAll,
                     restartSystem, toggleSettingsNav
                 };

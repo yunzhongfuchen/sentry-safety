@@ -365,10 +365,11 @@ class DetectionTypeRegistry:
         self._save(self._types)
 
     def save_model(self, filename: str, content: bytes) -> Path:
-        """保存模型文件到 weights/ 目录"""
+        """保存模型文件到 weights/ 目录（剥离目录成分防止路径穿越）"""
         weights_dir = PROJECT_ROOT / "weights"
         weights_dir.mkdir(parents=True, exist_ok=True)
-        path = weights_dir / filename
+        safe_name = Path(filename).name
+        path = weights_dir / safe_name
         path.write_bytes(content)
         return path
 

@@ -20,6 +20,13 @@ def _validate_default_value(key: str, value):
             return f"{key} must be a boolean"
         return None
 
+    if key == "box_count_mode":
+        if value is None:
+            return None
+        if value not in ("gte", "lte", "between", "outside"):
+            return f"{key} must be one of 'gte', 'lte', 'between', 'outside' or null"
+        return None
+
     if key in ("min_box_count", "max_box_count"):
         if value is None:
             return None
@@ -88,7 +95,7 @@ async def update_detection_type(dtype: str, data: dict):
     structural_fields = {"label", "color", "icon", "model_path", "npu_model_path",
                         "post_process", "classes", "model_confidence", "vlm_prompt_key", "inspection_label"}
     allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
-                        "cooldown", "use_vlm", "min_box_count", "max_box_count"}
+                        "cooldown", "use_vlm", "min_box_count", "max_box_count", "box_count_mode"}
     structural_update = {k: v for k, v in data.items() if k in structural_fields}
     defaults_update = {k: v for k, v in data.items() if k not in structural_fields and k in allowed_defaults}
 

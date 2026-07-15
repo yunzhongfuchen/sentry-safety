@@ -280,3 +280,19 @@ def test_save_model_writes_file(tmp_path, monkeypatch):
     assert path.exists()
     assert path.read_bytes() == content
     assert path.parent.name == "weights"
+
+
+def test_save_model_sanitizes_path_traversal(tmp_path, monkeypatch):
+    """save_model('../evil.pt') 必须写入 weights/evil.pt，不能逃逸到 weights/ 之外"""
+    import backend.detection_registry as mod
+    monkeypatch.setattr(mod, "PROJECT_ROOT", tmp_path)
+    r = mod.DetectionTypeRegistry()
+    content = b"evil payload"
+    path = r.save_model("../evil.pt", content)
+    assert path.name == "evil.pt"
+    assert path.parent.name == "weights"
+    assert path.parent.parent == tmp_path
+    assert path.exists()
+    assert path.read_bytes() == content
+    # 确认没有文件被写到 weights/ 之外
+    assert not (tmp_path / "evil.pt").exists()
