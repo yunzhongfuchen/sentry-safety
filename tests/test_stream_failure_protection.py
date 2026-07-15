@@ -3,12 +3,14 @@ import threading
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from backend.camera_manager import CameraManager, CameraConfig
 from backend import main_multi
 
 
 class TestReopenBackoff:
-    """_reopen_capture 指数退避"""
+    """_reopen_capture 指数退避（通过 next_reopen_time 时间戳实现）"""
 
     def _make_manager(self):
         cm = CameraManager()
@@ -18,25 +20,45 @@ class TestReopenBackoff:
         state.cap = MagicMock()
         return cm, state
 
-    def test_reopen_sleeps_with_exponential_backoff(self):
-        """连续 reopen 的退避时间应为 1s→2s→4s"""
+    def test_reopen_sets_next_time_with_exponential_backoff(self):
+        """连续 reopen 的 next_reopen_time 间隔应为 1s→2s→4s"""
         cm, state = self._make_manager()
-        sleep_times = []
-        with patch.object(cm, "_open_capture"), \
-             patch("backend.camera_manager.time.sleep", side_effect=lambda s: sleep_times.append(s)):
+        intervals = []
+        with patch.object(cm, "_open_capture"):
             for _ in range(3):
+                before = time.time()
                 cm._reopen_capture("cam_01")
-        assert sleep_times == [1.0, 2.0, 4.0]
+                intervals.append(state.next_reopen_time - before)
+        assert intervals[0] == pytest.approx(1.0, abs=0.1)
+        assert intervals[1] == pytest.approx(2.0, abs=0.1)
+        assert intervals[2] == pytest.approx(4.0, abs=0.1)
 
     def test_reopen_backoff_capped_at_30s(self):
         """退避上限 30s"""
         cm, state = self._make_manager()
         state.reconnect_attempts = 10
-        sleep_times = []
-        with patch.object(cm, "_open_capture"), \
-             patch("backend.camera_manager.time.sleep", side_effect=lambda s: sleep_times.append(s)):
+        with patch.object(cm, "_open_capture"):
+            before = time.time()
             cm._reopen_capture("cam_01")
-        assert sleep_times == [30.0]
+        assert state.next_reopen_time - before == pytest.approx(30.0, abs=0.1)
+
+    def test_open_capture_resets_reopen_schedule(self):
+        """连接成功后 reconnect_attempts 与 next_reopen_time 均重置"""
+        cm, state = self._make_manager()
+        state.reconnect_attempts = 5
+        state.next_reopen_time = time.time() + 30
+
+        class FakeCap:
+            def isOpened(self):
+                return True
+            def set(self, *args, **kwargs):
+                pass
+
+        with patch("backend.camera_manager.cv2.VideoCapture", return_value=FakeCap()):
+            cm._open_capture("cam_01")
+
+        assert state.reconnect_attempts == 0
+        assert state.next_reopen_time == 0
 
 
 class TestReopenRaceGuard:
@@ -57,22 +79,24 @@ class TestReopenRaceGuard:
         assert state.reconnect_attempts == attempts_before  # 未递增，说明直接返回
         state.cap.release.assert_not_called()  # 不应 release
 
-    def test_reopen_abandoned_during_backoff(self):
-        """退避期间被 stop，reopen 应放弃且不调用 _open_capture"""
+    def test_reader_respects_next_reopen_time(self):
+        """reader 循环在 cap=None 时只在到达 next_reopen_time 后才触发重连"""
         cm = CameraManager()
         cm.register_camera(CameraConfig(camera_id="cam_01", source="0"))
         state = cm._cameras["cam_01"]
         state.running = True
-        state.cap = MagicMock()
+        state.cap = None
+        state.next_reopen_time = time.time() + 60  # 远在未来
 
-        def stop_during_sleep(_):
-            state.running = False
+        with patch.object(cm, "_reopen_capture") as mock_reopen:
+            # 手动跑一轮 reader 循环逻辑（通过短暂启动线程后停止）
+            t = threading.Thread(target=cm._reader_loop, args=("cam_01",), daemon=True)
+            t.start()
+            time.sleep(0.1)
+            state.reader_stop.set()
+            t.join(timeout=1.0)
 
-        with patch.object(cm, "_open_capture") as mock_open, \
-             patch("backend.camera_manager.time.sleep", side_effect=stop_during_sleep):
-            cm._reopen_capture("cam_01")
-
-        mock_open.assert_not_called()
+        mock_reopen.assert_not_called()
 
 
 class TestMainCameraThrottle:

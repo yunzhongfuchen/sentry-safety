@@ -97,6 +97,8 @@ class CameraState:
     reader_stop: threading.Event = field(default_factory=threading.Event)
     reader_queue: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=1))
     reader_error_count: int = 0
+    # 下次允许重连的时间戳（指数退避节奏；0 = 立即可重连）
+    next_reopen_time: float = 0.0
 
     def get_avg_fps(self) -> float:
         """计算平均FPS"""
@@ -162,6 +164,7 @@ class CameraManager:
             state.running = True
             state.error_count = 0
             state.reconnect_attempts = 0
+            state.next_reopen_time = 0.0
             state.last_decode_time = 0.0
             state.frame_count = 0
             state.last_frame_count = 0
@@ -174,17 +177,9 @@ class CameraManager:
             if not self.decode_scheduler._running.is_set():
                 self.decode_scheduler.start()
 
-        # 在锁外打开视频源
-        def _open_and_retry():
-            try:
-                self._open_capture(camera_id)
-            except Exception as e:
-                logger.error(f"Camera {camera_id} open failed: {e}")
-                # 重连逻辑交给 DecodeScheduler 的 decode 失败计数
-
-        threading.Thread(target=_open_and_retry, daemon=True, name=f"open-{camera_id}").start()
-
-        # 启动独立帧读取线程（与 open 并行，无 cap 时会自旋等待）
+        # 启动独立帧读取线程；初次打开也由 reader 循环按退避节奏统一负责
+        # （next_reopen_time 初始为 0，首轮循环即触发 _reopen_capture），
+        # 不再单独开 open 线程，避免与 reader 重连并发打开两个 cap
         self._ensure_reader_thread(camera_id)
 
         logger.info(f"Camera {camera_id} started")
@@ -280,7 +275,17 @@ class CameraManager:
                 cap = state.cap
 
             if cap is None or not cap.isOpened():
-                time.sleep(0.02)
+                # cap 未就绪（初次打开失败/连接断开/错误超限）：按退避节奏重连
+                now = time.time()
+                with self._lock:
+                    if camera_id not in self._cameras:
+                        return
+                    state = self._cameras[camera_id]
+                    next_time = state.next_reopen_time
+                if now >= next_time:
+                    self._reopen_capture(camera_id)
+                else:
+                    time.sleep(0.02)
                 continue
 
             try:
@@ -292,12 +297,18 @@ class CameraManager:
             if not ret or frame is None:
                 with state.lock:
                     state.reader_error_count += 1
-                # 错误过多时触发重连（在 reader 线程外调用，避免锁死）
+                # 错误过多时释放 cap 置 None，交给上方 cap=None 分支按退避节奏重连，
+                # 避免在此直接 reopen 绕过退避形成重连风暴
                 if state.reader_error_count > 30:
-                    logger.warning(f"Camera {camera_id} reader too many errors, reopening")
+                    logger.warning(f"Camera {camera_id} reader too many errors, will reconnect with backoff")
                     with state.lock:
                         state.reader_error_count = 0
-                    self._reopen_capture(camera_id)
+                        try:
+                            if state.cap:
+                                state.cap.release()
+                        except Exception:
+                            pass
+                        state.cap = None
                 continue
 
             with state.lock:
@@ -754,11 +765,16 @@ class CameraManager:
             state.cap = cap
             state.status = CameraStatus.CONNECTED
             state.reconnect_attempts = 0
+            state.next_reopen_time = 0
 
         logger.info(f"Camera {camera_id} connected")
 
     def _reopen_capture(self, camera_id: str):
-        """重新打开视频源（指数退避，stop 后放弃）"""
+        """重新打开视频源（指数退避节奏，stop 后放弃）
+
+        退避通过 state.next_reopen_time 时间戳实现，不在线程内 sleep，
+        reader 循环在 cap=None 时按该时间戳决定是否发起下次重连。
+        """
         with self._lock:
             if camera_id not in self._cameras:
                 return
@@ -768,6 +784,9 @@ class CameraManager:
                 return
             state.status = CameraStatus.RECONNECTING
             state.reconnect_attempts += 1
+            # 指数退避：1s→2s→4s→…→30s 封顶（连接成功后 attempts 重置）
+            backoff = min(30.0, 2.0 ** (state.reconnect_attempts - 1))
+            state.next_reopen_time = time.time() + backoff
 
             max_attempts = state.config.max_reconnect_attempts
             if max_attempts > 0 and state.reconnect_attempts > max_attempts:
@@ -790,15 +809,6 @@ class CameraManager:
                 except Exception:
                     pass
                 state.cap = None
-
-        # 指数退避：1s→2s→4s→…→30s 封顶，压住 reopen 风暴（连接成功后 attempts 重置）
-        backoff = min(30.0, 2.0 ** (state.reconnect_attempts - 1))
-        time.sleep(backoff)
-
-        # 退避期间摄像头可能已被停止/换源，放弃本次 reopen
-        with self._lock:
-            if camera_id not in self._cameras or not self._cameras[camera_id].running:
-                return
 
         try:
             self._open_capture(camera_id)
