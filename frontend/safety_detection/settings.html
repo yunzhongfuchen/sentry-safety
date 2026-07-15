@@ -128,16 +128,15 @@
         .log-entry:last-child { border-bottom: none; }
         .log-time { color: var(--text-muted); margin-right: 10px; }
 
-        .type-accordion { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .type-accordion-item { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-        .type-accordion-item.expanded { grid-column: span 2; }
-        .type-accordion-header { display: flex; align-items: center; gap: 12px; padding: 12px; cursor: pointer; background: var(--bg-secondary); }
-        .type-accordion-header:hover { background: var(--bg-hover); }
-        .type-color-dot { width: 12px; height: 12px; border-radius: 50%; }
-        .type-name { font-weight: 600; flex: 1; }
-        .type-enable { display: flex; align-items: center; gap: 4px; font-size: 13px; }
-        .type-expand-icon { color: var(--text-muted); }
-        .type-accordion-body { padding: 16px; border-top: 1px solid var(--border); }
+        .type-mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .type-mini-card { border: 1px solid var(--border); border-left: 4px solid; border-radius: 8px; padding: 12px; cursor: pointer; background: var(--bg-soft); transition: box-shadow 0.15s; }
+        .type-mini-card:hover { box-shadow: var(--glass-shadow); }
+        .type-mini-card-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+        .type-mini-card-toggles { display: flex; gap: 14px; }
+        .type-mini-card-toggles label { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+        .type-config-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1100; }
+        .type-config-box { background: var(--bg-soft); border: 1px solid var(--glass-edge); border-radius: var(--radius-lg); box-shadow: var(--glass-shadow); padding: 20px; width: 90%; max-width: 480px; max-height: 80vh; overflow-y: auto; }
+        .type-config-box h4 { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
         .type-param-row { display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-end; flex-wrap: wrap; }
         .type-param { display: flex; flex-direction: column; gap: 4px; }
         .type-param label { font-size: 12px; color: var(--text-muted); }
@@ -366,56 +365,12 @@
                     </div>
 
                     <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin: 20px 0 12px;">检测类型配置</div>
-                    <div class="type-accordion">
-                        <div v-for="t in detectionTypes" :key="t.key" class="type-accordion-item" :class="{ expanded: expandedType === t.key }">
-                            <div class="type-accordion-header" @click="toggleTypeExpand(t.key)">
-                                <span class="type-color-dot" :style="{ backgroundColor: t.color }"></span>
-                                <span class="type-name" :style="{ color: t.color }">{{ t.label }}</span>
-                                <label class="type-enable" @click.stop>
-                                    <input type="checkbox" v-model="cameraDialog.detection_types[t.key].enabled" /> 启用
-                                </label>
-                                <label class="type-enable" @click.stop>
-                                    <input type="checkbox" v-model="cameraDialog.detection_types[t.key].use_vlm" /> VLM 复核
-                                </label>
-                                <span class="type-expand-icon">{{ expandedType === t.key ? '▲' : '▼' }}</span>
-                            </div>
-                            <div v-if="expandedType === t.key" class="type-accordion-body">
-                                <!-- 运行参数 -->
-                                <div class="type-param-row">
-                                    <div class="type-param"><label>间隔</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].interval" /></div>
-                                    <div class="type-param"><label>阈值</label><input type="number" step="0.1" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].threshold" /></div>
-                                    <div class="type-param"><label>连续</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].consecutive_required" /></div>
-                                    <div class="type-param"><label>冷却</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].cooldown" /></div>
-                                </div>
-                                <!-- 报警条件 -->
-                                <div class="type-param-row">
-                                    <div class="type-param">
-                                        <label>报警条件</label>
-                                        <select class="clay-select" v-model="cameraDialog.detection_types[t.key].box_count_mode">
-                                            <option value="gte">目标数 ≥ a</option>
-                                            <option value="lte">目标数 ≤ b</option>
-                                            <option value="between">a ≤ 目标数 ≤ b</option>
-                                            <option value="outside">目标数 < a 或 > b</option>
-                                        </select>
-                                    </div>
-                                    <div class="type-param" v-if="['gte','lte'].includes(cameraDialog.detection_types[t.key].box_count_mode)">
-                                        <label>{{ cameraDialog.detection_types[t.key].box_count_mode === 'gte' ? 'a' : 'b' }}</label>
-                                        <input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].box_count_a" />
-                                    </div>
-                                    <template v-if="['between','outside'].includes(cameraDialog.detection_types[t.key].box_count_mode)">
-                                        <div class="type-param"><label>a</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].box_count_a" /></div>
-                                        <div class="type-param"><label>b</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].box_count_b" /></div>
-                                    </template>
-                                </div>
-                                <!-- ROI -->
-                                <div class="type-checkbox-row">
-                                    <button class="clay-button" @click="openRoiDialog(t.key)">绘制 ROI</button>
-                                    <span v-if="cameraDialog.detection_types[t.key].roi" style="color: var(--text-muted); font-size: 13px;">
-                                        已绘制 {{ cameraDialog.detection_types[t.key].roi.length }} 个顶点
-                                        <button class="clay-button ghost" @click="cameraDialog.detection_types[t.key].roi = null">清除</button>
-                                    </span>
-                                    <label><input type="checkbox" v-model="cameraDialog.detection_types[t.key].roi_invert" /> 区域外报警</label>
-                                </div>
+                    <div class="type-mini-grid">
+                        <div v-for="t in detectionTypes" :key="t.key" class="type-mini-card" :style="{ borderLeftColor: t.color }" @click="openTypeConfig(t.key)">
+                            <div class="type-mini-card-title" :style="{ color: t.color }">{{ t.label }}</div>
+                            <div class="type-mini-card-toggles" @click.stop>
+                                <label><input type="checkbox" v-model="cameraDialog.detection_types[t.key].enabled" /> 启用</label>
+                                <label><input type="checkbox" v-model="cameraDialog.detection_types[t.key].use_vlm" /> VLM</label>
                             </div>
                         </div>
                     </div>
@@ -424,6 +379,55 @@
                     <button class="clay-button" @click="closeCameraDialog">取消</button>
                     <button class="clay-button" @click="resetCameraTypes">恢复默认</button>
                     <button class="clay-button primary" @click="saveCamera">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 类型配置浮层 -->
+        <div v-if="typeConfigDialog" class="type-config-overlay" @click.self="typeConfigDialog = null">
+            <div class="type-config-box">
+                <h4>
+                    <span class="type-color-dot" :style="{ backgroundColor: typeConfigType.color }"></span>
+                    {{ typeConfigType.label }} — 详细配置
+                </h4>
+                <!-- 运行参数 -->
+                <div class="type-param-row">
+                    <div class="type-param"><label>间隔</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].interval" /></div>
+                    <div class="type-param"><label>阈值</label><input type="number" step="0.1" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].threshold" /></div>
+                    <div class="type-param"><label>连续</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].consecutive_required" /></div>
+                    <div class="type-param"><label>冷却</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].cooldown" /></div>
+                </div>
+                <!-- 报警条件 -->
+                <div class="type-param-row">
+                    <div class="type-param">
+                        <label>报警条件</label>
+                        <select class="clay-select" v-model="cameraDialog.detection_types[typeConfigDialog].box_count_mode">
+                            <option value="gte">目标数 ≥ a</option>
+                            <option value="lte">目标数 ≤ b</option>
+                            <option value="between">a ≤ 目标数 ≤ b</option>
+                            <option value="outside">目标数 < a 或 > b</option>
+                        </select>
+                    </div>
+                    <div class="type-param" v-if="['gte','lte'].includes(cameraDialog.detection_types[typeConfigDialog].box_count_mode)">
+                        <label>{{ cameraDialog.detection_types[typeConfigDialog].box_count_mode === 'gte' ? 'a' : 'b' }}</label>
+                        <input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].box_count_a" />
+                    </div>
+                    <template v-if="['between','outside'].includes(cameraDialog.detection_types[typeConfigDialog].box_count_mode)">
+                        <div class="type-param"><label>a</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].box_count_a" /></div>
+                        <div class="type-param"><label>b</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].box_count_b" /></div>
+                    </template>
+                </div>
+                <!-- ROI -->
+                <div class="type-checkbox-row">
+                    <button class="clay-button" @click="openRoiDialog(typeConfigDialog)">绘制 ROI</button>
+                    <span v-if="cameraDialog.detection_types[typeConfigDialog].roi" style="color: var(--text-muted); font-size: 13px;">
+                        已绘制 {{ cameraDialog.detection_types[typeConfigDialog].roi.length }} 个顶点
+                        <button class="clay-button ghost" @click="cameraDialog.detection_types[typeConfigDialog].roi = null">清除</button>
+                    </span>
+                    <label><input type="checkbox" v-model="cameraDialog.detection_types[typeConfigDialog].roi_invert" /> 区域外报警</label>
+                </div>
+                <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+                    <button class="clay-button primary" @click="typeConfigDialog = null">完成</button>
                 </div>
             </div>
         </div>
@@ -491,7 +495,7 @@
     </div>
 
     <script>
-        const { createApp, ref, watch, onMounted, onUnmounted } = Vue;
+        const { createApp, ref, computed, watch, onMounted, onUnmounted } = Vue;
 
         createApp({
             setup() {
@@ -503,7 +507,7 @@
                 const detectorInfo = ref({});
                 const selectedCameras = ref([]);
                 const cameraDialog = ref(null);
-                const expandedType = ref(null);
+                const typeConfigDialog = ref(null);
                 const roiDialog = ref(null);
                 const roiCanvas = ref(null);
                 let roiPoints = [];
@@ -641,6 +645,7 @@
 
                 function closeCameraDialog() {
                     cameraDialog.value = null;
+                    typeConfigDialog.value = null;  // 联动关闭类型配置浮层
                     roiDialog.value = null;  // 联动关闭 ROI 弹窗
                 }
 
@@ -669,7 +674,16 @@
                             detection_types: baseTypes
                         };
                     }
-                    expandedType.value = null;
+                    typeConfigDialog.value = null;
+                }
+
+                const typeConfigType = computed(() => {
+                    if (!typeConfigDialog.value) return {};
+                    return detectionTypes.value.find(t => t.key === typeConfigDialog.value) || {};
+                });
+
+                function openTypeConfig(key) {
+                    typeConfigDialog.value = key;
                 }
 
                 function resetCameraTypes() {
@@ -720,10 +734,6 @@
                             loadCameras();
                         } else showToast('保存失败', 'error');
                     } catch (e) { showToast('保存失败', 'error'); }
-                }
-
-                function toggleTypeExpand(key) {
-                    expandedType.value = expandedType.value === key ? null : key;
                 }
 
                 function openRoiDialog(dtype) {
@@ -861,11 +871,11 @@
 
                 return {
                     tab, sidebar, cameras, settings, models, detectorInfo, selectedCameras,
-                    cameraDialog, expandedType, roiDialog, roiCanvas, batchDialog, batchTypes, toast, logs, systemMode, detectionTypes,
+                    cameraDialog, typeConfigDialog, typeConfigType, roiDialog, roiCanvas, batchDialog, batchTypes, toast, logs, systemMode, detectionTypes,
                     loadCameras, loadSettings, loadModels,
                     saveVlmSettings, saveDefaultTypes, saveSystemSettings,
                     openCameraDialog, closeCameraDialog, resetCameraTypes, saveCamera, deleteCamera,
-                    toggleTypeExpand, openRoiDialog, onSnapshotLoad, onSnapshotError, onRoiClick, onRoiDblClick, clearRoi, saveRoi,
+                    openTypeConfig, openRoiDialog, onSnapshotLoad, onSnapshotError, onRoiClick, onRoiDblClick, clearRoi, saveRoi,
                     openBatchDialog, saveBatchConfig, toggleSelectAll,
                     restartSystem, toggleSettingsNav
                 };
