@@ -337,7 +337,7 @@
                             <span :class="['status-dot', mainCameraStatus === 'connected' ? 'online' : 'offline']"></span>
                             {{ mainCameraName }}
                         </div>
-                        <span v-if="mainAlertType" class="type-badge" :class="mainAlertType">
+                        <span v-if="mainAlertType" class="type-badge" :style="typeBadgeStyle(mainAlertType)">
                             {{ getTypeLabel(mainAlertType) }}
                         </span>
                     </div>
@@ -414,7 +414,7 @@
                             <div class="alert-time">{{ alert.time }}</div>
                             <div class="alert-main">
                                 <span class="alert-camera">{{ alert.cameraName }}</span>
-                                <span class="type-badge" :class="alert.detection_type">{{ getTypeLabel(alert.detection_type) }}</span>
+                                <span class="type-badge" :style="typeBadgeStyle(alert.detection_type)">{{ getTypeLabel(alert.detection_type) }}</span>
                             </div>
                             <div style="font-size: 12px; color: var(--text-secondary);">
                                 级别: {{ getLevelLabel(alert.level) }}
@@ -623,7 +623,7 @@
                     sidebar, cameras, recentAlerts, displayTypes, displayInterval, detectionTypes, streamVisible, utcTime,
                     mainCameraId, mainCameraName, mainCameraStatus, mainAlertType,
                     onlineCount, alertCount,
-                    getTypeLabel, getLevelLabel, getStatusText,
+                    getTypeLabel, getLevelLabel, getStatusText, typeBadgeStyle,
                     toggleSettingsNav, selectCamera, onVideoError, toggleDisplayType, saveDisplayConfig
                 };
             }

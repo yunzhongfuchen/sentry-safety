@@ -100,6 +100,16 @@ function getTypeColor(type) {
     return DETECTION_TYPES.find(t => t.key === type)?.color || '#94a3b8';
 }
 
+// 类型徽章动态样式：浅色背景（类型色 10% 透明度）+ 类型色文字
+// 替代 glass-clay.css 中硬编码的 .type-badge.{type} 类，支持注册表自定义颜色和新类型
+function typeBadgeStyle(type) {
+    const color = getTypeColor(type);
+    return {
+        backgroundColor: color + '1A',
+        color: color,
+    };
+}
+
 function formatDateTime(iso) {
     if (!iso) return '-';
     const d = new Date(iso);

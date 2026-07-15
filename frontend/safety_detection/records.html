@@ -248,7 +248,7 @@
 
             <!-- Type distribution -->
             <div class="type-distribution">
-                <span v-for="t in detectionTypes" :key="t.key" class="type-badge" :class="t.key">
+                <span v-for="t in detectionTypes" :key="t.key" class="type-badge" :style="typeBadgeStyle(t.key)">
                     {{ t.label }} {{ typeDistribution[t.key] || 0 }}
                 </span>
             </div>
@@ -331,7 +331,7 @@
                             <td style="white-space: nowrap;">{{ formatDateTime(r.time) }}</td>
                             <td>{{ r.camera_name }}</td>
                             <td>
-                                <span class="type-badge" :class="{ [r.detection_type]: detectionTypes.some(t => t.key === r.detection_type) }">
+                                <span class="type-badge" :style="typeBadgeStyle(r.detection_type)">
                                     {{ getTypeLabel(r.detection_type) }}
                                 </span>
                             </td>
@@ -599,7 +599,7 @@
                 return {
                     sidebar, cameras, records, stats, typeDistribution, loading, filters, pagination,
                     detail, snapshot, frames, currentFrame, playing, reverse, totalPages, detectionTypes,
-                    getTypeLabel, getLevelLabel, getStatusLabel, formatDateTime,
+                    getTypeLabel, getLevelLabel, getStatusLabel, formatDateTime, typeBadgeStyle,
                     toggleSettingsNav, loadRecords, prevPage, nextPage, showDetail, confirmAlert, ignoreAlert,
                     togglePlay, toggleReverse
                 };
