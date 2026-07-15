@@ -372,6 +372,9 @@
                                 <label class="type-enable" @click.stop>
                                     <input type="checkbox" v-model="cameraDialog.detection_types[t.key].enabled" /> 启用
                                 </label>
+                                <label class="type-enable" @click.stop>
+                                    <input type="checkbox" v-model="cameraDialog.detection_types[t.key].use_vlm" /> VLM 复核
+                                </label>
                                 <span class="type-expand-icon">{{ expandedType === t.key ? '▲' : '▼' }}</span>
                             </div>
                             <div v-if="expandedType === t.key" class="type-accordion-body">
@@ -381,7 +384,6 @@
                                     <div class="type-param"><label>阈值</label><input type="number" step="0.1" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].threshold" /></div>
                                     <div class="type-param"><label>连续</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].consecutive_required" /></div>
                                     <div class="type-param"><label>冷却</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[t.key].cooldown" /></div>
-                                    <div class="type-param"><label>&nbsp;</label><label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); cursor: pointer;"><input type="checkbox" v-model="cameraDialog.detection_types[t.key].use_vlm" /> VLM 复核</label></div>
                                 </div>
                                 <!-- 报警条件 -->
                                 <div class="type-param-row">
