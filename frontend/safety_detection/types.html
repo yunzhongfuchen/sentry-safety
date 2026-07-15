@@ -178,11 +178,11 @@
                                 <option value="yolo_pose">yolo_pose</option>
                             </select>
                         </div>
-                        <div class="type-card-field"><label>模型置信度</label><input type="number" step="0.1" v-model.number="dialog.model_confidence" /></div>
                     </div>
                     <details style="margin-top: 12px;">
                         <summary style="cursor: pointer; color: var(--text-muted); font-size: 13px;">更多设置</summary>
                         <div class="type-card-grid" style="margin-top: 10px;">
+                            <div class="type-card-field"><label>模型置信度 (默认 0.5)</label><input type="number" step="0.1" v-model.number="dialog.model_confidence" /></div>
                             <div class="type-card-field"><label>类别过滤</label><input v-model="dialog.classesStr" placeholder="如：0,1" /></div>
                             <div class="type-card-field"><label>图标</label><input v-model="dialog.icon" /></div>
                             <div class="type-card-field"><label>VLM 提示词键</label><input v-model="dialog.vlm_prompt_key" /></div>
