@@ -128,7 +128,9 @@
         .log-entry:last-child { border-bottom: none; }
         .log-time { color: var(--text-muted); margin-right: 10px; }
 
-        .type-accordion-item { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+        .type-accordion { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .type-accordion-item { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+        .type-accordion-item.expanded { grid-column: span 2; }
         .type-accordion-header { display: flex; align-items: center; gap: 12px; padding: 12px; cursor: pointer; background: var(--bg-secondary); }
         .type-accordion-header:hover { background: var(--bg-hover); }
         .type-color-dot { width: 12px; height: 12px; border-radius: 50%; }
@@ -365,7 +367,7 @@
 
                     <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin: 20px 0 12px;">检测类型配置</div>
                     <div class="type-accordion">
-                        <div v-for="t in detectionTypes" :key="t.key" class="type-accordion-item">
+                        <div v-for="t in detectionTypes" :key="t.key" class="type-accordion-item" :class="{ expanded: expandedType === t.key }">
                             <div class="type-accordion-header" @click="toggleTypeExpand(t.key)">
                                 <span class="type-color-dot" :style="{ backgroundColor: t.color }"></span>
                                 <span class="type-name" :style="{ color: t.color }">{{ t.label }}</span>
