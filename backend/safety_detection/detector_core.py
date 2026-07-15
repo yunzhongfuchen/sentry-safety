@@ -5,6 +5,7 @@
 """
 
 import logging
+import os
 import threading
 import time
 import uuid
@@ -14,6 +15,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 from backend import config
 from backend.detection_registry import registry
@@ -23,6 +25,47 @@ from inference_engine import SafetyDetector, detect_npu_cores
 logger = logging.getLogger(__name__)
 
 MAX_VLM_REVIEW_FRAMES = 5
+
+# CJK 字体候选路径（Windows 开发机 / Linux 部署环境）
+_CJK_FONT_CANDIDATES = [
+    "C:/Windows/Fonts/msyh.ttc",
+    "C:/Windows/Fonts/simhei.ttf",
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+]
+_cjk_font_cache: Dict[int, Optional[ImageFont.FreeTypeFont]] = {}
+
+
+def _get_cjk_font(size: int) -> Optional[ImageFont.FreeTypeFont]:
+    """加载 CJK 字体（按尺寸缓存）。找不到时返回 None，调用方回退英文标签。"""
+    if size in _cjk_font_cache:
+        return _cjk_font_cache[size]
+    font = None
+    for path in _CJK_FONT_CANDIDATES:
+        if os.path.exists(path):
+            try:
+                font = ImageFont.truetype(path, size)
+                break
+            except Exception:
+                continue
+    _cjk_font_cache[size] = font
+    return font
+
+
+def _draw_labels_pil(frame_bgr: np.ndarray, text_items: list, font) -> np.ndarray:
+    """用 PIL 在帧上绘制中文标签（cv2.putText 不支持中文）。
+    text_items: [(zh_text, x1, y1, color_bgr), ...]
+    """
+    pil_img = Image.fromarray(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_img)
+    for text, x1, y1, bgr in text_items:
+        color_rgb = (int(bgr[2]), int(bgr[1]), int(bgr[0]))
+        pos = (x1 + 3, max(0, y1 - 20))
+        tb = draw.textbbox(pos, text, font=font)
+        draw.rectangle([tb[0] - 3, tb[1] - 2, tb[2] + 3, tb[3] + 2], fill=color_rgb)
+        draw.text(pos, text, font=font, fill=(255, 255, 255))
+    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
 
 @dataclass
@@ -362,6 +405,7 @@ class MultiDetector:
         """在帧上绘制检测框和标签，返回标注后的帧副本"""
         annotated = frame.copy()
         h, w = annotated.shape[:2]
+        text_items = []  # (zh_text, en_text, x1, y1, color_bgr)
 
         for dtype, result in results.items():
             boxes = result.get("boxes", [])
@@ -395,11 +439,7 @@ class MultiDetector:
                 cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
 
                 conf = scores[i] if i < len(scores) else 0.0
-                text = f"{label} {conf:.2f}"
-                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                cv2.rectangle(annotated, (x1, y1 - th - 6), (x1 + tw + 4, y1), color, -1)
-                cv2.putText(annotated, text, (x1 + 2, y1 - 3),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                text_items.append((f"{label} {conf:.2f}", f"{dtype} {conf:.2f}", x1, y1, color))
 
             if is_pose:
                 skeleton = [
@@ -426,6 +466,21 @@ class MultiDetector:
                     for idx, (kx, ky, kc) in enumerate(kpts[:17]):
                         if kc > 0.4:
                             cv2.circle(annotated, (int(kx), int(ky)), 3, sk_color, -1)
+
+        # 标签文本：优先 PIL 中文绘制；无 CJK 字体时回退英文 + cv2.putText
+        font = _get_cjk_font(14)
+        if font is not None and text_items:
+            annotated = _draw_labels_pil(
+                annotated,
+                [(zh, x1, y1, color) for zh, _en, x1, y1, color in text_items],
+                font,
+            )
+        else:
+            for _zh, en, x1, y1, color in text_items:
+                (tw, th), _ = cv2.getTextSize(en, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                cv2.rectangle(annotated, (x1, y1 - th - 6), (x1 + tw + 4, y1), color, -1)
+                cv2.putText(annotated, en, (x1 + 2, y1 - 3),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
         return annotated
 

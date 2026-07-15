@@ -9,6 +9,7 @@ python-multipart>=0.0.6
 # 图像处理 (headless 版本，不需要 GUI)
 opencv-python-headless>=4.8.0
 numpy>=1.24.0,<2.0
+Pillow>=10.0.0
 
 # GPU 视频硬件解码 (NVIDIA NVDEC via PyAV + CUVID)
 av>=10.0.0
