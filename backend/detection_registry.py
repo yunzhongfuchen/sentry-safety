@@ -45,16 +45,75 @@ UNIVERSAL_DEFAULTS: dict[str, Any] = {
 }
 
 
+FIRE_REVIEW_PROMPT = """你正在复核一个工业安全监控系统的火焰检测结果。
+请仔细查看图片，判断画面中是否真的有明火。
+注意排除以下误判情况：
+- 红色灯光、红色物体反光
+- 夕阳、晚霞
+- 橙色安全帽或衣服
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}"""
+
+SMOKE_REVIEW_PROMPT = """你正在复核一个工业安全监控系统的烟雾检测结果。
+请仔细查看图片，判断画面中是否真的有烟雾。
+注意排除以下误判情况：
+- 水蒸气、雾气
+- 灰尘扬起
+- 白色墙壁反光
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}"""
+
+MASK_REVIEW_PROMPT = """你正在复核一个工业安全监控系统的口罩佩戴检测结果。
+请仔细查看图片，判断画面中是否真的有未佩戴口罩的人员。
+注意排除以下情况：
+- 人员正在喝水或用餐（暂时摘下）
+- 人员手持物品遮挡面部
+- 距离太远看不清
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}"""
+
+CIGARETTE_REVIEW_PROMPT = """你正在复核一个工业安全监控系统的吸烟行为检测结果。
+请仔细查看图片，判断画面中是否真的有人正在吸烟。
+注意排除以下情况：
+- 手持笔、筷子等细长物体
+- 人员只是在摸嘴或吃东西
+- 画面模糊无法确认
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}"""
+
+UNIFORM_REVIEW_PROMPT = """你正在复核一个工业安全监控系统的工服/反光背心检测结果。
+请仔细查看图片，判断画面中是否真的有未穿工服或反光背心的人员。
+注意：
+- 不同岗位工服颜色可能不同
+- 只需判断是否有"未穿"的情况
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}"""
+
+SLEEP_REVIEW_PROMPT = """你正在复核一个工业安全监控系统的睡岗/打盹检测结果。
+请仔细查看图片，判断画面中是否真的有人正在睡岗或打盹。
+注意排除以下情况：
+- 人员只是低头看手机或文件
+- 人员闭目休息但时间很短
+- 画面模糊无法确认
+
+请以 JSON 格式返回：
+{"confirmed": true/false, "confidence": 0.0-1.0, "reason": "判断理由"}"""
+
+
 DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "fire": {
         "label": "明火",
         "color": "#ef4444",
-        "icon": "flame",
         "model_path": "fire_smoke.pt",
         "post_process": "yolo_box",
         "classes": [0],
         "model_confidence": 0.5,
-        "vlm_prompt_key": "fire_review",
+        "vlm_prompt": FIRE_REVIEW_PROMPT,
         "inspection_label": "明火",
         "defaults": {
             "enabled": False,
@@ -70,12 +129,11 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "smoke": {
         "label": "烟雾",
         "color": "#f97316",
-        "icon": "cloud",
         "model_path": "fire_smoke.pt",
         "post_process": "yolo_box",
         "classes": [1],
         "model_confidence": 0.5,
-        "vlm_prompt_key": "smoke_review",
+        "vlm_prompt": SMOKE_REVIEW_PROMPT,
         "inspection_label": "烟雾",
         "defaults": {
             "enabled": False,
@@ -91,12 +149,11 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "uniform": {
         "label": "工服",
         "color": "#22c55e",
-        "icon": "shirt",
         "model_path": "uniform.pt",
         "post_process": "yolo_box",
         "classes": [1],
         "model_confidence": 0.5,
-        "vlm_prompt_key": "uniform_review",
+        "vlm_prompt": UNIFORM_REVIEW_PROMPT,
         "inspection_label": "未穿工服",
         "defaults": {
             "enabled": False,
@@ -112,12 +169,11 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "mask": {
         "label": "口罩",
         "color": "#0ea5e9",
-        "icon": "shield",
         "model_path": "mask.pt",
         "post_process": "yolo_box",
         "classes": [1],
         "model_confidence": 0.5,
-        "vlm_prompt_key": "mask_review",
+        "vlm_prompt": MASK_REVIEW_PROMPT,
         "inspection_label": "未戴口罩",
         "defaults": {
             "enabled": False,
@@ -133,12 +189,11 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "cigarette": {
         "label": "吸烟",
         "color": "#a855f7",
-        "icon": "cigarette",
         "model_path": "cigarette.pt",
         "post_process": "yolo_box",
         "classes": [0],
         "model_confidence": 0.5,
-        "vlm_prompt_key": "cigarette_review",
+        "vlm_prompt": CIGARETTE_REVIEW_PROMPT,
         "inspection_label": "吸烟",
         "defaults": {
             "enabled": False,
@@ -154,12 +209,11 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "sleep": {
         "label": "睡岗",
         "color": "#eab308",
-        "icon": "moon",
         "model_path": "yolov8n-pose.pt",
         "post_process": "yolo_pose",
         "classes": None,
         "model_confidence": 0.1,
-        "vlm_prompt_key": "sleep_review",
+        "vlm_prompt": SLEEP_REVIEW_PROMPT,
         "inspection_label": "睡岗/打盹",
         "defaults": {
             "enabled": False,
@@ -213,9 +267,11 @@ class DetectionTypeRegistry:
             self._types = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
             self._save(self._types)
 
-        # 清理已废弃字段（向后兼容：旧配置文件中的 npu_model_path 不再使用）
+        # 清理已废弃字段（向后兼容：旧配置文件中的字段不再使用）
         for td in self._types.values():
             td.pop("npu_model_path", None)
+            td.pop("icon", None)
+            td.pop("vlm_prompt_key", None)
 
         logger.info(f"Detection registry loaded: {list(self._types.keys())}")
 
@@ -281,12 +337,11 @@ class DetectionTypeRegistry:
                 "key": key,
                 "label": td.get("label", key),
                 "color": td.get("color", "#888888"),
-                "icon": td.get("icon", ""),
                 "model_path": td.get("model_path"),
                 "post_process": td.get("post_process", "yolo_box"),
                 "classes": td.get("classes"),
                 "model_confidence": td.get("model_confidence", 0.5),
-                "vlm_prompt_key": td.get("vlm_prompt_key", ""),
+                "vlm_prompt": td.get("vlm_prompt", ""),
                 "inspection_label": td.get("inspection_label", td.get("label", key)),
                 "defaults": dict(td.get("defaults", {})),
             })
@@ -322,12 +377,11 @@ class DetectionTypeRegistry:
         self._types[key] = {
             "label": label,
             "color": type_def.get("color", "#888888"),
-            "icon": type_def.get("icon", ""),
             "model_path": type_def.get("model_path"),
             "post_process": type_def.get("post_process", "yolo_box"),
             "classes": type_def.get("classes"),
             "model_confidence": type_def.get("model_confidence", 0.5),
-            "vlm_prompt_key": type_def.get("vlm_prompt_key", ""),
+            "vlm_prompt": type_def.get("vlm_prompt", ""),
             "inspection_label": type_def.get("inspection_label", label),
             "defaults": merged,
         }
@@ -347,8 +401,8 @@ class DetectionTypeRegistry:
                 if k != dtype and existing.get("label") == new_label:
                     raise ValueError(f"label '{new_label}' already exists")
             td["label"] = new_label
-        for field in ("color", "icon", "model_path", "post_process",
-                      "classes", "model_confidence", "vlm_prompt_key", "inspection_label"):
+        for field in ("color", "model_path", "post_process",
+                      "classes", "model_confidence", "vlm_prompt", "inspection_label"):
             if field in updates:
                 td[field] = updates[field]
         self._save(self._types)

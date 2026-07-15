@@ -73,12 +73,11 @@ async def get_detection_type(dtype: str):
         "key": dtype,
         "label": type_def.get("label", dtype),
         "color": type_def.get("color", "#888888"),
-        "icon": type_def.get("icon", ""),
         "model_path": type_def.get("model_path"),
         "post_process": type_def.get("post_process", "yolo_box"),
         "classes": type_def.get("classes"),
         "model_confidence": type_def.get("model_confidence", 0.5),
-        "vlm_prompt_key": type_def.get("vlm_prompt_key", ""),
+        "vlm_prompt": type_def.get("vlm_prompt", ""),
         "inspection_label": type_def.get("inspection_label", type_def.get("label", dtype)),
         "defaults": type_def.get("defaults", {}),
     }
@@ -91,8 +90,8 @@ async def update_detection_type(dtype: str, data: dict):
     if type_def is None:
         return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
 
-    structural_fields = {"label", "color", "icon", "model_path",
-                        "post_process", "classes", "model_confidence", "vlm_prompt_key", "inspection_label"}
+    structural_fields = {"label", "color", "model_path",
+                        "post_process", "classes", "model_confidence", "vlm_prompt", "inspection_label"}
     allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
                         "cooldown", "use_vlm", "min_box_count", "max_box_count", "box_count_mode"}
     structural_update = {k: v for k, v in data.items() if k in structural_fields}
@@ -126,12 +125,11 @@ async def create_detection_type(data: dict):
             "key": key,
             "label": type_def.get("label", key),
             "color": type_def.get("color", "#888888"),
-            "icon": type_def.get("icon", ""),
             "model_path": type_def.get("model_path"),
             "post_process": type_def.get("post_process", "yolo_box"),
             "classes": type_def.get("classes"),
             "model_confidence": type_def.get("model_confidence", 0.5),
-            "vlm_prompt_key": type_def.get("vlm_prompt_key", ""),
+            "vlm_prompt": type_def.get("vlm_prompt", ""),
             "inspection_label": type_def.get("inspection_label", type_def.get("label", key)),
             "defaults": type_def.get("defaults", {}),
         }

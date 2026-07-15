@@ -42,7 +42,7 @@ class TestListDetectionTypes:
                 "label": "明火", "color": "#ef4444", "icon": "flame",
                 "model_path": "fire_smoke.pt",
                 "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
-                "vlm_prompt_key": "fire_review", "inspection_label": "明火",
+                "vlm_prompt": "fire_review", "inspection_label": "明火",
                 "defaults": {"enabled": False},
             }
         }
@@ -53,7 +53,7 @@ class TestListDetectionTypes:
         assert t["model_path"] == "fire_smoke.pt"
         assert t["classes"] == [0]
         assert t["model_confidence"] == 0.5
-        assert t["vlm_prompt_key"] == "fire_review"
+        assert t["vlm_prompt"] == "fire_review"
         assert t["inspection_label"] == "明火"
 
 
@@ -77,7 +77,7 @@ class TestGetDetectionType:
             "label": "明火", "color": "#ef4444", "icon": "flame",
             "model_path": "fire_smoke.pt",
             "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
-            "vlm_prompt_key": "fire_review", "inspection_label": "明火",
+            "vlm_prompt": "fire_review", "inspection_label": "明火",
             "defaults": {"enabled": False},
         }
 
@@ -89,7 +89,7 @@ class TestGetDetectionType:
             assert data["model_path"] == "fire_smoke.pt"
             assert data["classes"] == [0]
             assert data["model_confidence"] == 0.5
-            assert data["vlm_prompt_key"] == "fire_review"
+            assert data["vlm_prompt"] == "fire_review"
             assert data["inspection_label"] == "明火"
 
     def test_unknown_type_404(self, client):

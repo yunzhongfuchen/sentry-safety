@@ -93,12 +93,24 @@ _FALLBACK_PROMPT_TEMPLATES = {
 
 
 def _get_prompt_template(prompt_type: str) -> str:
-    """优先从配置文件读取模板，失败则使用本地兜底"""
+    """模板查找顺序：注册表 vlm_prompt → vlm_prompts.json → 本地兜底"""
+    # 1. 注册表 vlm_prompt（prompt_type 形如 "{dtype}_review"）
+    if prompt_type.endswith("_review"):
+        dtype = prompt_type[:-len("_review")]
+        type_def = registry.get(dtype)
+        if type_def is not None:
+            custom = type_def.get("vlm_prompt")
+            if custom:
+                return custom
+    # 2. 配置文件
     try:
         prompts = _get_vlm_prompts()
     except Exception:
         prompts = {}
-    return prompts.get(prompt_type, _FALLBACK_PROMPT_TEMPLATES.get(prompt_type, _FALLBACK_PROMPT_TEMPLATES["fire_review"]))
+    if prompt_type in prompts:
+        return prompts[prompt_type]
+    # 3. 本地兜底
+    return _FALLBACK_PROMPT_TEMPLATES.get(prompt_type, _FALLBACK_PROMPT_TEMPLATES["fire_review"])
 
 
 class VideoUnderstander:

@@ -83,7 +83,6 @@ async function loadDetectionTypes() {
                 key: t.key,
                 label: t.label,
                 color: t.color,
-                icon: t.icon || '',
                 defaults: t.defaults || {},
             }));
         }

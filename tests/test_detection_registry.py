@@ -47,7 +47,7 @@ class TestDetectionTypeRegistry:
     def test_load_preserves_existing_and_backfills(self, tmp_path, monkeypatch):
         partial = {"fire": {"label": "自定义火焰", "color": "#ff0000", "model_path": "custom.pt",
                             "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
-                            "vlm_prompt_key": "fire_review", "inspection_label": "火",
+                            "vlm_prompt": "fire_review", "inspection_label": "火",
                             "defaults": {"enabled": True, "threshold": 0.9}}}
         r = self._make_registry(tmp_path, monkeypatch, data=partial)
         fire = r.get("fire")
@@ -111,7 +111,7 @@ class TestDetectionTypeRegistry:
         assert "npu_model_path" not in fire_entry
         assert fire_entry["classes"] == [0]
         assert fire_entry["model_confidence"] == 0.5
-        assert fire_entry["vlm_prompt_key"] == "fire_review"
+        assert "明火" in fire_entry["vlm_prompt"]
         assert fire_entry["inspection_label"] == "明火"
 
     def test_validate_warns_missing_model(self, tmp_path, monkeypatch):
@@ -142,7 +142,7 @@ class TestDetectionTypeRegistry:
     def test_load_backfills_custom_type_defaults(self, tmp_path, monkeypatch):
         custom = {"custom_type": {"label": "自定义", "color": "#123456", "model_path": "custom.pt",
                                   "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
-                                  "vlm_prompt_key": "custom_review", "inspection_label": "自定义"}}
+                                  "vlm_prompt": "custom_review", "inspection_label": "自定义"}}
         r = self._make_registry(tmp_path, monkeypatch, data=custom)
         assert "custom_type" in r.all_types()
         d = r.get_defaults("custom_type")
@@ -186,7 +186,6 @@ class TestDetectionTypeRegistry:
         entry = next(e for e in r.to_api_list() if e["key"] == "custom_sparse")
         assert entry["label"] == "custom_sparse"
         assert entry["color"] == "#888888"
-        assert entry["icon"] == ""
         assert entry["post_process"] == "yolo_box"
         assert entry["defaults"]["enabled"] is True
         assert entry["defaults"]["interval"] == 1
