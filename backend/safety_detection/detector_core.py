@@ -363,11 +363,9 @@ class MultiDetector:
         annotated = frame.copy()
         h, w = annotated.shape[:2]
 
-        total_boxes = 0
         for dtype, result in results.items():
             boxes = result.get("boxes", [])
             scores = result.get("scores", [])
-            detected = result.get("detected", False)
             if not boxes:
                 continue
 
@@ -376,7 +374,6 @@ class MultiDetector:
             base_label = type_def.get("label", dtype) if type_def else dtype
             is_pose = type_def.get("post_process") == "yolo_pose" if type_def else False
 
-            total_boxes += len(boxes)
             for i, box in enumerate(boxes):
                 if len(box) < 4:
                     continue
@@ -429,23 +426,6 @@ class MultiDetector:
                     for idx, (kx, ky, kc) in enumerate(kpts[:17]):
                         if kc > 0.4:
                             cv2.circle(annotated, (int(kx), int(ky)), 3, sk_color, -1)
-
-            if detected:
-                status_text = f"[ALERT] {base_label}"
-                (tw, th), _ = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                cv2.rectangle(annotated, (w - tw - 10, 5), (w - 5, 5 + th + 10), base_color, -1)
-                cv2.putText(annotated, status_text, (w - tw - 5, 5 + th + 3),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
-        debug_lines = [f"cam:{camera_id}"]
-        if due_types:
-            debug_lines.append(f"detect:{','.join(due_types)}")
-        debug_lines.append(f"boxes:{total_boxes}")
-        y_offset = 20
-        for line in debug_lines:
-            cv2.putText(annotated, line, (10, y_offset),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-            y_offset += 18
 
         return annotated
 

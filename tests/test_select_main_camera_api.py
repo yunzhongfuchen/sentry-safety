@@ -31,6 +31,13 @@ def test_select_main_camera_not_found():
 def test_set_main_camera_keeps_old_stream_buffer_registered():
     from backend import main_multi
 
+    # 重置节流状态，避免受其他测试遗留的节流窗口影响
+    with main_multi._main_switch_lock:
+        if main_multi._main_switch_timer is not None:
+            main_multi._main_switch_timer.cancel()
+            main_multi._main_switch_timer = None
+        main_multi._main_switch_pending = main_multi._MAIN_SWITCH_UNSET
+
     cm = MagicMock()
     cm.get_main_camera.return_value = "cam_01"
     ss = MagicMock()
