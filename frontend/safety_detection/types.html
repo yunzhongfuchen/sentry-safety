@@ -37,15 +37,18 @@
         .modal-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.5);
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(6px);
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 1000;
         }
         .modal-box {
-            background: var(--bg-card);
-            border-radius: 12px;
+            background: var(--bg-soft);
+            border: 1px solid var(--glass-edge);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--glass-shadow);
             padding: 24px;
             width: 90%;
             max-width: 500px;
