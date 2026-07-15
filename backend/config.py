@@ -194,26 +194,26 @@ except Exception:
 
 
 def load_camera_globals() -> dict:
-    """加载摄像头全局默认参数，不存在则创建"""
+    """加载摄像头全局默认参数，不存在则创建。
+
+    detection_types 默认值由检测类型注册表（config/detection_types.json）提供，
+    此函数不再返回 detection_types 字段（旧文件中的该字段会被忽略）。
+    """
+    base = {k: v for k, v in DEFAULT_CAMERA_GLOBALS.items() if k != "detection_types"}
     globals_file = CONFIG_DIR / "camera_globals.json"
     if globals_file.exists():
         try:
             with open(globals_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            merged = dict(DEFAULT_CAMERA_GLOBALS)
+            # 忽略旧的 detection_types 字段，统一由注册表提供
+            data.pop("detection_types", None)
+            merged = dict(base)
             merged.update(data)
-            # detection_types 需要深合并
-            if "detection_types" in data:
-                merged_dt = get_default_type_config()
-                for k, v in data["detection_types"].items():
-                    if isinstance(v, dict):
-                        merged_dt[k] = {**merged_dt.get(k, {}), **v}
-                merged["detection_types"] = merged_dt
             return merged
         except Exception:
             pass
-    save_camera_globals(DEFAULT_CAMERA_GLOBALS)
-    return dict(DEFAULT_CAMERA_GLOBALS)
+    save_camera_globals(base)
+    return dict(base)
 
 
 def save_camera_globals(globals_data: dict) -> bool:
@@ -239,25 +239,19 @@ def apply_camera_globals(cam_config: dict, globals_data: dict = None) -> dict:
         if result.get(key) is None:
             result[key] = globals_data.get(key, DEFAULT_CAMERA_GLOBALS.get(key))
 
-    # detection_types：若缺失或为空则填充全局默认值
+    # detection_types：若缺失或为空则填充注册表默认值
     dt = result.get("detection_types")
     default_dtc = get_default_type_config()
     if not dt:
         result["detection_types"] = {
-            k: dict(v) for k, v in globals_data.get("detection_types", default_dtc).items()
+            k: dict(v) for k, v in default_dtc.items()
         }
     else:
-        # 逐个类型深合并：摄像头已有字段保留，缺失字段用全局填充
+        # 逐个类型深合并：摄像头已有字段保留，缺失字段用注册表默认值填充
         merged_dt = {}
-        global_dt = globals_data.get("detection_types", default_dtc)
         for dtype, default_cfg in default_dtc.items():
             cam_cfg = dt.get(dtype, {})
             merged_cfg = dict(default_cfg)
-            # 先应用全局默认值
-            global_cfg = global_dt.get(dtype, {})
-            for k, v in global_cfg.items():
-                merged_cfg[k] = v
-            # 再用摄像头自己的配置覆盖
             for k, v in cam_cfg.items():
                 merged_cfg[k] = v
             merged_dt[dtype] = merged_cfg

@@ -870,10 +870,10 @@ async def disable_camera(camera_id: str):
 
 @app.get("/settings")
 async def get_settings():
-    """获取全局配置（包含摄像头全局默认参数）"""
+    """获取全局配置（检测类型默认值来自注册表）"""
     settings = app_config.load_global_settings()
     camera_globals = app_config.load_camera_globals()
-    settings["default_detection_types"] = camera_globals.get("detection_types", {})
+    settings["default_detection_types"] = app_config.get_default_type_config()
     settings["default_camera_width"] = camera_globals.get("width", 640)
     settings["default_camera_height"] = camera_globals.get("height", 480)
     settings["default_camera_fps"] = camera_globals.get("fps", 15)
@@ -884,10 +884,16 @@ async def get_settings():
 async def update_settings(data: dict):
     """修改全局配置，实时生效并持久化"""
     try:
+        # 检测类型默认值写入注册表（统一数据源）
+        if "default_detection_types" in data:
+            ddt = data.pop("default_detection_types")
+            for dtype, defaults in ddt.items():
+                if isinstance(defaults, dict):
+                    registry.update_defaults(dtype, defaults)
+            log_message("Default detection types updated in registry")
+
         # 分离摄像头全局默认参数
         camera_globals_update = {}
-        if "default_detection_types" in data:
-            camera_globals_update["detection_types"] = data.pop("default_detection_types")
         for key in ("default_camera_width", "default_camera_height", "default_camera_fps"):
             if key in data:
                 camera_globals_update[key.replace("default_camera_", "")] = data.pop(key)
@@ -1160,7 +1166,7 @@ async def reset_camera_config(camera_id: str):
     restored["height"] = camera_globals.get("height", 480)
     restored["fps"] = camera_globals.get("fps", 15)
     restored["detection_types"] = {
-        k: dict(v) for k, v in camera_globals.get("detection_types", {dtype: registry.get_defaults(dtype) for dtype in registry.all_types()}).items()
+        dtype: registry.get_defaults(dtype) for dtype in registry.all_types()
     }
 
     # 更新内存中的摄像头配置
