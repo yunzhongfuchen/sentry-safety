@@ -15,7 +15,7 @@ router = APIRouter(tags=["safety"])
 
 def _validate_default_value(key: str, value):
     """校验 defaults 字段类型和范围，非法时返回错误信息，合法时返回 None"""
-    if key in ("enabled", "use_vlm"):
+    if key in ("enabled", "use_vlm", "static_filter"):
         if not isinstance(value, bool):
             return f"{key} must be a boolean"
         return None
@@ -93,7 +93,8 @@ async def update_detection_type(dtype: str, data: dict):
     structural_fields = {"label", "color", "model_path",
                         "post_process", "classes", "model_confidence", "vlm_prompt", "inspection_label"}
     allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
-                        "cooldown", "use_vlm", "min_box_count", "max_box_count", "box_count_mode"}
+                        "cooldown", "use_vlm", "min_box_count", "max_box_count", "box_count_mode",
+                        "static_filter", "static_diff_threshold"}
     structural_update = {k: v for k, v in data.items() if k in structural_fields}
     defaults_update = {k: v for k, v in data.items() if k not in structural_fields and k in allowed_defaults}
 

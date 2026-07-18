@@ -252,6 +252,7 @@ def test_handle_standard_detection_outside_min_box_count_bypasses_threshold():
     md._cooldowns = defaultdict(dict)
     md._alert_states = defaultdict(dict)
     md._latest_results = {}
+    md._static_regions = {}
     md.camera_manager = None
     md.trigger_callback = None
     md.vlm_queue = None
@@ -335,3 +336,98 @@ def test_consecutive_count_reset_after_trigger():
     s.last_run = 0
     md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
     assert s.consecutive_count == 1, "冷却结束后的第一次命中应重新累计，不能立即再次触发"
+
+
+def test_static_filter_rejects_static_target():
+    """静态目标（连续帧框区域无变化）被静态过滤拦截，不触发告警"""
+    from backend.safety_detection.detector_core import MultiDetector, TypeSchedule
+    import threading
+    from collections import defaultdict
+
+    md = MultiDetector.__new__(MultiDetector)
+    md._lock = threading.RLock()
+    md._schedules = {}
+    md._cooldowns = defaultdict(dict)
+    md._alert_states = defaultdict(dict)
+    md._latest_results = {}
+    md._static_regions = {}
+    md.camera_manager = MagicMock()
+    md.trigger_callback = None
+    md.vlm_queue = None
+
+    s = TypeSchedule(
+        dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=60,
+        consecutive_required=3, static_filter=True, static_diff_threshold=0.02,
+    )
+    frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9]}
+
+    for _ in range(3):
+        md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
+
+    assert s.consecutive_count == 0
+    assert md._cooldowns.get("cam1", {}).get("fire") is None
+
+
+def test_static_filter_passes_dynamic_target():
+    """动态目标（连续帧框区域有变化）通过静态过滤，正常触发告警"""
+    from backend.safety_detection.detector_core import MultiDetector, TypeSchedule
+    import threading
+    from collections import defaultdict
+
+    md = MultiDetector.__new__(MultiDetector)
+    md._lock = threading.RLock()
+    md._schedules = {}
+    md._cooldowns = defaultdict(dict)
+    md._alert_states = defaultdict(dict)
+    md._latest_results = {}
+    md._static_regions = {}
+    md.camera_manager = MagicMock()
+    md.trigger_callback = None
+    md.vlm_queue = None
+
+    s = TypeSchedule(
+        dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=60,
+        consecutive_required=3, static_filter=True, static_diff_threshold=0.02,
+    )
+    hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9]}
+
+    static_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    dynamic_frame = static_frame.copy()
+    dynamic_frame[:, :50] = 255
+
+    md._handle_standard_detection("cam1", "fire", static_frame, hit.copy(), s)
+    md._handle_standard_detection("cam1", "fire", static_frame, hit.copy(), s)
+    md._handle_standard_detection("cam1", "fire", dynamic_frame, hit.copy(), s)
+
+    assert md._cooldowns["cam1"]["fire"] > 0
+
+
+def test_static_filter_disabled_allows_static_target():
+    """static_filter=False 时静态目标正常触发（向后兼容）"""
+    from backend.safety_detection.detector_core import MultiDetector, TypeSchedule
+    import threading
+    from collections import defaultdict
+
+    md = MultiDetector.__new__(MultiDetector)
+    md._lock = threading.RLock()
+    md._schedules = {}
+    md._cooldowns = defaultdict(dict)
+    md._alert_states = defaultdict(dict)
+    md._latest_results = {}
+    md._static_regions = {}
+    md.camera_manager = MagicMock()
+    md.trigger_callback = None
+    md.vlm_queue = None
+
+    s = TypeSchedule(
+        dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=60,
+        consecutive_required=2, static_filter=False,
+    )
+    frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9]}
+
+    md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
+    md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
+
+    assert md._cooldowns["cam1"]["fire"] > 0

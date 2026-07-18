@@ -87,6 +87,9 @@ class TypeSchedule:
     min_box_count: int = None
     max_box_count: int = None
     box_count_mode: str | None = None  # gte | lte | between | outside
+    # 静态目标过滤：连续 N 帧框区域内容几乎无变化时判为误判（红灯/电子屏等静态光源）
+    static_filter: bool = False
+    static_diff_threshold: float = 0.02
 
     def is_due(self, now: float) -> bool:
         return now - self.last_run >= self.interval
@@ -157,6 +160,49 @@ def check_box_count(result: dict, min_box_count: int = None,
         return {**result, "detected": True}
 
     return result
+
+
+# ----------------------------------------------------------------------
+# 静态目标过滤（关键帧图片比对）
+# ----------------------------------------------------------------------
+
+def _extract_box_region(frame: np.ndarray, box: list, margin_ratio: float = 0.1) -> Optional[np.ndarray]:
+    """从帧中提取检测框区域（扩 margin_ratio 边界），缩放为 64x64 灰度图"""
+    if frame is None or len(box) < 4:
+        return None
+    h, w = frame.shape[:2]
+    x1, y1, x2, y2 = map(int, box[:4])
+    bw, bh = x2 - x1, y2 - y1
+    if bw <= 0 or bh <= 0:
+        return None
+    mx, my = int(bw * margin_ratio), int(bh * margin_ratio)
+    x1 = max(0, x1 - mx)
+    y1 = max(0, y1 - my)
+    x2 = min(w, x2 + mx)
+    y2 = min(h, y2 + my)
+    region = frame[y1:y2, x1:x2]
+    if region.size == 0:
+        return None
+    gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+    return cv2.resize(gray, (64, 64))
+
+
+def check_static_filter(regions: List[np.ndarray], diff_threshold: float) -> bool:
+    """连续帧框区域是否全部几乎无变化（静态目标，视为误判）。
+
+    相邻帧做绝对差分，统计差值 > 15 的像素占比；全部低于 diff_threshold 时返回 True。
+    """
+    if len(regions) < 2:
+        return False
+    for i in range(1, len(regions)):
+        prev, curr = regions[i - 1], regions[i]
+        if prev is None or curr is None:
+            continue
+        diff = cv2.absdiff(prev, curr)
+        changed_ratio = float((diff > 15).sum()) / diff.size
+        if changed_ratio >= diff_threshold:
+            return False
+    return True
 
 
 # ----------------------------------------------------------------------
@@ -326,6 +372,8 @@ class MultiDetector:
         self._alert_states: Dict[str, Dict[str, dict]] = {}
         self._cooldowns: Dict[str, Dict[str, float]] = {}
         self._latest_results: Dict[str, Dict[str, dict]] = {}
+        # 静态过滤：每摄像头每类型缓存连续帧的框区域图（64x64 灰度）
+        self._static_regions: Dict[str, Dict[str, List[np.ndarray]]] = {}
         self._lock = threading.RLock()
         self._running = False
 
@@ -371,6 +419,8 @@ class MultiDetector:
                     min_box_count=cfg.get("min_box_count"),
                     max_box_count=cfg.get("max_box_count"),
                     box_count_mode=cfg.get("box_count_mode"),
+                    static_filter=cfg.get("static_filter", False),
+                    static_diff_threshold=cfg.get("static_diff_threshold", 0.02),
                 )
                 self._schedules[camera_id][dtype] = schedule
             if self.camera_manager is not None:
@@ -393,6 +443,7 @@ class MultiDetector:
                 del self._schedules[camera_id]
             self._alert_states.pop(camera_id, None)
             self._cooldowns.pop(camera_id, None)
+            self._static_regions.pop(camera_id, None)
             logger.info(f"Camera {camera_id} unregistered")
 
     # ------------------------------------------------------------------
@@ -613,10 +664,21 @@ class MultiDetector:
             if self.camera_manager is not None:
                 self.camera_manager.clear_detection_frames(camera_id, dtype)
             schedule.consecutive_count = 0
+            getattr(self, "_static_regions", {}).get(camera_id, {}).pop(dtype, None)
             return
 
         schedule.consecutive_count += 1
         logger.info(f"{camera_id} {dtype} consecutive={schedule.consecutive_count}/{schedule.consecutive_required} conf={max_conf:.2f}")
+
+        # 静态过滤：缓存本次命中的框区域图（取最高置信度框）
+        if schedule.static_filter and result.get("boxes"):
+            scores = result.get("scores", [])
+            best_idx = scores.index(max(scores)) if scores else 0
+            region = _extract_box_region(frame, result["boxes"][best_idx])
+            if region is not None:
+                getattr(self, "_static_regions", {}).setdefault(camera_id, {}).setdefault(dtype, []).append(region)
+                # 只保留最近 consecutive_required 帧，避免内存膨胀
+                getattr(self, "_static_regions", {})[camera_id][dtype] = getattr(self, "_static_regions", {})[camera_id][dtype][-schedule.consecutive_required:]
 
         # 编码并写入检测帧缓存
         if self.camera_manager is not None:
@@ -635,6 +697,17 @@ class MultiDetector:
         if schedule.consecutive_count < schedule.consecutive_required:
             return
 
+        # 静态过滤：连续帧框区域内容全部几乎无变化 → 判为静态误判，重置不告警
+        if schedule.static_filter:
+            regions = getattr(self, "_static_regions", {}).get(camera_id, {}).get(dtype, [])
+            if check_static_filter(regions, schedule.static_diff_threshold):
+                logger.info(f"{camera_id} {dtype} static filter: box region unchanged across {len(regions)} frames, likely static false positive (red light/screen), resetting")
+                schedule.consecutive_count = 0
+                getattr(self, "_static_regions", {}).get(camera_id, {}).pop(dtype, None)
+                if self.camera_manager is not None:
+                    self.camera_manager.clear_detection_frames(camera_id, dtype)
+                return
+
         now = time.time()
         # 冷却检查已前置到 _get_due_types
 
@@ -644,6 +717,7 @@ class MultiDetector:
         # 重置连续计数：否则冷却结束后第一次命中会立即再次触发，
         # 且此时帧缓存只有 1 帧，导致告警记录的帧序列只有一帧
         schedule.consecutive_count = 0
+        getattr(self, "_static_regions", {}).get(camera_id, {}).pop(dtype, None)
 
         # 把 level 和 reason 写入 result，供 trigger_callback 创建记录时使用
         result["level"] = "small_model_alarm"

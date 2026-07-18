@@ -43,6 +43,8 @@ UNIVERSAL_DEFAULTS: dict[str, Any] = {
     "min_box_count": 1,
     "max_box_count": None,
     "box_count_mode": None,
+    "static_filter": False,
+    "static_diff_threshold": 0.02,
 }
 
 
@@ -126,6 +128,8 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "min_box_count": 1,
             "max_box_count": None,
             "box_count_mode": None,
+            "static_filter": True,
+            "static_diff_threshold": 0.02,
         },
     },
     "smoke": {
@@ -147,6 +151,8 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "min_box_count": 1,
             "max_box_count": None,
             "box_count_mode": None,
+            "static_filter": True,
+            "static_diff_threshold": 0.02,
         },
     },
     "uniform": {
@@ -168,6 +174,8 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "min_box_count": 1,
             "max_box_count": None,
             "box_count_mode": None,
+            "static_filter": False,
+            "static_diff_threshold": 0.02,
         },
     },
     "mask": {
@@ -189,6 +197,8 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "min_box_count": 1,
             "max_box_count": None,
             "box_count_mode": None,
+            "static_filter": False,
+            "static_diff_threshold": 0.02,
         },
     },
     "cigarette": {
@@ -210,6 +220,8 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "min_box_count": 1,
             "max_box_count": None,
             "box_count_mode": None,
+            "static_filter": False,
+            "static_diff_threshold": 0.02,
         },
     },
     "sleep": {
@@ -231,6 +243,8 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "min_box_count": 1,
             "max_box_count": None,
             "box_count_mode": None,
+            "static_filter": False,
+            "static_diff_threshold": 0.02,
         },
     },
 }

@@ -426,6 +426,10 @@
                     </span>
                     <label><input type="checkbox" v-model="cameraDialog.detection_types[typeConfigDialog].roi_invert" /> 区域外报警</label>
                 </div>
+                <!-- 静态过滤 -->
+                <div class="type-checkbox-row">
+                    <label><input type="checkbox" v-model="cameraDialog.detection_types[typeConfigDialog].static_filter" /> 静态目标过滤（连续帧框区域内容无变化时视为误判，适合烟火类动态目标）</label>
+                </div>
                 <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
                     <button class="clay-button primary" @click="typeConfigDialog = null">完成</button>
                 </div>

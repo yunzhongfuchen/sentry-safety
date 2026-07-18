@@ -108,6 +108,8 @@ def get_default_type_config() -> dict:
             "min_box_count": defaults.get("min_box_count"),
             "max_box_count": defaults.get("max_box_count"),
             "box_count_mode": defaults.get("box_count_mode"),
+            "static_filter": defaults.get("static_filter", False),
+            "static_diff_threshold": defaults.get("static_diff_threshold", 0.02),
         }
     return dtc
 
