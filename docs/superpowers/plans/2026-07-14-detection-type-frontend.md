@@ -27,7 +27,7 @@
 
 **Interfaces:**
 - Consumes: 现有 `DetectionTypeRegistry` 类
-- Produces: `add_type()`, `delete_type()`, `save_model()`, `is_type_referenced()`
+- Produces: `add_type()`, `delete_type()`, `save_model()`, `update_type()`
 
 - [ ] **Step 1: Write the failing test**
 
