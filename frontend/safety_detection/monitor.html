@@ -13,7 +13,7 @@
             height: calc(100vh - 64px);
             display: grid;
             grid-template-columns: 1fr 200px 280px;
-            grid-template-rows: 1fr 160px;
+            grid-template-rows: minmax(0, 1fr) auto;
             grid-template-areas:
                 "main switches sidebar"
                 "alerts alerts alerts";
@@ -26,6 +26,7 @@
             display: flex;
             flex-direction: column;
             min-width: 0;
+            min-height: 0;
         }
 
         .switches-area {
@@ -33,10 +34,12 @@
             display: flex;
             flex-direction: column;
             min-width: 0;
+            min-height: 0;
         }
 
         .type-switch-panel {
             flex: 1;
+            min-height: 0;
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -100,7 +103,8 @@
         }
 
         .video-card {
-            flex: 1;
+            flex: 0 1 auto;
+            min-height: 0;
             display: flex;
             flex-direction: column;
             padding: 0;
@@ -125,6 +129,7 @@
 
         .video-body {
             flex: 1;
+            aspect-ratio: 16 / 9;
             position: relative;
             background: #0f1210;
             min-height: 0;
@@ -166,10 +171,12 @@
             flex-direction: column;
             gap: 12px;
             min-width: 0;
+            min-height: 0;
         }
 
         .cam-list {
             flex: 1;
+            min-height: 0;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
@@ -231,15 +238,13 @@
             grid-area: alerts;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
         }
 
         .alerts-list {
             flex: 1;
             display: grid;
-            grid-template-columns: repeat(5, minmax(220px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 14px;
-            overflow-x: auto;
             padding: 4px 2px 6px;
             align-items: stretch;
         }
@@ -294,7 +299,7 @@
         @media (max-width: 1200px) {
             .monitor-layout {
                 grid-template-columns: 1fr;
-                grid-template-rows: 1fr 160px 200px 160px;
+                grid-template-rows: 1fr 160px 200px auto;
                 grid-template-areas:
                     "main"
                     "switches"
@@ -355,7 +360,7 @@
 
             <!-- Type switches -->
             <div class="switches-area">
-                <div class="glass-card" style="flex: 1; display: flex; flex-direction: column; padding: 16px;">
+                <div class="glass-card" style="flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px;">
                     <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">
                         显示检测类型
                     </div>
@@ -379,7 +384,7 @@
 
             <!-- Sidebar camera list -->
             <div class="sidebar-area">
-                <div class="glass-card" style="flex: 1; display: flex; flex-direction: column; padding: 16px;">
+                <div class="glass-card" style="flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px;">
                     <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">
                         摄像头列表
                     </div>
