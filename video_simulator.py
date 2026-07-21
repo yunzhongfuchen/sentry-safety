@@ -30,6 +30,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import cv2
+import numpy as np
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +39,59 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DEFAULT_UPLOAD_DIR = Path(__file__).parent / "data" / "simulator_uploads"
+
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif"}
+
+
+class ImageFeed:
+    """静态图片按固定帧率循环推流。"""
+
+    def __init__(self, image_path: str, quality: int = 85, max_width: int = 1280, fps: float = 25.0):
+        self.video_path = image_path
+        self.quality = quality
+        self.max_width = max_width
+        self._fps = fps
+        self._current_jpeg: bytes | None = None
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.playing = True
+        self.loop = True
+
+    def start(self) -> None:
+        buf = np.frombuffer(Path(self.video_path).read_bytes(), dtype=np.uint8)
+        frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+        if frame is None:
+            raise RuntimeError(f"无法读取图片: {self.video_path}")
+        h, w = frame.shape[:2]
+        if self.max_width > 0 and w > self.max_width:
+            scale = self.max_width / w
+            frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
+        ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.quality])
+        if not ok:
+            raise RuntimeError(f"图片编码失败: {self.video_path}")
+        with self._lock:
+            self._current_jpeg = jpeg.tobytes()
+        self._thread = threading.Thread(target=self._loop, daemon=True, name=f"img-{Path(self.video_path).stem}")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1.0)
+
+    def _loop(self) -> None:
+        interval = 1.0 / self._fps
+        while not self._stop.is_set():
+            self._stop.wait(interval)
+
+    def get_frame(self) -> bytes | None:
+        with self._lock:
+            return self._current_jpeg
+
+    def get_status(self) -> dict:
+        return {"fps": self._fps, "playing": self.playing, "loop": self.loop}
 
 
 class VideoFeed:
@@ -199,26 +253,45 @@ class MJPEGHandler(BaseHTTPRequestHandler):
         return f"http://{host}"
 
     def do_GET(self):
-        if self.path == "/" or self.path == "/index.html":
+        path = self.path.split("?", 1)[0]
+
+        if path == "/" or path == "/index.html":
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(_HTML_PAGE.encode("utf-8"))
             return
 
-        if self.path == "/api/feeds":
+        if path == "/api/feeds":
             feeds = []
-            for path, feed in sorted(self.feeds.items()):
+            for fpath, feed in sorted(self.feeds.items()):
                 status = feed.get_status()
-                status["path"] = path
+                status["path"] = fpath
                 status["source"] = Path(feed.video_path).name
-                status["url"] = f"{self._base_url()}{path}/stream"
+                status["url"] = f"{self._base_url()}{fpath}/stream"
                 feeds.append(status)
             self._json_response(200, {"feeds": feeds})
             return
 
-        if self.path.endswith("/stream"):
-            base_path = self.path[: -len("/stream")] or "/"
+        if path.endswith("/snapshot"):
+            base_path = path[: -len("/snapshot")] or "/"
+            feed = self.feeds.get(base_path)
+            if feed is None:
+                self.send_error(404, "Unknown stream")
+                return
+            frame = feed.get_frame()
+            if frame is None:
+                self.send_error(503, "No frame yet")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(frame)
+            return
+
+        if path.endswith("/stream"):
+            base_path = path[: -len("/stream")] or "/"
             feed = self.feeds.get(base_path)
             if feed is None:
                 self.send_error(404, "Unknown stream")
@@ -230,23 +303,19 @@ class MJPEGHandler(BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
             self.end_headers()
 
-            last_frame: bytes | None = None
+            interval = 1.0 / max(feed._fps, 1.0)
             try:
                 while True:
                     frame = feed.get_frame()
                     if frame is None:
                         time.sleep(0.01)
                         continue
-
-                    if frame is not last_frame:
-                        self.wfile.write(b"--frame\r\n")
-                        self.wfile.write(b"Content-Type: image/jpeg\r\n\r\n")
-                        self.wfile.write(frame)
-                        self.wfile.write(b"\r\n")
-                        self.wfile.flush()
-                        last_frame = frame
-
-                    time.sleep(0.01)
+                    self.wfile.write(b"--frame\r\n")
+                    self.wfile.write(b"Content-Type: image/jpeg\r\n\r\n")
+                    self.wfile.write(frame)
+                    self.wfile.write(b"\r\n")
+                    self.wfile.flush()
+                    time.sleep(interval)
             except (BrokenPipeError, ConnectionResetError):
                 pass
             return
@@ -277,7 +346,11 @@ class MJPEGHandler(BaseHTTPRequestHandler):
             save_path.write_bytes(video["data"])
             path = self._next_path()
             try:
-                feed = VideoFeed(str(save_path), quality=self.quality, max_width=self.max_width)
+                ext = Path(filename).suffix.lower()
+                if ext in IMAGE_EXTS:
+                    feed = ImageFeed(str(save_path), quality=self.quality, max_width=self.max_width)
+                else:
+                    feed = VideoFeed(str(save_path), quality=self.quality, max_width=self.max_width)
                 feed.start()
                 self.feeds[path] = feed
                 logger.info(f"上传并启动 {path}/stream -> {save_path}")
@@ -453,7 +526,7 @@ _HTML_PAGE = r"""<!DOCTYPE html>
 
     <div class="upload-area" id="uploadArea">
         <p>拖拽视频文件到此处，或点击选择文件</p>
-        <input type="file" id="fileInput" accept="video/*" multiple style="display:none">
+        <input type="file" id="fileInput" accept="video/*,image/*" multiple style="display:none">
         <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">选择文件</button>
     </div>
 
@@ -469,10 +542,11 @@ _HTML_PAGE = r"""<!DOCTYPE html>
         const feedList = document.getElementById('feedList');
         const toast = document.getElementById('toast');
 
-        function showToast(msg) {
+        function showToast(msg, isError) {
             toast.textContent = msg;
+            toast.style.background = isError ? '#f56c6c' : '#67c23a';
             toast.style.display = 'block';
-            setTimeout(() => toast.style.display = 'none', 2000);
+            setTimeout(() => toast.style.display = 'none', 3000);
         }
 
         async function loadFeeds() {
@@ -496,7 +570,7 @@ _HTML_PAGE = r"""<!DOCTYPE html>
                         <span class="feed-title">${escapeHtml(feed.source)}</span>
                         <span class="feed-meta">${feed.fps.toFixed(2)} FPS · ${feed.playing ? '播放中' : '已暂停'}</span>
                     </div>
-                    <img class="preview" src="${feed.url}" alt="预览">
+                    <img class="preview" src="${feed.path}/snapshot?t=${Date.now()}" alt="预览">
                     <div class="feed-url">${feed.url}</div>
                     <div class="controls">
                         <button class="btn ${feed.playing ? 'btn-danger' : 'btn-primary'}" onclick="control('${feed.path}', 'toggle')">
@@ -565,12 +639,19 @@ _HTML_PAGE = r"""<!DOCTYPE html>
 
         async function uploadFiles(files) {
             for (const file of files) {
+                showToast(`上传中: ${file.name}`);
                 const formData = new FormData();
                 formData.append('video', file);
                 try {
-                    await fetch('/upload', { method: 'POST', body: formData });
+                    const res = await fetch('/upload', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    if (!res.ok) {
+                        showToast(`上传失败: ${data.error || res.status}`, true);
+                    } else {
+                        showToast(`已添加: ${file.name}`);
+                    }
                 } catch (e) {
-                    console.error('上传失败', e);
+                    showToast(`上传异常: ${e.message}`, true);
                 }
             }
             fileInput.value = '';
