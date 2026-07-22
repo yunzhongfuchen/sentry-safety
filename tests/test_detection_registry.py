@@ -26,21 +26,30 @@ def test_hex_to_bgr_black():
 class TestDetectionTypeRegistry:
     """注册表核心功能测试"""
 
-    def _make_registry(self, tmp_path, monkeypatch, data=None):
-        import backend.detection_registry as mod
-        monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
-        monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
-        r = mod.DetectionTypeRegistry()
+    def _make_registry(self, tmp_path, monkeypatch, data=None, models=None):
+        import backend.model_registry as mmod
+        import backend.detection_registry as dmod
+        monkeypatch.setattr(mmod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(mmod, "MODELS_FILE", tmp_path / "models.json")
+        monkeypatch.setattr(mmod, "WEIGHTS_DIR", tmp_path / "weights")
+        mr = mmod.ModelRegistry()
+        mr.load()
+        for m in (models or []):
+            mr.add_model(**m)
+        monkeypatch.setattr(dmod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(dmod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
+        monkeypatch.setattr(dmod, "model_registry", mr)
         if data is not None:
-            (tmp_path / "detection_types.json").write_text(
+            (tmp_path / "algorithms.json").write_text(
                 json.dumps(data, ensure_ascii=False), encoding="utf-8"
             )
+        r = dmod.DetectionTypeRegistry()
         r.load()
-        return r
+        return r, mr
 
     def test_load_generates_file_when_missing(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
-        assert (tmp_path / "detection_types.json").exists()
+        r, _ = self._make_registry(tmp_path, monkeypatch)
+        assert (tmp_path / "algorithms.json").exists()
         assert "fire" in r.all_types()
         assert "sleep" in r.all_types()
 
@@ -49,7 +58,7 @@ class TestDetectionTypeRegistry:
                             "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
                             "vlm_prompt": "fire_review", "inspection_label": "火",
                             "defaults": {"enabled": True, "threshold": 0.9}}}
-        r = self._make_registry(tmp_path, monkeypatch, data=partial)
+        r, _ = self._make_registry(tmp_path, monkeypatch, data=partial)
         fire = r.get("fire")
         assert fire["label"] == "自定义火焰"
         assert fire["defaults"]["enabled"] is True
@@ -59,36 +68,44 @@ class TestDetectionTypeRegistry:
         assert "min_box_count" in fire["defaults"]
 
     def test_get_unknown_returns_none(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         assert r.get("unknown_type") is None
 
     def test_all_types_returns_six(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         assert len(r.all_types()) == 6
         assert set(r.all_types()) == {"fire", "smoke", "uniform", "mask", "cigarette", "sleep"}
 
     def test_get_types_by_model_shared(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
-        shared = r.get_types_by_model("fire_smoke.pt")
-        assert set(shared) == {"fire", "smoke"}
+        r, mr = self._make_registry(tmp_path, monkeypatch, models=[
+            {"file": "fire_smoke.pt", "name": "烟火模型", "post_process": "yolo_box",
+             "class_names": {"0": "fire", "1": "smoke"}}])
+        mkey = mr.all_models()[0]
+        k1 = r.add_type({"label": "火", "model_key": mkey})
+        k2 = r.add_type({"label": "烟", "model_key": mkey})
+        assert set(r.get_types_by_model("fire_smoke.pt")) == {k1, k2}
 
     def test_get_types_by_model_unique(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
-        assert r.get_types_by_model("mask.pt") == ["mask"]
+        r, mr = self._make_registry(tmp_path, monkeypatch, models=[
+            {"file": "mask.pt", "name": "口罩模型", "post_process": "yolo_box",
+             "class_names": {"0": "mask"}}])
+        mkey = mr.all_models()[0]
+        key = r.add_type({"label": "口罩佩戴", "model_key": mkey})
+        assert r.get_types_by_model("mask.pt") == [key]
 
     def test_get_color_bgr(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         assert r.get_color_bgr("fire") == (68, 68, 239)
 
     def test_get_defaults(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         d = r.get_defaults("sleep")
         assert d["interval"] == 60
         assert d["threshold"] == 0.7
         assert d["min_box_count"] == 1
 
     def test_merge_camera_config(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         merged = r.merge_camera_config("fire", {"enabled": True, "threshold": 0.8,
                                                   "roi": [[0.1, 0.1], [0.9, 0.9]]})
         assert merged["enabled"] is True
@@ -99,7 +116,7 @@ class TestDetectionTypeRegistry:
         assert merged["consecutive_required"] == 3
 
     def test_to_api_list(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         api = r.to_api_list()
         assert len(api) == 6
         fire_entry = next(e for e in api if e["key"] == "fire")
@@ -107,7 +124,10 @@ class TestDetectionTypeRegistry:
         assert fire_entry["color"] == "#ef4444"
         assert "defaults" in fire_entry
         # structural fields exposed so edit dialog can round-trip them
-        assert fire_entry["model_path"] == "fire_smoke.pt"
+        # 默认类型尚无 model_key（Task 3 迁移），model_path 解析为 None
+        assert "model_key" in fire_entry
+        assert fire_entry["model_key"] is None
+        assert fire_entry["model_path"] is None
         assert "npu_model_path" not in fire_entry
         assert fire_entry["classes"] == [0]
         assert fire_entry["model_confidence"] == 0.5
@@ -115,35 +135,37 @@ class TestDetectionTypeRegistry:
         assert fire_entry["inspection_label"] == "明火"
 
     def test_validate_warns_missing_model(self, tmp_path, monkeypatch):
-        import backend.detection_registry as mod
-        monkeypatch.setattr(mod, "PROJECT_ROOT", tmp_path)
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, mr = self._make_registry(tmp_path, monkeypatch, models=[
+            {"file": "missing.pt", "name": "缺失模型", "post_process": "yolo_box",
+             "class_names": {}}])
+        mkey = mr.all_models()[0]
+        r.add_type({"label": "缺模型算法", "model_key": mkey})
         warnings = r.validate()
-        # models don't exist in test env, so should have warnings
+        # 模型文件未落到 weights/，应产生警告
         assert len(warnings) > 0
-        assert any("fire_smoke.pt" in w for w in warnings)
+        assert any(mkey in w for w in warnings)
 
     def test_update_defaults_persists(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         r.update_defaults("fire", {"threshold": 0.99, "cooldown": 120})
         assert r.get_defaults("fire")["threshold"] == 0.99
         assert r.get_defaults("fire")["cooldown"] == 120
         # verify persistence
-        with open(tmp_path / "detection_types.json", "r", encoding="utf-8") as f:
+        with open(tmp_path / "algorithms.json", "r", encoding="utf-8") as f:
             saved = json.load(f)
         assert saved["fire"]["defaults"]["threshold"] == 0.99
 
     def test_update_defaults_ignores_structural_fields(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
-        r.update_defaults("fire", {"model_path": "hacked.pt", "threshold": 0.1})
-        assert r.get("fire")["model_path"] != "hacked.pt"
+        r, _ = self._make_registry(tmp_path, monkeypatch)
+        r.update_defaults("fire", {"model_key": "hacked", "threshold": 0.1})
+        assert r.get("fire").get("model_key") is None
         assert r.get_defaults("fire")["threshold"] == 0.1
 
     def test_load_backfills_custom_type_defaults(self, tmp_path, monkeypatch):
         custom = {"custom_type": {"label": "自定义", "color": "#123456", "model_path": "custom.pt",
                                   "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
                                   "vlm_prompt": "custom_review", "inspection_label": "自定义"}}
-        r = self._make_registry(tmp_path, monkeypatch, data=custom)
+        r, _ = self._make_registry(tmp_path, monkeypatch, data=custom)
         assert "custom_type" in r.all_types()
         d = r.get_defaults("custom_type")
         assert d["enabled"] is False
@@ -156,33 +178,33 @@ class TestDetectionTypeRegistry:
         assert d["max_box_count"] is None
 
     def test_get_color_bgr_unknown_returns_green(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         assert r.get_color_bgr("unknown") == (0, 255, 0)
 
     def test_get_defaults_unknown_returns_empty(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         assert r.get_defaults("unknown") == {}
 
     def test_merge_camera_config_unknown_returns_overrides(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         overrides = {"enabled": True, "threshold": 0.8}
         assert r.merge_camera_config("unknown", overrides) == overrides
 
     def test_update_defaults_unknown_is_noop(self, tmp_path, monkeypatch):
-        r = self._make_registry(tmp_path, monkeypatch)
+        r, _ = self._make_registry(tmp_path, monkeypatch)
         r.update_defaults("unknown", {"threshold": 0.1})
         assert r.get("unknown") is None
 
     def test_get_types_by_model_missing_model_path(self, tmp_path, monkeypatch):
         custom = {"custom_no_model": {"label": "自定义"}}
-        r = self._make_registry(tmp_path, monkeypatch, data=custom)
+        r, _ = self._make_registry(tmp_path, monkeypatch, data=custom)
         # should not raise
         assert r.get_types_by_model("anything.pt") == []
         assert r.get_types_by_model("") == []
 
     def test_to_api_list_missing_structural_fields(self, tmp_path, monkeypatch):
         custom = {"custom_sparse": {"defaults": {"enabled": True}}}
-        r = self._make_registry(tmp_path, monkeypatch, data=custom)
+        r, _ = self._make_registry(tmp_path, monkeypatch, data=custom)
         entry = next(e for e in r.to_api_list() if e["key"] == "custom_sparse")
         assert entry["label"] == "custom_sparse"
         assert entry["color"] == "#888888"
@@ -192,15 +214,15 @@ class TestDetectionTypeRegistry:
         assert entry["defaults"]["threshold"] == 0.5
 
     def test_load_malformed_json_regenerates_defaults(self, tmp_path, monkeypatch):
-        (tmp_path / "detection_types.json").write_text("not json at all", encoding="utf-8")
+        (tmp_path / "algorithms.json").write_text("not json at all", encoding="utf-8")
         import backend.detection_registry as mod
         monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
-        monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+        monkeypatch.setattr(mod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
         r = mod.DetectionTypeRegistry()
         r.load()
         assert set(r.all_types()) == {"fire", "smoke", "uniform", "mask", "cigarette", "sleep"}
         # corrupted file overwritten
-        with open(tmp_path / "detection_types.json", "r", encoding="utf-8") as f:
+        with open(tmp_path / "algorithms.json", "r", encoding="utf-8") as f:
             saved = json.load(f)
         assert "fire" in saved
 
@@ -223,75 +245,122 @@ def test_hex_to_bgr_wrong_length_raises():
         hex_to_bgr("#ef444")
 
 
-def test_add_type_generates_key_and_saves(tmp_path, monkeypatch):
-    import backend.detection_registry as mod
-    monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
-    r = mod.DetectionTypeRegistry()
+def _make_registry_with_model(tmp_path, monkeypatch):
+    """构建算法注册表 + 模型注册表，返回 (registry, model_registry, model_key)"""
+    import backend.model_registry as mmod
+    import backend.detection_registry as dmod
+    monkeypatch.setattr(mmod, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(mmod, "MODELS_FILE", tmp_path / "models.json")
+    monkeypatch.setattr(mmod, "WEIGHTS_DIR", tmp_path / "weights")
+    mr = mmod.ModelRegistry()
+    mr.load()
+    mkey = mr.add_model(file="test.pt", name="测试模型", post_process="yolo_box",
+                        class_names={"0": "x"})
+    monkeypatch.setattr(dmod, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(dmod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
+    monkeypatch.setattr(dmod, "model_registry", mr)
+    r = dmod.DetectionTypeRegistry()
     r.load()
-    key = r.add_type({"label": "测试类型", "color": "#ff0000", "model_path": "test.pt", "post_process": "yolo_box"})
+    return r, mr, mkey
+
+
+def test_add_type_generates_key_and_saves(tmp_path, monkeypatch):
+    r, mr, mkey = _make_registry_with_model(tmp_path, monkeypatch)
+    key = r.add_type({"label": "测试类型", "color": "#ff0000", "model_key": mkey})
     assert key is not None
     assert r.get(key)["label"] == "测试类型"
 
 
 def test_add_type_duplicate_label_raises(tmp_path, monkeypatch):
-    import backend.detection_registry as mod
-    monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
-    r = mod.DetectionTypeRegistry()
-    r.load()
+    r, mr, mkey = _make_registry_with_model(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match="already exists"):
-        r.add_type({"label": "明火", "color": "#ff0000", "model_path": "x.pt", "post_process": "yolo_box"})
+        r.add_type({"label": "明火", "color": "#ff0000", "model_key": mkey})
 
 
 def test_delete_type_removes_and_saves(tmp_path, monkeypatch):
-    import backend.detection_registry as mod
-    monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
-    r = mod.DetectionTypeRegistry()
-    r.load()
-    key = r.add_type({"label": "临时类型", "color": "#00ff00", "model_path": "tmp.pt", "post_process": "yolo_box"})
+    r, mr, mkey = _make_registry_with_model(tmp_path, monkeypatch)
+    key = r.add_type({"label": "临时类型", "color": "#00ff00", "model_key": mkey})
     assert r.get(key) is not None
     r.delete_type(key)
     assert r.get(key) is None
 
 
 def test_update_type_structural_fields(tmp_path, monkeypatch):
-    import backend.detection_registry as mod
-    monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
-    r = mod.DetectionTypeRegistry()
-    r.load()
-    key = r.add_type({"label": "旧名称", "color": "#111111", "model_path": "old.pt", "post_process": "yolo_box"})
-    r.update_type(key, {"label": "新名称", "color": "#222222", "model_path": "new.pt"})
+    r, mr, mkey = _make_registry_with_model(tmp_path, monkeypatch)
+    mkey2 = mr.add_model(file="new.pt", name="新模型", post_process="yolo_pose",
+                         class_names={"0": "y"})
+    key = r.add_type({"label": "旧名称", "color": "#111111", "model_key": mkey})
+    r.update_type(key, {"label": "新名称", "color": "#222222", "model_key": mkey2})
     td = r.get(key)
     assert td["label"] == "新名称"
     assert td["color"] == "#222222"
+    assert td["model_key"] == mkey2
     assert td["model_path"] == "new.pt"
+    # post_process 跟随模型
+    assert td["post_process"] == "yolo_pose"
 
 
-def test_save_model_writes_file(tmp_path, monkeypatch):
-    import backend.detection_registry as mod
-    monkeypatch.setattr(mod, "PROJECT_ROOT", tmp_path)
-    r = mod.DetectionTypeRegistry()
-    content = b"fake model content"
-    path = r.save_model("test_model.pt", content)
-    assert path.exists()
-    assert path.read_bytes() == content
-    assert path.parent.name == "weights"
+class TestAlgorithmModelKey:
+    @pytest.fixture
+    def both(self, tmp_path, monkeypatch):
+        import backend.model_registry as mmod
+        import backend.detection_registry as dmod
+        monkeypatch.setattr(mmod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(mmod, "MODELS_FILE", tmp_path / "models.json")
+        monkeypatch.setattr(mmod, "WEIGHTS_DIR", tmp_path / "weights")
+        mr = mmod.ModelRegistry()
+        mr.load()
+        mkey = mr.add_model(file="leak.pt", name="漏液模型", post_process="yolo_box",
+                            class_names={"0": "leak"})
+        monkeypatch.setattr(dmod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(dmod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
+        monkeypatch.setattr(dmod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+        monkeypatch.setattr(dmod, "model_registry", mr)
+        r = dmod.DetectionTypeRegistry()
+        r.load()
+        return r, mr, mkey
 
+    def test_get_injects_model_path(self, both):
+        r, mr, mkey = both
+        key = r.add_type({"label": "漏液", "color": "#facc15", "model_key": mkey,
+                          "classes": [0], "defaults": {"threshold": 0.5}})
+        td = r.get(key)
+        assert td["model_key"] == mkey
+        assert td["model_path"] == "leak.pt"
+        assert td["post_process"] == "yolo_box"
 
-def test_save_model_sanitizes_path_traversal(tmp_path, monkeypatch):
-    """save_model('../evil.pt') 必须写入 weights/evil.pt，不能逃逸到 weights/ 之外"""
-    import backend.detection_registry as mod
-    monkeypatch.setattr(mod, "PROJECT_ROOT", tmp_path)
-    r = mod.DetectionTypeRegistry()
-    content = b"evil payload"
-    path = r.save_model("../evil.pt", content)
-    assert path.name == "evil.pt"
-    assert path.parent.name == "weights"
-    assert path.parent.parent == tmp_path
-    assert path.exists()
-    assert path.read_bytes() == content
-    # 确认没有文件被写到 weights/ 之外
-    assert not (tmp_path / "evil.pt").exists()
+    def test_add_type_unknown_model_key_raises(self, both):
+        r, mr, mkey = both
+        with pytest.raises(ValueError, match="Unknown model"):
+            r.add_type({"label": "X", "color": "#fff", "model_key": "nonexistent"})
+
+    def test_add_type_copies_post_process_from_model(self, both):
+        r, mr, mkey = both
+        mr.update_model(mkey, {"post_process": "yolo_pose"})
+        key = r.add_type({"label": "姿态类", "color": "#fff", "model_key": mkey})
+        assert r.get(key)["post_process"] == "yolo_pose"
+
+    def test_update_type_model_key_validated(self, both):
+        r, mr, mkey = both
+        key = r.add_type({"label": "漏液", "color": "#facc15", "model_key": mkey})
+        with pytest.raises(ValueError, match="Unknown model"):
+            r.update_type(key, {"model_key": "ghost"})
+
+    def test_to_api_list_has_model_key_and_path(self, both):
+        r, mr, mkey = both
+        key = r.add_type({"label": "漏液", "color": "#facc15", "model_key": mkey})
+        item = [t for t in r.to_api_list() if t["key"] == key][0]
+        assert item["model_key"] == mkey
+        assert item["model_path"] == "leak.pt"
+
+    def test_get_model_keys_in_use(self, both):
+        r, mr, mkey = both
+        assert mkey not in r.get_model_keys_in_use()
+        r.add_type({"label": "漏液", "color": "#facc15", "model_key": mkey})
+        assert mkey in r.get_model_keys_in_use()
+
+    def test_model_path_none_when_model_deleted(self, both):
+        r, mr, mkey = both
+        key = r.add_type({"label": "漏液", "color": "#facc15", "model_key": mkey})
+        mr.delete_model(mkey)
+        assert r.get(key)["model_path"] is None

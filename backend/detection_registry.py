@@ -12,10 +12,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from backend.model_registry import model_registry
+
 logger = logging.getLogger(__name__)
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 REGISTRY_FILE = CONFIG_DIR / "detection_types.json"
+ALGORITHMS_FILE = CONFIG_DIR / "algorithms.json"
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
@@ -260,9 +263,9 @@ class DetectionTypeRegistry:
         """加载注册表：文件存在则读取并补全缺失字段，不存在则从默认值生成"""
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
-        if REGISTRY_FILE.exists():
+        if ALGORITHMS_FILE.exists():
             try:
-                with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
+                with open(ALGORITHMS_FILE, "r", encoding="utf-8") as f:
                     stored = json.load(f)
             except json.JSONDecodeError:
                 logger.warning("Registry file corrupted, regenerating from defaults")
@@ -288,38 +291,55 @@ class DetectionTypeRegistry:
             self._types = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
             self._save(self._types)
 
-        # 清理已废弃字段（向后兼容：旧配置文件中的字段不再使用）
+        # 动态注入 model_path（由 model_key 解析），并清理已废弃字段
         for td in self._types.values():
-            td.pop("npu_model_path", None)
             td.pop("icon", None)
             td.pop("vlm_prompt_key", None)
+            mkey = td.get("model_key")
+            model = model_registry.get(mkey) if mkey else None
+            td["model_path"] = model["file"] if model else td.get("model_path")
 
         logger.info(f"Detection registry loaded: {list(self._types.keys())}")
 
     def _save(self, data: dict) -> None:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        with open(REGISTRY_FILE, "w", encoding="utf-8") as f:
+        with open(ALGORITHMS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     def get(self, dtype: str) -> dict | None:
-        if dtype not in self._types:
+        td = self._types.get(dtype)
+        if td is None:
             return None
-        return self._types[dtype]
+        result = dict(td)
+        model = model_registry.get(td.get("model_key") or "")
+        result["model_path"] = model["file"] if model else None
+        return result
 
     def all_types(self) -> list[str]:
         return list(self._types.keys())
 
     def get_types_by_model(self, model_path: str) -> list[str]:
-        return [dt for dt, td in self._types.items() if td.get("model_path") == model_path]
+        """按模型文件名找类型（推理去重用）：先反查 model_key 再匹配"""
+        mkey = None
+        for k, m in model_registry._models.items():
+            if m.get("file") == model_path:
+                mkey = k
+                break
+        if mkey is None:
+            return []
+        return [dt for dt, td in self._types.items() if td.get("model_key") == mkey]
+
+    def get_model_keys_in_use(self) -> set[str]:
+        return {td.get("model_key") for td in self._types.values() if td.get("model_key")}
 
     def get_color_bgr(self, dtype: str) -> tuple[int, int, int]:
-        td = self.get(dtype)
+        td = self._types.get(dtype)
         if td is None:
             return (0, 255, 0)
         return hex_to_bgr(td["color"])
 
     def get_defaults(self, dtype: str) -> dict:
-        td = self.get(dtype)
+        td = self._types.get(dtype)
         if td is None:
             return {}
         return dict(td["defaults"])
@@ -338,14 +358,10 @@ class DetectionTypeRegistry:
     def validate(self) -> list[str]:
         """校验注册表（模型文件是否存在等），返回警告列表"""
         warnings = []
-        models_dir = PROJECT_ROOT / "models"
-        weights_dir = PROJECT_ROOT / "weights"
         for dtype, td in self._types.items():
-            mp = td.get("model_path")
-            if mp:
-                found = (models_dir / mp).exists() or (weights_dir / mp).exists()
-                if not found:
-                    warnings.append(f"{dtype}: model file '{mp}' not found in models/ or weights/")
+            mkey = td.get("model_key")
+            if mkey and not model_registry.file_exists(mkey):
+                warnings.append(f"{dtype}: model '{mkey}' file not found in weights/")
             if td.get("post_process") not in ("yolo_box", "yolo_pose"):
                 warnings.append(f"{dtype}: unknown post_process '{td.get('post_process')}'")
         return warnings
@@ -353,11 +369,13 @@ class DetectionTypeRegistry:
     def to_api_list(self) -> list[dict]:
         """返回前端 API 格式的类型列表"""
         result = []
-        for key, td in self._types.items():
+        for key in self._types:
+            td = self.get(key)
             result.append({
                 "key": key,
                 "label": td.get("label", key),
                 "color": td.get("color", "#888888"),
+                "model_key": td.get("model_key"),
                 "model_path": td.get("model_path"),
                 "post_process": td.get("post_process", "yolo_box"),
                 "classes": td.get("classes"),
@@ -370,7 +388,7 @@ class DetectionTypeRegistry:
 
     def update_defaults(self, dtype: str, new_defaults: dict) -> None:
         """更新类型的运行参数默认值并持久化"""
-        td = self.get(dtype)
+        td = self._types.get(dtype)
         if td is None:
             return
         allowed = set(DEFAULT_DETECTION_TYPE_REGISTRY.get(dtype, {}).get("defaults", {}).keys())
@@ -382,13 +400,17 @@ class DetectionTypeRegistry:
         self._save(self._types)
 
     def add_type(self, type_def: dict) -> str:
-        """新增检测类型，自动生成唯一 key，返回 key"""
+        """新增算法，自动生成唯一 key，返回 key"""
         label = type_def.get("label", "").strip()
         if not label:
             raise ValueError("label is required")
         for existing in self._types.values():
             if existing.get("label") == label:
                 raise ValueError(f"label '{label}' already exists")
+        mkey = type_def.get("model_key")
+        model = model_registry.get(mkey or "")
+        if model is None:
+            raise ValueError(f"Unknown model: {mkey}")
         base = label.lower().replace(" ", "_")
         key = f"{base}_{uuid.uuid4().hex[:6]}"
         while key in self._types:
@@ -398,8 +420,8 @@ class DetectionTypeRegistry:
         self._types[key] = {
             "label": label,
             "color": type_def.get("color", "#888888"),
-            "model_path": type_def.get("model_path"),
-            "post_process": type_def.get("post_process", "yolo_box"),
+            "model_key": mkey,
+            "post_process": model.get("post_process", "yolo_box"),
             "classes": type_def.get("classes"),
             "model_confidence": type_def.get("model_confidence", 0.5),
             "vlm_prompt": type_def.get("vlm_prompt", ""),
@@ -411,7 +433,7 @@ class DetectionTypeRegistry:
 
     def update_type(self, dtype: str, updates: dict) -> None:
         """更新检测类型的结构性字段（不更新 defaults）"""
-        td = self.get(dtype)
+        td = self._types.get(dtype)
         if td is None:
             raise KeyError(f"Unknown detection type: {dtype}")
         if "label" in updates:
@@ -422,8 +444,12 @@ class DetectionTypeRegistry:
                 if k != dtype and existing.get("label") == new_label:
                     raise ValueError(f"label '{new_label}' already exists")
             td["label"] = new_label
-        for field in ("color", "model_path", "post_process",
-                      "classes", "model_confidence", "vlm_prompt", "inspection_label"):
+        if "model_key" in updates:
+            if model_registry.get(updates["model_key"] or "") is None:
+                raise ValueError(f"Unknown model: {updates['model_key']}")
+            td["model_key"] = updates["model_key"]
+            td["post_process"] = model_registry.get(updates["model_key"]).get("post_process", "yolo_box")
+        for field in ("color", "classes", "model_confidence", "vlm_prompt", "inspection_label"):
             if field in updates:
                 td[field] = updates[field]
         self._save(self._types)
@@ -434,15 +460,6 @@ class DetectionTypeRegistry:
             raise KeyError(f"Unknown detection type: {dtype}")
         del self._types[dtype]
         self._save(self._types)
-
-    def save_model(self, filename: str, content: bytes) -> Path:
-        """保存模型文件到 weights/ 目录（剥离目录成分防止路径穿越）"""
-        weights_dir = PROJECT_ROOT / "weights"
-        weights_dir.mkdir(parents=True, exist_ok=True)
-        safe_name = Path(filename).name
-        path = weights_dir / safe_name
-        path.write_bytes(content)
-        return path
 
 
 registry = DetectionTypeRegistry()
