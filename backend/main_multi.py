@@ -1213,9 +1213,9 @@ async def reset_camera_config(camera_id: str):
     restored["width"] = camera_globals.get("width", 640)
     restored["height"] = camera_globals.get("height", 480)
     restored["fps"] = camera_globals.get("fps", 15)
-    restored["detection_types"] = {
+    restored["algorithms"] = sanitize_camera_algorithms({
         dtype: registry.get_defaults(dtype) for dtype in registry.all_types()
-    }
+    })
 
     # 更新内存中的摄像头配置
     state = camera_manager._cameras.get(camera_id)
