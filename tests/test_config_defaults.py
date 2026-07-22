@@ -1,14 +1,15 @@
-def test_load_camera_configs_migrates_old_level_config(tmp_path, monkeypatch):
+def test_load_camera_configs_migrates_detection_types_section(tmp_path, monkeypatch):
     import json
-    from backend.config import load_camera_configs, save_camera_configs, DEFAULT_TYPE_CONFIG, CAMERAS_CONFIG_FILE
+    from backend.config import load_camera_configs, CAMERAS_CONFIG_FILE
 
-    # Create old-style camera config with 'level' but no 'cooldown'
+    # 旧格式摄像头配置：detection_types 段带参数（level/use_vlm/threshold 等）
     old_camera = {
         "camera_id": "cam_old",
         "source": "rtsp://test",
         "detection_types": {
             "fire": {"enabled": True, "interval": 1, "threshold": 0.6, "consecutive_required": 2, "level": "P0", "use_vlm": True},
-            "mask": {"enabled": True, "interval": 1, "threshold": 0.5, "consecutive_required": 1, "level": "P1", "use_vlm": False},
+            "mask": {"enabled": True, "interval": 1, "threshold": 0.5, "consecutive_required": 1, "level": "P1", "use_vlm": False,
+                     "roi": [[0, 0], [1, 0], [1, 1]], "roi_invert": True},
         }
     }
 
@@ -29,34 +30,21 @@ def test_load_camera_configs_migrates_old_level_config(tmp_path, monkeypatch):
     assert cam["camera_id"] == "cam_old"
     assert cam["source"] == "rtsp://test"
 
-    # Verify 'level' removed and 'cooldown' added for all detection types
-    for dtype, cfg in cam["detection_types"].items():
-        assert "level" not in cfg, f"{dtype}: 'level' should be removed"
-        assert "cooldown" in cfg, f"{dtype}: 'cooldown' should be added"
-        assert cfg["cooldown"] == DEFAULT_TYPE_CONFIG[dtype]["cooldown"], f"{dtype}: cooldown default mismatch"
-
-    # Verify other fields preserved
-    fire_cfg = cam["detection_types"]["fire"]
-    assert fire_cfg["enabled"] is True
-    assert fire_cfg["interval"] == 1
-    assert fire_cfg["threshold"] == 0.6
-    assert fire_cfg["consecutive_required"] == 2
-    assert fire_cfg["use_vlm"] is True
-
-    mask_cfg = cam["detection_types"]["mask"]
-    assert mask_cfg["enabled"] is True
-    assert mask_cfg["interval"] == 1
-    assert mask_cfg["threshold"] == 0.5
-    assert mask_cfg["consecutive_required"] == 1
-    assert mask_cfg["use_vlm"] is False
+    # detection_types 段改名 algorithms，只保留 enabled/roi/roi_invert
+    assert "detection_types" not in cam
+    assert cam["algorithms"]["fire"] == {"enabled": True}
+    assert cam["algorithms"]["mask"] == {
+        "enabled": True,
+        "roi": [[0, 0], [1, 0], [1, 1]],
+        "roi_invert": True,
+    }
 
     # Verify the migrated config was saved back to file
     with open(temp_cameras_file, "r", encoding="utf-8") as f:
         saved_data = json.load(f)
     saved_cam = saved_data["cameras"][0]
-    for dtype, cfg in saved_cam["detection_types"].items():
-        assert "level" not in cfg
-        assert "cooldown" in cfg
+    assert "detection_types" not in saved_cam
+    assert saved_cam["algorithms"]["fire"] == {"enabled": True}
 
 
 def test_default_global_settings_contains_display_interval():

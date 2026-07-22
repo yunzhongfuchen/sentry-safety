@@ -243,7 +243,8 @@ def apply_camera_globals(cam_config: dict, globals_data: dict = None) -> dict:
             result[key] = globals_data.get(key, DEFAULT_CAMERA_GLOBALS.get(key))
 
     # detection_types：若缺失或为空则填充注册表默认值
-    dt = result.get("detection_types")
+    # 兼容 cameras.json 的 algorithms 段（enabled/roi/roi_invert）与旧 detection_types 段
+    dt = result.get("algorithms") or result.get("detection_types")
     default_dtc = get_default_type_config()
     if not dt:
         result["detection_types"] = {
@@ -455,6 +456,19 @@ def save_global_settings(settings: Dict[str, Any]) -> bool:
 
 # ==================== 摄像头配置管理 ====================
 
+def _migrate_camera_entry(item: dict) -> dict:
+    """detection_types 段 → algorithms 段，只保留 enabled/roi/roi_invert"""
+    legacy = item.pop("detection_types", None)
+    if legacy is None:
+        return item
+    keep = ("enabled", "roi", "roi_invert")
+    item["algorithms"] = {
+        dtype: {k: v for k, v in cfg.items() if k in keep}
+        for dtype, cfg in legacy.items()
+    }
+    return item
+
+
 def load_camera_configs() -> List[Dict[str, Any]]:
     """加载摄像头配置（cameras.json），支持旧格式自动迁移"""
     if not CAMERAS_CONFIG_FILE.exists():
@@ -470,29 +484,21 @@ def load_camera_configs() -> List[Dict[str, Any]]:
     migrated = False
 
     for cam in cameras:
-        # 旧格式迁移：没有 detection_types 字段时注入默认配置
-        if "detection_types" not in cam:
-            cam["detection_types"] = get_default_type_config()
+        if "detection_types" in cam:
+            # 旧格式迁移：detection_types 段 → algorithms 段（参数剔除）
+            _migrate_camera_entry(cam)
+            migrated = True
+        elif "algorithms" not in cam:
+            # 更老的格式：无类型段 → 从注册表注入默认 enabled 配置
+            cam["algorithms"] = {
+                dtype: {"enabled": cfg.get("enabled", False)}
+                for dtype, cfg in get_default_type_config().items()
+            }
             # 根据旧版的 detection_enabled 调整
             if cam.get("detection_enabled") is False:
-                for dtype in cam["detection_types"]:
-                    cam["detection_types"][dtype]["enabled"] = False
+                for cfg in cam["algorithms"].values():
+                    cfg["enabled"] = False
             migrated = True
-
-        # 确保每个 detection_type 都有 use_vlm（向后兼容）
-        for dtype, cfg in cam.get("detection_types", {}).items():
-            if "use_vlm" not in cfg:
-                cfg["use_vlm"] = False
-                migrated = True
-
-        # 旧配置迁移：移除 level，补充 cooldown
-        for dtype, cfg in cam.get("detection_types", {}).items():
-            if "level" in cfg:
-                del cfg["level"]
-                migrated = True
-            if "cooldown" not in cfg:
-                cfg["cooldown"] = get_default_type_config().get(dtype, {}).get("cooldown", 3)
-                migrated = True
 
         # 确保新字段存在
         cam.setdefault("source_type", "auto")

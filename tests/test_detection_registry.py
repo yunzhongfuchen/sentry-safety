@@ -38,6 +38,7 @@ class TestDetectionTypeRegistry:
             mr.add_model(**m)
         monkeypatch.setattr(dmod, "CONFIG_DIR", tmp_path)
         monkeypatch.setattr(dmod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
+        monkeypatch.setattr(dmod, "REGISTRY_FILE", tmp_path / "detection_types.json")
         monkeypatch.setattr(dmod, "model_registry", mr)
         if data is not None:
             (tmp_path / "algorithms.json").write_text(
@@ -116,7 +117,7 @@ class TestDetectionTypeRegistry:
         assert merged["consecutive_required"] == 3
 
     def test_to_api_list(self, tmp_path, monkeypatch):
-        r, _ = self._make_registry(tmp_path, monkeypatch)
+        r, mr = self._make_registry(tmp_path, monkeypatch)
         api = r.to_api_list()
         assert len(api) == 6
         fire_entry = next(e for e in api if e["key"] == "fire")
@@ -124,10 +125,11 @@ class TestDetectionTypeRegistry:
         assert fire_entry["color"] == "#ef4444"
         assert "defaults" in fire_entry
         # structural fields exposed so edit dialog can round-trip them
-        # 默认类型尚无 model_key（Task 3 迁移），model_path 解析为 None
+        # 默认类型经迁移已关联模型（fire/smoke 共享 fire_smoke.pt）
+        mkey = next(k for k in mr.all_models() if mr.get(k)["file"] == "fire_smoke.pt")
         assert "model_key" in fire_entry
-        assert fire_entry["model_key"] is None
-        assert fire_entry["model_path"] is None
+        assert fire_entry["model_key"] == mkey
+        assert fire_entry["model_path"] == "fire_smoke.pt"
         assert "npu_model_path" not in fire_entry
         assert fire_entry["classes"] == [0]
         assert fire_entry["model_confidence"] == 0.5
@@ -157,8 +159,9 @@ class TestDetectionTypeRegistry:
 
     def test_update_defaults_ignores_structural_fields(self, tmp_path, monkeypatch):
         r, _ = self._make_registry(tmp_path, monkeypatch)
+        mkey_before = r.get("fire").get("model_key")
         r.update_defaults("fire", {"model_key": "hacked", "threshold": 0.1})
-        assert r.get("fire").get("model_key") is None
+        assert r.get("fire").get("model_key") == mkey_before
         assert r.get_defaults("fire")["threshold"] == 0.1
 
     def test_load_backfills_custom_type_defaults(self, tmp_path, monkeypatch):
@@ -258,6 +261,7 @@ def _make_registry_with_model(tmp_path, monkeypatch):
                         class_names={"0": "x"})
     monkeypatch.setattr(dmod, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(dmod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
+    monkeypatch.setattr(dmod, "REGISTRY_FILE", tmp_path / "detection_types.json")
     monkeypatch.setattr(dmod, "model_registry", mr)
     r = dmod.DetectionTypeRegistry()
     r.load()
@@ -364,3 +368,70 @@ class TestAlgorithmModelKey:
         key = r.add_type({"label": "漏液", "color": "#facc15", "model_key": mkey})
         mr.delete_model(mkey)
         assert r.get(key)["model_path"] is None
+
+
+class TestLegacyMigration:
+    def test_migrates_types_to_models_and_algorithms(self, tmp_path, monkeypatch):
+        import backend.model_registry as mmod
+        import backend.detection_registry as dmod
+        monkeypatch.setattr(mmod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(mmod, "MODELS_FILE", tmp_path / "models.json")
+        monkeypatch.setattr(mmod, "WEIGHTS_DIR", tmp_path / "weights")
+        monkeypatch.setattr(dmod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(dmod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
+        monkeypatch.setattr(dmod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+        legacy = {
+            "fire": {"label": "明火", "color": "#ef4444", "model_path": "fire_smoke.pt",
+                     "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
+                     "vlm_prompt": "p1", "inspection_label": "明火",
+                     "defaults": {"threshold": 0.6}},
+            "smoke": {"label": "烟雾", "color": "#f97316", "model_path": "fire_smoke.pt",
+                      "post_process": "yolo_box", "classes": [1], "model_confidence": 0.5,
+                      "vlm_prompt": "p2", "inspection_label": "烟雾",
+                      "defaults": {"threshold": 0.55}},
+        }
+        (tmp_path / "detection_types.json").write_text(
+            json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
+        mr = mmod.ModelRegistry()
+        monkeypatch.setattr(dmod, "model_registry", mr)
+        r = dmod.DetectionTypeRegistry()
+        r.load()
+        # 模型去重：fire/smoke 共享 fire_smoke.pt → 只有一个模型条目
+        assert len(mr.all_models()) == 1
+        mkey = mr.all_models()[0]
+        assert mr.get(mkey)["file"] == "fire_smoke.pt"
+        # 算法 key 不变，model_key 指向同一模型
+        assert r.get("fire")["model_key"] == mkey
+        assert r.get("smoke")["model_key"] == mkey
+        assert r.get("fire")["defaults"]["threshold"] == 0.6
+        # 旧文件改名 .bak
+        assert not (tmp_path / "detection_types.json").exists()
+        assert (tmp_path / "detection_types.json.bak").exists()
+
+    def test_fresh_install_migrates_builtin_defaults(self, tmp_path, monkeypatch):
+        """全新安装：无 detection_types.json 时从内置默认值迁移（不生成 .bak）"""
+        import backend.model_registry as mmod
+        import backend.detection_registry as dmod
+        monkeypatch.setattr(mmod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(mmod, "MODELS_FILE", tmp_path / "models.json")
+        monkeypatch.setattr(mmod, "WEIGHTS_DIR", tmp_path / "weights")
+        monkeypatch.setattr(dmod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(dmod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
+        monkeypatch.setattr(dmod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+        mr = mmod.ModelRegistry()
+        monkeypatch.setattr(dmod, "model_registry", mr)
+        assert dmod.migrate_legacy_registry() is True
+        # 内置 6 类型去重后 5 个模型（fire/smoke 共享 fire_smoke.pt）
+        assert len(mr.all_models()) == 5
+        saved = json.loads((tmp_path / "algorithms.json").read_text(encoding="utf-8"))
+        assert "model_path" not in saved["fire"]
+        assert saved["fire"]["model_key"] == saved["smoke"]["model_key"]
+        # 无旧文件 → 不生成 .bak
+        assert not (tmp_path / "detection_types.json.bak").exists()
+        # load() 后算法经 model_key 解析出 model_path
+        r = dmod.DetectionTypeRegistry()
+        r.load()
+        assert r.get("fire")["model_path"] == "fire_smoke.pt"
+        assert r.get("fire")["model_key"] == saved["fire"]["model_key"]
+        # 幂等：algorithms.json 已存在 → 不再迁移
+        assert dmod.migrate_legacy_registry() is False

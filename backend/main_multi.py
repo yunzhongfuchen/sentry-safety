@@ -301,9 +301,11 @@ def init_components():
     # 从配置加载摄像头（应用全局默认值）
     camera_globals = app_config.load_camera_globals()
     camera_configs_data = app_config.load_camera_configs()
+    camera_configs_merged = []
     for cam_data in camera_configs_data:
         # 应用全局默认值（不覆盖已有配置）
         cam_data = app_config.apply_camera_globals(cam_data, camera_globals)
+        camera_configs_merged.append(cam_data)
         cfg = CameraConfig(
             camera_id=cam_data["camera_id"],
             source=cam_data["source"],
@@ -330,7 +332,7 @@ def init_components():
     app.state.safety_detector = safety_detector
     # 懒加载所有摄像头启用的模型类型
     all_enabled_types: set = set()
-    for cam_data in camera_configs_data:
+    for cam_data in camera_configs_merged:
         for dtype, cfg in cam_data.get("detection_types", {}).items():
             if cfg.get("enabled", False):
                 all_enabled_types.add(dtype)
@@ -407,7 +409,7 @@ def init_components():
     )
 
     # 注册摄像头到检测器（detection_types 已由 apply_camera_globals 填充全局默认值）
-    for cam_data in camera_configs_data:
+    for cam_data in camera_configs_merged:
         detection_types = cam_data.get("detection_types", {})
         if detection_types:
             multi_detector.register_camera(cam_data["camera_id"], detection_types)
@@ -663,7 +665,7 @@ async def list_cameras():
                 s["detection"] = det_states[cam_id]
             cfg = cameras_config.get(cam_id, {})
             s["source_type"] = cfg.get("source_type", "auto")
-            s["detection_types"] = cfg.get("detection_types", {})
+            s["detection_types"] = cfg.get("algorithms", cfg.get("detection_types", {}))
 
     return {"cameras": status_list}
 

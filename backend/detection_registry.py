@@ -253,6 +253,53 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
 }
 
 
+def _migrate_type_dicts(stored: dict) -> dict:
+    """类型 dict（model_path 版）→ 算法 dict（model_key 版），按 model_path 去重注册模型"""
+    key_by_path: dict[str, str] = {}
+    for td in stored.values():
+        mp = td.get("model_path")
+        if mp and mp not in key_by_path:
+            key_by_path[mp] = model_registry.add_model(
+                file=mp,
+                name=Path(mp).stem,
+                post_process=td.get("post_process", "yolo_box"),
+                class_names={},
+            )
+    algorithms = {}
+    for dtype, td in stored.items():
+        algo = {k: v for k, v in td.items() if k != "model_path"}
+        algo["model_key"] = key_by_path.get(td.get("model_path"))
+        algorithms[dtype] = algo
+    return algorithms
+
+
+def migrate_legacy_registry() -> bool:
+    """旧 detection_types.json → models.json + algorithms.json（旧文件改名 .bak）。
+
+    algorithms.json 已存在则跳过；无旧文件时从内置默认类型迁移（全新安装播种）。
+    """
+    if ALGORITHMS_FILE.exists():
+        return False
+    rename_legacy = False
+    if REGISTRY_FILE.exists():
+        try:
+            with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
+                stored = json.load(f)
+        except json.JSONDecodeError:
+            return False
+        rename_legacy = True
+    else:
+        stored = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
+    algorithms = _migrate_type_dicts(stored)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(ALGORITHMS_FILE, "w", encoding="utf-8") as f:
+        json.dump(algorithms, f, ensure_ascii=False, indent=2)
+    if rename_legacy:
+        REGISTRY_FILE.rename(REGISTRY_FILE.with_suffix(".json.bak"))
+    logger.info(f"Migrated {len(algorithms)} types to algorithms, models seeded")
+    return True
+
+
 class DetectionTypeRegistry:
     """检测类型注册表，全局单例"""
 
@@ -261,6 +308,7 @@ class DetectionTypeRegistry:
 
     def load(self) -> None:
         """加载注册表：文件存在则读取并补全缺失字段，不存在则从默认值生成"""
+        migrate_legacy_registry()
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
         if ALGORITHMS_FILE.exists():

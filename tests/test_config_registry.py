@@ -102,7 +102,7 @@ class TestLoadCameraConfigs:
         old_cam = {
             "camera_id": "old",
             "source": "rtsp://old",
-            # 没有 detection_types 字段 → 应从注册表填充
+            # 没有 detection_types/algorithms 字段 → 应从注册表填充
         }
         cameras_file.write_text(
             json.dumps({"cameras": [old_cam]}, ensure_ascii=False),
@@ -112,6 +112,8 @@ class TestLoadCameraConfigs:
         from backend.config import load_camera_configs
         cameras = load_camera_configs()
         cam = cameras[0]
-        assert "detection_types" in cam
+        assert "algorithms" in cam
         # 所有注册表类型都应存在
-        assert set(cam["detection_types"].keys()) >= {"fire", "smoke", "uniform", "mask", "cigarette", "sleep"}
+        assert set(cam["algorithms"].keys()) >= {"fire", "smoke", "uniform", "mask", "cigarette", "sleep"}
+        # 注入段只保留 enabled 覆盖
+        assert set(cam["algorithms"]["fire"].keys()) == {"enabled"}

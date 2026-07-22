@@ -872,7 +872,7 @@ class CameraConfigLoader:
                 fps=item.get("fps", 15),
                 source_type=item.get("source_type", "auto"),
                 detection_enabled=item.get("detection_enabled", True),
-                detection_types=item.get("detection_types"),
+                detection_types=item.get("algorithms", item.get("detection_types")),
                 detection_roi=roi,
                 use_npu=item.get("use_npu", False),
                 npu_core=item.get("npu_core", 0),
