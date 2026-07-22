@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>视频诊断系统 类型管理</title>
+    <title>视频诊断系统 算法管理</title>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/styles/glass-clay.css">
     <script src="/static/vue3.global.prod.js"></script>
@@ -156,18 +156,17 @@
         <div id="sidebar-root"></div>
         <main class="app-main">
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 18px;">
-                <h1 style="font-size: 20px; font-weight: 700;">检测类型管理</h1>
-                <button class="clay-button primary" @click="openDialog()">新增类型</button>
+                <h1 style="font-size: 20px; font-weight: 700;">算法管理</h1>
+                <button class="clay-button primary" @click="openDialog()">新增算法</button>
             </div>
             <div class="type-cards-grid">
                 <div v-for="t in types" :key="t.key" class="glass-card type-card" :style="{ borderTopColor: t.color }">
                     <div class="type-card-header" :style="{ color: t.color }">{{ t.label }}</div>
-                    <div class="type-card-meta">模型: {{ t.model_path || '未设置' }}</div>
-                    <div class="type-card-meta">策略: {{ t.post_process }}</div>
+                    <div class="type-card-meta">模型: {{ modelName(t.model_key) }}</div>
+                    <div class="type-card-meta">策略: {{ t.post_process }} · 阈值 {{ t.defaults?.threshold }} · 间隔 {{ t.defaults?.interval }}s · 冷却 {{ t.defaults?.cooldown }}s</div>
                     <div class="type-card-actions">
                         <button class="clay-button" @click="openDialog(t)">编辑</button>
                         <button class="clay-button" @click="deleteType(t)">删除</button>
-                        <button class="clay-button" @click="uploadModel(t)">上传模型</button>
                     </div>
                 </div>
             </div>
@@ -176,7 +175,7 @@
         <!-- 新增/编辑弹窗 -->
         <div v-if="dialog" class="modal-overlay" @click.self="dialog = null">
             <div class="modal-box">
-                <h3 style="margin-bottom: 16px;">{{ dialog._existing ? '编辑类型' : '新增类型' }}</h3>
+                <h3 style="margin-bottom: 16px;">{{ dialog._existing ? '编辑算法' : '新增算法' }}</h3>
 
                 <!-- 基本信息卡片 -->
                 <div class="glass-card form-card">
@@ -184,12 +183,11 @@
                     <div class="type-card-grid">
                         <div class="type-card-field"><label>显示名称 *</label><input v-model="dialog.label" placeholder="如：明火" /></div>
                         <div class="type-card-field"><label>颜色 *</label><input type="color" v-model="dialog.color" /></div>
-                        <div class="type-card-field"><label>模型路径</label><input v-model="dialog.model_path" placeholder="如：fire_smoke.pt / fire_smoke.rknn" /></div>
-                        <div class="type-card-field">
-                            <label>后处理策略 *</label>
-                            <select v-model="dialog.post_process">
-                                <option value="yolo_box">yolo_box</option>
-                                <option value="yolo_pose">yolo_pose</option>
+                        <div class="type-card-field" colspan="2">
+                            <label>模型 *</label>
+                            <select v-model="dialog.model_key" @change="onModelChange">
+                                <option value="" disabled>请选择模型</option>
+                                <option v-for="m in models" :key="m.key" :value="m.key">{{ m.name }}（{{ m.file }}）</option>
                             </select>
                         </div>
                     </div>
@@ -233,8 +231,17 @@
                             <div class="form-card-title" style="margin-top: 16px;">高级参数</div>
                             <div class="type-card-grid">
                                 <div class="type-card-field"><label>模型置信度 (默认 0.5)</label><input type="number" step="0.1" v-model.number="dialog.model_confidence" /></div>
-                                <div class="type-card-field"><label>类别过滤</label><input v-model="dialog.classesStr" placeholder="如：0,1" /></div>
                                 <div class="type-card-field"><label>巡检显示名</label><input v-model="dialog.inspection_label" /></div>
+                            </div>
+
+                            <div class="type-card-field" style="margin-top: 12px;">
+                                <label>类别过滤（不勾 = 不过滤）</label>
+                                <div class="type-card-checkboxes" style="flex-wrap: wrap;">
+                                    <label v-for="c in availableClasses" :key="c.id" class="type-card-checkbox">
+                                        <input type="checkbox" :value="c.id" v-model="dialog.classesChecked" /> {{ c.id }}:{{ c.name }}
+                                    </label>
+                                    <span v-if="!availableClasses.length" style="font-size: 12px; color: var(--text-muted);">该模型无类别清单，保存后不过滤</span>
+                                </div>
                             </div>
 
                             <div class="type-card-field" style="margin-top: 12px;">
@@ -252,21 +259,6 @@
             </div>
         </div>
 
-        <!-- 上传模型弹窗 -->
-        <div v-if="uploadDialog" class="modal-overlay" @click.self="uploadDialog = null">
-            <div class="modal-box">
-                <h3 style="margin-bottom: 16px;">上传模型 — {{ uploadDialog.label }}</h3>
-                <div class="gc-form-field">
-                    <label>选择文件 (.pt / .rknn)</label>
-                    <input type="file" accept=".pt,.rknn" :key="uploadDialog.key" ref="fileInput" @change="onFileChange" />
-                </div>
-                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
-                    <button class="clay-button" @click="uploadDialog = null">取消</button>
-                    <button class="clay-button primary" @click="doUpload">上传</button>
-                </div>
-            </div>
-        </div>
-
         <div v-if="toast" :class="['toast', toast.type]">{{ toast.message }}</div>
     </div>
 
@@ -275,12 +267,11 @@
         createApp({
             setup() {
                 const types = ref([]);
+                const models = ref([]);
+                const availableClasses = ref([]);
                 const dialog = ref(null);
-                const uploadDialog = ref(null);
                 const toast = ref(null);
                 const sidebar = ref(getSidebarContext());
-                const fileInput = ref(null);
-                let uploadFile = null;
 
                 function showToast(msg, type = 'success') {
                     toast.value = { message: msg, type };
@@ -289,35 +280,69 @@
 
                 async function loadTypes() {
                     try {
-                        const data = await safeFetch('/detector/types');
-                        types.value = data.types || [];
-                    } catch (e) { showToast('加载类型失败', 'error'); }
+                        const data = await safeFetch('/algorithms');
+                        types.value = data.algorithms || [];
+                    } catch (e) { showToast('加载算法失败', 'error'); }
                 }
 
-                function openDialog(t = null) {
-                    const defaultDefaults = () => ({
+                async function loadModels() {
+                    try {
+                        const data = await safeFetch('/models');
+                        models.value = data.models || [];
+                    } catch (e) { /* 模型列表失败不阻塞页面 */ }
+                }
+
+                function modelName(key) {
+                    const m = models.value.find(x => x.key === key);
+                    return m ? m.name : (key || '未设置');
+                }
+
+                function onModelChange() {
+                    const m = models.value.find(x => x.key === dialog.value.model_key);
+                    availableClasses.value = m
+                        ? Object.entries(m.class_names || {}).map(([id, name]) => ({ id: Number(id), name }))
+                        : [];
+                    if (dialog.value) dialog.value.classesChecked = [];
+                }
+
+                function defaultDefaults() {
+                    return {
                         enabled: false, interval: 1, threshold: 0.5,
                         consecutive_required: 3, cooldown: 60, use_vlm: false,
                         min_box_count: 1, max_box_count: null,
                         box_count_mode: 'gte', box_count_a: 1, box_count_b: null,
                         static_filter: false
-                    });
+                    };
+                }
+
+                function fieldsToBoxCountMode(minCount, maxCount, mode) {
+                    return { mode: mode || 'gte', a: minCount ?? 1, b: maxCount };
+                }
+
+                function boxCountModeToFields(mode, a, b) {
+                    const result = { box_count_mode: mode, min_box_count: a ?? 1, max_box_count: b };
+                    return result;
+                }
+
+                function openDialog(t = null) {
                     if (t) {
                         const copy = JSON.parse(JSON.stringify(t));
                         copy._existing = true;
-                        copy.classesStr = (t.classes || []).join(',');
-                        // 确保 defaults 所有字段都有值，便于 v-model 双向绑定
+                        copy.classesChecked = (t.classes || []).slice();
                         copy.defaults = Object.assign(defaultDefaults(), copy.defaults || {});
-                        // 后端 min/max/mode 字段转换为前端 mode/a/b
                         const fc = fieldsToBoxCountMode(copy.defaults.min_box_count, copy.defaults.max_box_count, copy.defaults.box_count_mode);
                         copy.defaults.box_count_mode = fc.mode;
                         copy.defaults.box_count_a = fc.a ?? 1;
                         copy.defaults.box_count_b = fc.b;
                         dialog.value = copy;
+                        // Populate availableClasses for the current model
+                        const savedChecked = copy.classesChecked;
+                        onModelChange();
+                        dialog.value.classesChecked = savedChecked;
                     } else {
                         dialog.value = {
-                            label: '', color: '#888888', model_path: '',
-                            post_process: 'yolo_box', classesStr: '', model_confidence: 0.5,
+                            label: '', color: '#888888', model_key: '',
+                            classesChecked: [], model_confidence: 0.5,
                             vlm_prompt: '', inspection_label: '', _existing: false,
                             defaults: defaultDefaults()
                         };
@@ -326,15 +351,13 @@
 
                 async function saveType() {
                     const d = dialog.value;
-                    if (!d.label || !d.color || !d.post_process) { showToast('请填写必填项', 'error'); return; }
+                    if (!d.label || !d.color || !d.model_key) { showToast('请填写必填项', 'error'); return; }
                     const payload = {
-                        label: d.label, color: d.color, model_path: d.model_path || null,
-                        post_process: d.post_process,
-                        classes: d.classesStr ? d.classesStr.split(',').map(Number) : null,
+                        label: d.label, color: d.color, model_key: d.model_key,
+                        classes: d.classesChecked && d.classesChecked.length ? d.classesChecked.map(Number) : null,
                         model_confidence: d.model_confidence,
                         vlm_prompt: d.vlm_prompt || '', inspection_label: d.inspection_label || d.label
                     };
-                    // 前端 mode/a/b 转换为后端 min/max/mode 字段
                     const bc = boxCountModeToFields(d.defaults.box_count_mode || 'gte', d.defaults.box_count_a ?? 1, d.defaults.box_count_b);
                     const defaultsPayload = {
                         enabled: d.defaults.enabled,
@@ -349,14 +372,12 @@
                         static_filter: d.defaults.static_filter
                     };
                     if (d._existing) {
-                        // PUT 接口：defaults 字段平铺在顶层
                         Object.assign(payload, defaultsPayload);
                     } else {
-                        // POST 接口：defaults 作为嵌套字段传给 add_type
                         payload.defaults = defaultsPayload;
                     }
                     try {
-                        const url = d._existing ? `/detector/types/${d.key}` : '/detector/types';
+                        const url = d._existing ? `/algorithms/${d.key}` : '/algorithms';
                         const method = d._existing ? 'PUT' : 'POST';
                         const res = await fetch(url, {
                             method, headers: { 'Content-Type': 'application/json' },
@@ -374,9 +395,9 @@
                 }
 
                 async function deleteType(t) {
-                    if (!confirm(`确定删除类型 "${t.label}"？`)) return;
+                    if (!confirm(`确定删除算法 "${t.label}"？`)) return;
                     try {
-                        const res = await fetch(`/detector/types/${t.key}`, { method: 'DELETE' });
+                        const res = await fetch(`/algorithms/${t.key}`, { method: 'DELETE' });
                         if (res.ok) { showToast('删除成功'); loadTypes(); }
                         else {
                             const err = await res.json();
@@ -385,38 +406,14 @@
                     } catch (e) { showToast('删除失败', 'error'); }
                 }
 
-                function uploadModel(t) {
-                    uploadDialog.value = t;
-                    uploadFile = null;
-                }
-                function onFileChange(e) { uploadFile = e.target.files[0]; }
-
-                async function doUpload() {
-                    if (!uploadFile) { showToast('请选择文件', 'error'); return; }
-                    const formData = new FormData();
-                    formData.append('file', uploadFile);
-                    try {
-                        const res = await fetch(`/detector/types/${uploadDialog.value.key}/model`, {
-                            method: 'POST', body: formData
-                        });
-                        if (res.ok) {
-                            showToast('上传成功');
-                            uploadDialog.value = null;
-                            loadTypes();
-                        } else {
-                            const err = await res.json();
-                            showToast(err.error || '上传失败', 'error');
-                        }
-                    } catch (e) { showToast('上传失败', 'error'); }
-                }
-
                 onMounted(() => {
                     const root = document.getElementById('sidebar-root');
                     if (root) renderSidebar(root, sidebar.value);
                     loadTypes();
+                    loadModels();
                 });
 
-                return { types, dialog, uploadDialog, toast, sidebar, fileInput, openDialog, saveType, deleteType, uploadModel, onFileChange, doUpload };
+                return { types, models, availableClasses, dialog, toast, sidebar, openDialog, saveType, deleteType, modelName, onModelChange };
             }
         }).mount('#app');
     </script>

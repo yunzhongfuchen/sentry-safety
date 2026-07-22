@@ -27,7 +27,7 @@ for _path in (_project_root, _backend_dir):
 import cv2
 import numpy as np
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, Response, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -1399,11 +1399,17 @@ async def settings_page():
 
 @app.get("/types.html")
 async def types_page():
-    """类型管理页面"""
-    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "types.html"
+    """重定向到算法管理页面"""
+    return RedirectResponse(url="/algorithms.html")
+
+
+@app.get("/algorithms.html")
+async def algorithms_page():
+    """算法管理页面"""
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "algorithms.html"
     if fp.exists():
         return HTMLResponse(fp.read_text(encoding="utf-8"))
-    return {"error": "Types page not found"}
+    return {"error": "Algorithms page not found"}
 
 
 @app.get("/models.html")
