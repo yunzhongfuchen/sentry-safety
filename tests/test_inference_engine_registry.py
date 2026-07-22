@@ -11,9 +11,21 @@ from unittest.mock import MagicMock, patch
 @pytest.fixture
 def fake_registry(tmp_path, monkeypatch):
     """创建一个指向 tmp_path 的测试注册表"""
+    import backend.model_registry as model_mod
     import backend.detection_registry as reg_mod
+
+    # 同时 monkeypatch model_registry 和 detection_registry 的路径
+    monkeypatch.setattr(model_mod, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(model_mod, "MODELS_FILE", tmp_path / "models.json")
+    monkeypatch.setattr(model_mod, "WEIGHTS_DIR", tmp_path)
+
     monkeypatch.setattr(reg_mod, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(reg_mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+    monkeypatch.setattr(reg_mod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
+    monkeypatch.setattr(reg_mod, "PROJECT_ROOT", tmp_path)
+
+    # 先加载 model_registry,再加载 detection_registry
+    model_mod.model_registry.load()
     reg_mod.registry.load()
     return reg_mod.registry
 

@@ -415,7 +415,7 @@ class SafetyDetector:
         """
         对单帧执行多类型检测（注册表驱动）
 
-        共享 model_path 的类型只推理一次，各自按 classes 过滤。
+        共享 model_key 的类型只推理一次，各自按 classes 过滤。
         """
         results: Dict[str, dict] = {}
         processed_models = set()
@@ -426,8 +426,8 @@ class SafetyDetector:
                 logger.warning(f"Unknown detection type: {dtype}")
                 continue
 
-            model_key = type_def["model_path"]
-            if model_key in processed_models:
+            model_key = type_def.get("model_key")
+            if model_key is None or model_key in processed_models:
                 continue
 
             raw_output = self._run_model(model_key, frame, type_def, core_id)

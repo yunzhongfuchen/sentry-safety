@@ -366,16 +366,9 @@ class DetectionTypeRegistry:
     def all_types(self) -> list[str]:
         return list(self._types.keys())
 
-    def get_types_by_model(self, model_path: str) -> list[str]:
-        """按模型文件名找类型（推理去重用）：先反查 model_key 再匹配"""
-        mkey = None
-        for k, m in model_registry._models.items():
-            if m.get("file") == model_path:
-                mkey = k
-                break
-        if mkey is None:
-            return []
-        return [dt for dt, td in self._types.items() if td.get("model_key") == mkey]
+    def get_types_by_model(self, model_key: str) -> list[str]:
+        """按 model_key 找类型（推理去重用）"""
+        return [dt for dt, td in self._types.items() if td.get("model_key") == model_key]
 
     def get_model_keys_in_use(self) -> set[str]:
         return {td.get("model_key") for td in self._types.values() if td.get("model_key")}

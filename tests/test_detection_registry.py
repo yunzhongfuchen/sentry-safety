@@ -84,7 +84,7 @@ class TestDetectionTypeRegistry:
         mkey = mr.all_models()[0]
         k1 = r.add_type({"label": "火", "model_key": mkey})
         k2 = r.add_type({"label": "烟", "model_key": mkey})
-        assert set(r.get_types_by_model("fire_smoke.pt")) == {k1, k2}
+        assert set(r.get_types_by_model(mkey)) == {k1, k2}
 
     def test_get_types_by_model_unique(self, tmp_path, monkeypatch):
         r, mr = self._make_registry(tmp_path, monkeypatch, models=[
@@ -92,7 +92,7 @@ class TestDetectionTypeRegistry:
              "class_names": {"0": "mask"}}])
         mkey = mr.all_models()[0]
         key = r.add_type({"label": "口罩佩戴", "model_key": mkey})
-        assert r.get_types_by_model("mask.pt") == [key]
+        assert r.get_types_by_model(mkey) == [key]
 
     def test_get_color_bgr(self, tmp_path, monkeypatch):
         r, _ = self._make_registry(tmp_path, monkeypatch)
