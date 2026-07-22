@@ -246,58 +246,64 @@ class SafetyDetector:
                 loaded_paths.add(model_key)
                 self._load_model(model_key, device)
 
-    def _load_model(self, model_key: str, device: str) -> None:
-        """通用模型加载：npu / gpu / cpu 三分支"""
+    def _load_model(self, model_path: str, device: str) -> None:
+        """通用模型加载：npu / gpu / cpu 三分支。model_path 为模型文件名（缓存 key）。"""
+        # 按 model_path（文件名）查找使用此模型的第一个类型，用于解析实际路径
+        def _first_dtype_by_path(mpath: str):
+            return next(
+                (dt for dt in registry.all_types() if (registry.get(dt) or {}).get("model_path") == mpath),
+                None,
+            )
+
         if device == "npu" and self._npu_cores > 0:
-            if model_key not in self._npu_models:
-                # 找到使用此模型的第一个类型来解析路径
-                dtypes = registry.get_types_by_model(model_key)
-                if not dtypes:
+            if model_path not in self._npu_models:
+                dtype = _first_dtype_by_path(model_path)
+                if dtype is None:
                     return
-                path = _resolve_model_path(dtypes[0], use_npu=True)
+                path = _resolve_model_path(dtype, use_npu=True)
                 if path and RKNN_AVAILABLE:
-                    self._npu_models[model_key] = {}
+                    self._npu_models[model_path] = {}
                     for core_id in range(self._npu_cores):
                         rknn = RKNNLite(verbose=False)
                         ret = rknn.load_rknn(path)
                         if ret != 0:
-                            logger.error(f"Failed to load {model_key} RKNN for core {core_id}")
+                            logger.error(f"Failed to load {model_path} RKNN for core {core_id}")
                             continue
                         ret = rknn.init_runtime(core_mask=self.CORE_MASKS[core_id])
                         if ret != 0:
-                            logger.error(f"Failed to init {model_key} RKNN runtime for core {core_id}")
+                            logger.error(f"Failed to init {model_path} RKNN runtime for core {core_id}")
                             continue
-                        self._npu_models[model_key][core_id] = rknn
-                        logger.info(f"{model_key} RKNN loaded on core {core_id}")
+                        self._npu_models[model_path][core_id] = rknn
+                        logger.info(f"{model_path} RKNN loaded on core {core_id}")
                 else:
-                    logger.warning(f"{model_key} RKNN not found, falling back to CPU")
+                    logger.warning(f"{model_path} RKNN not found, falling back to CPU")
         elif device == "gpu":
-            if model_key not in self._cpu_models:
-                dtypes = registry.get_types_by_model(model_key)
-                if not dtypes:
+            if model_path not in self._cpu_models:
+                dtype = _first_dtype_by_path(model_path)
+                if dtype is None:
                     return
-                path = _resolve_model_path(dtypes[0], use_npu=False)
+                path = _resolve_model_path(dtype, use_npu=False)
                 if path and ULTRALYTICS_AVAILABLE:
                     model = YOLO(path)
                     try:
                         model = model.to("cuda")
-                        logger.info(f"{model_key} GPU model loaded from {path}")
+                        logger.info(f"{model_path} GPU model loaded from {path}")
                     except Exception as e:
-                        logger.warning(f"Failed to move {model_key} to GPU: {e}")
-                    self._cpu_models[model_key] = model
+                        logger.warning(f"Failed to move {model_path} to GPU: {e}")
+                    self._cpu_models[model_path] = model
                 else:
-                    logger.warning(f"{model_key} GPU model not found")
+                    logger.warning(f"{model_path} GPU model not found")
         else:
-            if model_key not in self._cpu_models:
-                dtypes = registry.get_types_by_model(model_key)
-                if not dtypes:
+            if model_path not in self._cpu_models:
+                dtype = _first_dtype_by_path(model_path)
+                if dtype is None:
                     return
-                path = _resolve_model_path(dtypes[0], use_npu=False)
+                path = _resolve_model_path(dtype, use_npu=False)
                 if path and ULTRALYTICS_AVAILABLE:
-                    self._cpu_models[model_key] = YOLO(path)
-                    logger.info(f"{model_key} CPU model loaded from {path}")
+                    self._cpu_models[model_path] = YOLO(path)
+                    logger.info(f"{model_path} CPU model loaded from {path}")
                 else:
-                    logger.warning(f"{model_key} model not found")
+                    logger.warning(f"{model_path} model not found")
 
     def _load_person_model(self, device: str = None) -> None:
         """加载通用人员检测模型（yolov8n.pt / yolov8n.rknn），按 gpu>npu>cpu 自动适应"""
@@ -426,11 +432,13 @@ class SafetyDetector:
                 logger.warning(f"Unknown detection type: {dtype}")
                 continue
 
+            # model_path 是模型文件名（缓存 key），model_key 是注册表 slug（用于 get_types_by_model）
+            model_path = type_def.get("model_path")
             model_key = type_def.get("model_key")
-            if model_key is None or model_key in processed_models:
+            if model_path is None or model_path in processed_models:
                 continue
 
-            raw_output = self._run_model(model_key, frame, type_def, core_id)
+            raw_output = self._run_model(model_path, frame, type_def, core_id)
 
             # 对共享此模型的所有请求类型执行后处理
             for related_dtype in registry.get_types_by_model(model_key):
@@ -447,7 +455,7 @@ class SafetyDetector:
                 else:
                     results[related_dtype] = processor(raw_output, related_def)
 
-            processed_models.add(model_key)
+            processed_models.add(model_path)
 
         return results
 

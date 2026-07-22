@@ -506,14 +506,13 @@ class CameraManager:
             return list(self._cameras.keys())
 
     def get_camera_ids_with_type(self, dtype: str) -> List[str]:
-        """获取启用了指定检测类型的摄像头 ID 列表（仅 enabled=true 算引用）"""
+        """获取配置了指定检测类型的摄像头 ID 列表（无论是否启用，有配置即算引用）"""
         matched = []
         with self._lock:
             for camera_id, state in self._cameras.items():
                 detection_types = state.config.detection_types
                 if detection_types and dtype in detection_types:
-                    if detection_types[dtype].get("enabled", False):
-                        matched.append(camera_id)
+                    matched.append(camera_id)
         return matched
 
     def start_recording(self, camera_id: str, output_dir: Optional[str] = None) -> Optional[str]:

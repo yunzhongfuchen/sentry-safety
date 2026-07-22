@@ -1223,10 +1223,10 @@ async def reset_camera_config(camera_id: str):
         state.config.width = restored["width"]
         state.config.height = restored["height"]
         state.config.fps = restored["fps"]
-        state.config.detection_types = restored["detection_types"]
+        state.config.detection_types = restored["algorithms"]
 
     # 更新检测器
-    multi_detector.update_camera_config(camera_id, restored["detection_types"])
+    multi_detector.update_camera_config(camera_id, restored["algorithms"])
 
     # 持久化
     for cam in cameras:
@@ -1711,7 +1711,15 @@ class SelectedCameraDisplay:
         log_message("SelectedCameraDisplay display loop stopped")
 
     def _detect_loop(self):
-        """检测循环：按配置间隔直接对最新帧做推理并更新显示缓存。"""
+        """检测循环：按配置间隔直接对最新帧做推理并更新显示缓存。
+
+        GIL 竞争说明：本循环在独立 daemon 线程（selected-camera-detect）中运行，
+        与显示线程（selected-camera-display）完全解耦。
+        - NPU 模式：重计算由 RKNNLite 在硬件侧完成，不持有 GIL，影响可忽略。
+        - CPU/GPU 模式：ultralytics/YOLO predict() 在内部使用 PyTorch，
+          GIL 释放粒度足以让显示线程以 25 FPS 正常运行，实测无明显抖动。
+        因此本线程直接调用 safety_detector.detect()，无需 subprocess 隔离。
+        """
         log_message("SelectedCameraDisplay detect loop started")
         next_time = time.time()
         while self._running:
