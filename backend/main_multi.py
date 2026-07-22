@@ -1406,6 +1406,15 @@ async def types_page():
     return {"error": "Types page not found"}
 
 
+@app.get("/models.html")
+async def models_page():
+    """模型管理页面"""
+    fp = Path(__file__).parent.parent / "frontend" / "safety_detection" / "models.html"
+    if fp.exists():
+        return HTMLResponse(fp.read_text(encoding="utf-8"))
+    return {"error": "Models page not found"}
+
+
 @app.get("/system/mode")
 async def get_system_mode():
     """获取当前运行模式和检测设备"""

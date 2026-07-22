@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频诊断系统 模型管理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles/glass-clay.css">
+    <script src="/static/vue3.global.prod.js"></script>
+    <script src="/static/shared.js"></script>
+    <style>
+        .model-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; padding: 18px; }
+        .model-card { padding: 16px; }
+        .model-card-header { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+        .model-card-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+        .model-card-classes { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+        .class-chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--bg-elevated); color: var(--text-secondary); font-family: var(--font-mono); }
+        .model-card-actions { display: flex; gap: 8px; margin-top: 12px; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-box { background: var(--bg-soft); border: 1px solid var(--glass-edge); border-radius: var(--radius-lg); box-shadow: var(--glass-shadow); padding: 24px; width: 90%; max-width: 560px; max-height: 80vh; overflow-y: auto; }
+        .toast { position: fixed; top: 80px; right: 24px; padding: 12px 22px; border-radius: var(--radius-md); font-size: 14px; font-weight: 500; z-index: 2000; box-shadow: var(--glass-shadow); }
+        .toast.success { background: var(--success); color: white; }
+        .toast.error { background: var(--danger); color: white; }
+        .form-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+        .form-field label { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+        .form-field input, .form-field select { border: none; background: var(--bg-base); color: var(--text-primary); font-size: 13px; padding: 8px 10px; border-radius: var(--radius-sm); box-shadow: var(--clay-shadow-inset); outline: none; width: 100%; box-sizing: border-box; }
+        .hint { font-size: 12px; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <div id="app" class="app-shell">
+        <div id="sidebar-root"></div>
+        <main class="app-main">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 18px;">
+                <h1 style="font-size: 20px; font-weight: 700;">模型管理</h1>
+                <button class="clay-button primary" @click="uploadDialog = true">上传模型</button>
+            </div>
+            <div class="model-cards-grid">
+                <div v-for="m in models" :key="m.key" class="glass-card model-card">
+                    <div class="model-card-header">{{ m.name }}</div>
+                    <div class="model-card-meta">文件: {{ m.file }}<span v-if="m.file_size">（{{ (m.file_size / 1048576).toFixed(1) }} MB）</span></div>
+                    <div class="model-card-meta">策略: {{ m.post_process }} · 被 {{ m.used_by }} 个算法引用</div>
+                    <div class="model-card-classes">
+                        <span v-for="(name, id) in m.class_names" :key="id" class="class-chip">{{ id }}:{{ name }}</span>
+                        <span v-if="!Object.keys(m.class_names || {}).length" class="hint">未解析到类别</span>
+                    </div>
+                    <div class="model-card-actions">
+                        <button class="clay-button" @click="openEdit(m)">编辑</button>
+                        <button class="clay-button" @click="deleteModel(m)">删除</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 上传弹窗 -->
+        <div v-if="uploadDialog" class="modal-overlay" @click.self="uploadDialog = false">
+            <div class="modal-box">
+                <h3 style="margin-bottom: 16px;">上传模型</h3>
+                <div class="form-field"><label>模型名称（默认取文件名）</label><input v-model="uploadName" placeholder="如：漏液检测模型" /></div>
+                <div class="form-field">
+                    <label>选择文件 (.pt / .rknn)</label>
+                    <input type="file" accept=".pt,.rknn" @change="e => uploadFile = e.target.files[0]" />
+                    <span class="hint">.pt 上传后自动解析类别清单，可能需要几秒钟</span>
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                    <button class="clay-button" @click="uploadDialog = false">取消</button>
+                    <button class="clay-button primary" :disabled="uploading" @click="doUpload">{{ uploading ? '上传解析中…' : '上传' }}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 编辑弹窗（主要用于 .rknn 手填元数据） -->
+        <div v-if="editDialog" class="modal-overlay" @click.self="editDialog = null">
+            <div class="modal-box">
+                <h3 style="margin-bottom: 16px;">编辑模型 — {{ editDialog.name }}</h3>
+                <div class="form-field"><label>名称</label><input v-model="editDialog.name" /></div>
+                <div class="form-field">
+                    <label>后处理策略</label>
+                    <select v-model="editDialog.post_process">
+                        <option value="yolo_box">yolo_box</option>
+                        <option value="yolo_pose">yolo_pose</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label>类别清单（每行一条，格式 id:名称）</label>
+                    <textarea v-model="editDialog.classesText" rows="5" style="border:none;background:var(--bg-base);color:var(--text-primary);font-size:13px;padding:8px 10px;border-radius:var(--radius-sm);box-shadow:var(--clay-shadow-inset);outline:none;width:100%;box-sizing:border-box;resize:vertical;" placeholder="0:fire&#10;1:smoke"></textarea>
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <button class="clay-button" @click="editDialog = null">取消</button>
+                    <button class="clay-button primary" @click="saveEdit">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="toast" :class="['toast', toast.type]">{{ toast.message }}</div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+        createApp({
+            setup() {
+                const models = ref([]);
+                const uploadDialog = ref(false);
+                const uploadName = ref('');
+                const uploading = ref(false);
+                const editDialog = ref(null);
+                const toast = ref(null);
+                const sidebar = ref(getSidebarContext());
+                let uploadFile = null;
+
+                sidebar.value.page = 'models';
+
+                function showToast(msg, type = 'success') {
+                    toast.value = { message: msg, type };
+                    setTimeout(() => toast.value = null, 2500);
+                }
+
+                async function loadModels() {
+                    try {
+                        const data = await safeFetch('/models');
+                        models.value = data.models || [];
+                    } catch (e) { showToast('加载模型失败', 'error'); }
+                }
+
+                async function doUpload() {
+                    if (!uploadFile) { showToast('请选择文件', 'error'); return; }
+                    uploading.value = true;
+                    const formData = new FormData();
+                    formData.append('file', uploadFile);
+                    try {
+                        const res = await fetch(`/models/upload?name=${encodeURIComponent(uploadName.value)}`, {
+                            method: 'POST', body: formData
+                        });
+                        if (res.ok) {
+                            showToast('上传成功');
+                            uploadDialog.value = false;
+                            uploadName.value = '';
+                            uploadFile = null;
+                            loadModels();
+                        } else {
+                            const err = await res.json();
+                            showToast(err.error || '上传失败', 'error');
+                        }
+                    } catch (e) { showToast('上传失败', 'error'); }
+                    finally { uploading.value = false; }
+                }
+
+                function openEdit(m) {
+                    const classesText = Object.entries(m.class_names || {})
+                        .map(([id, name]) => `${id}:${name}`).join('\n');
+                    editDialog.value = { key: m.key, name: m.name, post_process: m.post_process, classesText };
+                }
+
+                async function saveEdit() {
+                    const d = editDialog.value;
+                    const class_names = {};
+                    d.classesText.split('\n').forEach(line => {
+                        const m = line.trim().match(/^(\d+)[:：](.+)$/);
+                        if (m) class_names[m[1]] = m[2].trim();
+                    });
+                    try {
+                        const res = await fetch(`/models/${d.key}`, {
+                            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: d.name, post_process: d.post_process, class_names })
+                        });
+                        if (res.ok) { showToast('保存成功'); editDialog.value = null; loadModels(); }
+                        else { const err = await res.json(); showToast(err.error || '保存失败', 'error'); }
+                    } catch (e) { showToast('保存失败', 'error'); }
+                }
+
+                async function deleteModel(m) {
+                    if (!confirm(`确定删除模型 "${m.name}"？模型文件将一并删除。`)) return;
+                    try {
+                        const res = await fetch(`/models/${m.key}`, { method: 'DELETE' });
+                        if (res.ok) { showToast('删除成功'); loadModels(); }
+                        else { const err = await res.json(); showToast(err.error || '删除失败', 'error'); }
+                    } catch (e) { showToast('删除失败', 'error'); }
+                }
+
+                onMounted(() => {
+                    const root = document.getElementById('sidebar-root');
+                    if (root) renderSidebar(root, sidebar.value);
+                    loadModels();
+                });
+
+                return { models, uploadDialog, uploadName, uploading, editDialog, toast, sidebar, doUpload, openEdit, saveEdit, deleteModel };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
