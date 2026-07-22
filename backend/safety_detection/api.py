@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 import math
 
 from backend.detection_registry import registry
+from backend.model_registry import model_registry, parse_model_metadata
 
 router = APIRouter(tags=["safety"])
 
@@ -236,3 +237,63 @@ async def test_alert(camera_id: str, data: dict, request: Request):
         "dtype": dtype,
         "confidence": confidence,
     }
+
+
+# ---------- 模型管理 ----------
+
+@router.get("/models")
+async def list_model_entries():
+    """模型列表（含被引用算法数）"""
+    in_use = registry.get_model_keys_in_use()
+    models = []
+    for m in model_registry.to_api_list():
+        m["used_by"] = 1 if m["key"] in in_use else 0
+        models.append(m)
+    return {"models": models}
+
+
+@router.post("/models/upload")
+async def upload_model_file(file: UploadFile = File(...), name: str = ""):
+    """上传模型文件并创建条目，.pt 自动解析元数据"""
+    filename = file.filename or ""
+    if not filename.endswith((".pt", ".rknn")):
+        return JSONResponse({"error": "Only .pt and .rknn files are allowed"}, status_code=400)
+    content = await file.read()
+    path = model_registry.save_model_file(filename, content)
+    meta = parse_model_metadata(path)
+    key = model_registry.add_model(
+        file=path.name,
+        name=name or path.stem,
+        post_process=meta.get("post_process", "yolo_box"),
+        class_names=meta.get("class_names", {}),
+        file_size=len(content),
+    )
+    entry = model_registry.get(key)
+    return {"success": True, "key": key,
+            "post_process": entry["post_process"],
+            "class_names": entry["class_names"]}
+
+
+@router.put("/models/{key}")
+async def update_model_entry(key: str, data: dict):
+    """更新模型名称/后处理/类别清单（.rknn 手填用）"""
+    if model_registry.get(key) is None:
+        return JSONResponse({"error": f"Unknown model: {key}"}, status_code=404)
+    updates = {k: v for k, v in data.items() if k in ("name", "post_process", "class_names")}
+    if not updates:
+        return JSONResponse({"error": "No valid fields to update"}, status_code=400)
+    if "post_process" in updates and updates["post_process"] not in ("yolo_box", "yolo_pose"):
+        return JSONResponse({"error": "post_process must be yolo_box or yolo_pose"}, status_code=400)
+    model_registry.update_model(key, updates)
+    return {"success": True, "key": key}
+
+
+@router.delete("/models/{key}")
+async def delete_model_entry(key: str):
+    """删除模型（被算法引用时 409）"""
+    if model_registry.get(key) is None:
+        return JSONResponse({"error": f"Unknown model: {key}"}, status_code=404)
+    if key in registry.get_model_keys_in_use():
+        return JSONResponse({"error": f"Model '{key}' is referenced by algorithms"}, status_code=409)
+    model_registry.delete_model(key)
+    return {"success": True, "key": key}
