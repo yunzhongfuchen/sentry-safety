@@ -10,8 +10,14 @@ import pytest
 def setup_registry(tmp_path, monkeypatch):
     """初始化测试注册表"""
     import backend.detection_registry as reg_mod
+    import backend.model_registry as mreg_mod
+    # Redirect all config paths to tmp_path so no real config files are read
     monkeypatch.setattr(reg_mod, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(reg_mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
+    monkeypatch.setattr(reg_mod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
+    monkeypatch.setattr(mreg_mod, "MODELS_FILE", tmp_path / "models.json")
+    # Reset model registry state so migration starts clean
+    mreg_mod.model_registry._models = {}
     reg_mod.registry.load()
     return reg_mod.registry
 

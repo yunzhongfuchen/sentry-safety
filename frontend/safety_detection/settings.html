@@ -451,7 +451,6 @@
                             merged[key] = { ...defs[key], ...(data.default_detection_types?.[key] || {}) };
                         }
                         settings.value.default_detection_types = merged;
-                        batchTypes.value = JSON.parse(JSON.stringify(merged));
                         if (settings.value.use_gpu_scheduler === undefined) settings.value.use_gpu_scheduler = false;
                         if (settings.value.gpu_scheduler_num_queues === undefined) settings.value.gpu_scheduler_num_queues = 0;
                         if (settings.value.gpu_scheduler_interval === undefined) settings.value.gpu_scheduler_interval = 0.5;
