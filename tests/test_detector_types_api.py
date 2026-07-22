@@ -39,17 +39,21 @@ class TestListDetectionTypes:
         reg = DetectionTypeRegistry()
         reg._types = {
             "fire": {
-                "label": "明火", "color": "#ef4444", "icon": "flame",
-                "model_path": "fire_smoke.pt",
+                "label": "明火", "color": "#ef4444",
+                "model_key": "fire_smoke",
                 "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
                 "vlm_prompt": "fire_review", "inspection_label": "明火",
                 "defaults": {"enabled": False},
             }
         }
-        result = reg.to_api_list()
+        mock_mr = MagicMock()
+        mock_mr.get.return_value = {"file": "fire_smoke.pt", "post_process": "yolo_box"}
+        with patch("backend.detection_registry.model_registry", mock_mr):
+            result = reg.to_api_list()
         assert len(result) == 1
         t = result[0]
         assert t["key"] == "fire"
+        assert t["model_key"] == "fire_smoke"
         assert t["model_path"] == "fire_smoke.pt"
         assert t["classes"] == [0]
         assert t["model_confidence"] == 0.5
@@ -118,7 +122,7 @@ class TestUpdateDetectionType:
         mock_registry.get.return_value = {"defaults": {"enabled": False}, "label": "明火"}
 
         with patch("backend.safety_detection.api.registry", mock_registry):
-            resp = client.put("/detector/types/fire", json={"model_path": "evil.pt"})
+            resp = client.put("/detector/types/fire", json={"model_key": "evil"})
             assert resp.status_code == 200
             mock_registry.update_type.assert_called_once()
 
@@ -155,7 +159,7 @@ class TestUpdateDetectionType:
 
 class TestCreateDetectionType:
     def test_create_type_returns_key(self, client):
-        payload = {"label": "新类型", "color": "#123456", "model_path": "new.pt", "post_process": "yolo_box"}
+        payload = {"label": "新类型", "color": "#123456", "model_key": "new", "post_process": "yolo_box"}
         mock_registry = MagicMock()
         mock_registry.add_type.return_value = "xin_lei_xing_123abc"
         mock_registry.get.return_value = {
@@ -171,7 +175,7 @@ class TestCreateDetectionType:
             assert data["label"] == "新类型"
 
     def test_create_type_duplicate_label_400(self, client):
-        payload = {"label": "明火", "color": "#123456", "model_path": "x.pt", "post_process": "yolo_box"}
+        payload = {"label": "明火", "color": "#123456", "model_key": "x", "post_process": "yolo_box"}
         mock_registry = MagicMock()
         mock_registry.add_type.side_effect = ValueError("label '明火' already exists")
 
@@ -195,7 +199,7 @@ class TestDeleteDetectionType:
         mock_registry.get.return_value = {"label": "待删除"}
 
         with patch("backend.safety_detection.api.registry", mock_registry):
-            resp = client.post("/detector/types", json={"label": "待删除", "color": "#000000", "model_path": "d.pt", "post_process": "yolo_box"})
+            resp = client.post("/detector/types", json={"label": "待删除", "color": "#000000", "model_key": "d", "post_process": "yolo_box"})
             key = resp.json()["key"]
             client.app.state.camera_manager.get_camera_ids_with_type.return_value = []
             resp = client.delete(f"/detector/types/{key}")
@@ -221,54 +225,90 @@ class TestDeleteDetectionType:
 
 
 class TestUploadModel:
+    def _mock_model_registry(self, saved_name):
+        from pathlib import Path
+        mock_mr = MagicMock()
+        mock_mr.save_model_file.side_effect = lambda filename, content: Path(filename)
+        mock_mr.to_api_list.return_value = []
+        mock_mr.add_model.return_value = Path(saved_name).stem
+        return mock_mr
+
     def test_upload_model_success(self, client, tmp_path):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"label": "明火", "model_path": "old.pt"}
+        mock_registry.get.return_value = {"label": "明火", "model_key": "old"}
+        mock_mr = self._mock_model_registry("test_model.pt")
 
-        with patch("backend.safety_detection.api.registry", mock_registry):
+        with patch("backend.safety_detection.api.registry", mock_registry), \
+             patch("backend.safety_detection.api.model_registry", mock_mr), \
+             patch("backend.safety_detection.api.parse_model_metadata", return_value={}):
             resp = client.post(
                 "/detector/types/fire/model",
                 files={"file": ("test_model.pt", io.BytesIO(b"fake"), "application/octet-stream")}
             )
             assert resp.status_code == 200
-            assert resp.json()["model_path"] == "test_model.pt"
-            mock_registry.save_model.assert_called_once_with("test_model.pt", b"fake")
-            mock_registry.update_type.assert_called_with("fire", {"model_path": "test_model.pt"})
+            assert resp.json()["model_key"] == "test_model"
+            mock_mr.save_model_file.assert_called_once_with("test_model.pt", b"fake")
+            mock_registry.update_type.assert_called_with("fire", {"model_key": "test_model"})
 
     def test_upload_rknn_model_success(self, client, tmp_path):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"label": "明火", "model_path": "old.pt"}
+        mock_registry.get.return_value = {"label": "明火", "model_key": "old"}
+        mock_mr = self._mock_model_registry("test_model.rknn")
 
-        with patch("backend.safety_detection.api.registry", mock_registry):
+        with patch("backend.safety_detection.api.registry", mock_registry), \
+             patch("backend.safety_detection.api.model_registry", mock_mr), \
+             patch("backend.safety_detection.api.parse_model_metadata", return_value={}):
             resp = client.post(
                 "/detector/types/fire/model",
                 files={"file": ("test_model.rknn", io.BytesIO(b"rknn"), "application/octet-stream")}
             )
             assert resp.status_code == 200
-            assert resp.json()["model_path"] == "test_model.rknn"
-            mock_registry.save_model.assert_called_once_with("test_model.rknn", b"rknn")
-            mock_registry.update_type.assert_called_with("fire", {"model_path": "test_model.rknn"})
+            assert resp.json()["model_key"] == "test_model"
+            mock_mr.save_model_file.assert_called_once_with("test_model.rknn", b"rknn")
+            mock_registry.update_type.assert_called_with("fire", {"model_key": "test_model"})
+
+    def test_upload_reuses_existing_model_entry(self, client):
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = {"label": "明火"}
+        mock_mr = self._mock_model_registry("test_model.pt")
+        mock_mr.to_api_list.return_value = [{"key": "existing", "file": "test_model.pt"}]
+
+        with patch("backend.safety_detection.api.registry", mock_registry), \
+             patch("backend.safety_detection.api.model_registry", mock_mr), \
+             patch("backend.safety_detection.api.parse_model_metadata", return_value={}):
+            resp = client.post(
+                "/detector/types/fire/model",
+                files={"file": ("test_model.pt", io.BytesIO(b"fake"), "application/octet-stream")}
+            )
+            assert resp.status_code == 200
+            assert resp.json()["model_key"] == "existing"
+            mock_mr.add_model.assert_not_called()
+            mock_registry.update_type.assert_called_with("fire", {"model_key": "existing"})
 
     def test_upload_invalid_extension_400(self, client):
         mock_registry = MagicMock()
         mock_registry.get.return_value = {"label": "明火"}
+        mock_mr = MagicMock()
 
-        with patch("backend.safety_detection.api.registry", mock_registry):
+        with patch("backend.safety_detection.api.registry", mock_registry), \
+             patch("backend.safety_detection.api.model_registry", mock_mr):
             resp = client.post(
                 "/detector/types/fire/model",
                 files={"file": ("model.onnx", io.BytesIO(b"fake"), "application/octet-stream")}
             )
             assert resp.status_code == 400
-            mock_registry.save_model.assert_not_called()
+            mock_mr.save_model_file.assert_not_called()
 
     def test_upload_unknown_type_404(self, client):
         mock_registry = MagicMock()
         mock_registry.get.return_value = None
+        mock_mr = MagicMock()
 
-        with patch("backend.safety_detection.api.registry", mock_registry):
+        with patch("backend.safety_detection.api.registry", mock_registry), \
+             patch("backend.safety_detection.api.model_registry", mock_mr):
             resp = client.post(
                 "/detector/types/nonexistent/model",
                 files={"file": ("model.pt", io.BytesIO(b"fake"), "application/octet-stream")}
             )
             assert resp.status_code == 404
-            mock_registry.save_model.assert_not_called()
+            mock_mr.save_model_file.assert_not_called()

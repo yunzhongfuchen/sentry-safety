@@ -91,7 +91,7 @@ async def update_detection_type(dtype: str, data: dict):
     if type_def is None:
         return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
 
-    structural_fields = {"label", "color", "model_path",
+    structural_fields = {"label", "color", "model_key",
                         "post_process", "classes", "model_confidence", "vlm_prompt", "inspection_label"}
     allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
                         "cooldown", "use_vlm", "min_box_count", "max_box_count", "box_count_mode",
@@ -157,17 +157,30 @@ async def delete_detection_type(dtype: str, request: Request):
 
 @router.post("/detector/types/{dtype}/model")
 async def upload_model(dtype: str, file: UploadFile = File(...)):
-    """上传模型文件"""
+    """上传模型文件（兼容端点）：创建/复用模型条目并把算法指过去"""
     if registry.get(dtype) is None:
         return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
-    filename = file.filename
+    filename = file.filename or ""
     if not filename.endswith((".pt", ".rknn")):
         return JSONResponse({"error": "Only .pt and .rknn files are allowed"}, status_code=400)
     content = await file.read()
-    registry.save_model(filename, content)
-    # model_path 直接指向当前环境实际的模型文件（.pt 或 .rknn）
-    registry.update_type(dtype, {"model_path": filename})
-    return {"success": True, "model_path": filename, "dtype": dtype}
+    path = model_registry.save_model_file(filename, content)
+    # 复用同文件名的已有模型条目，否则新建
+    model_key = None
+    for m in model_registry.to_api_list():
+        if m["file"] == path.name:
+            model_key = m["key"]
+            break
+    if model_key is None:
+        meta = parse_model_metadata(path)
+        model_key = model_registry.add_model(
+            file=path.name, name=path.stem,
+            post_process=meta.get("post_process", "yolo_box"),
+            class_names=meta.get("class_names", {}),
+            file_size=len(content),
+        )
+    registry.update_type(dtype, {"model_key": model_key})
+    return {"success": True, "model_key": model_key, "dtype": dtype}
 
 
 @router.get("/detector/status")
@@ -296,4 +309,80 @@ async def delete_model_entry(key: str):
     if key in registry.get_model_keys_in_use():
         return JSONResponse({"error": f"Model '{key}' is referenced by algorithms"}, status_code=409)
     model_registry.delete_model(key)
+    return {"success": True, "key": key}
+
+
+# ---------- 算法管理 ----------
+
+def _algo_to_response(key: str, td: dict) -> dict:
+    return {
+        "key": key,
+        "label": td.get("label", key),
+        "color": td.get("color", "#888888"),
+        "model_key": td.get("model_key"),
+        "model_path": td.get("model_path"),
+        "post_process": td.get("post_process", "yolo_box"),
+        "classes": td.get("classes"),
+        "model_confidence": td.get("model_confidence", 0.5),
+        "vlm_prompt": td.get("vlm_prompt", ""),
+        "inspection_label": td.get("inspection_label", td.get("label", key)),
+        "defaults": td.get("defaults", {}),
+    }
+
+
+@router.get("/algorithms")
+async def list_algorithms():
+    return {"algorithms": [_algo_to_response(t["key"], t) for t in registry.to_api_list()]}
+
+
+@router.post("/algorithms")
+async def create_algorithm(data: dict):
+    data = dict(data)
+    data.pop("model_path", None)  # model_path 由 model_key 解析，不接受直传
+    try:
+        key = registry.add_type(data)
+        return _algo_to_response(key, registry.get(key))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@router.put("/algorithms/{key}")
+async def update_algorithm(key: str, data: dict):
+    if registry.get(key) is None:
+        return JSONResponse({"error": f"Unknown algorithm: {key}"}, status_code=404)
+    structural_fields = {"label", "color", "model_key", "classes", "model_confidence",
+                         "vlm_prompt", "inspection_label"}
+    allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
+                        "cooldown", "use_vlm", "min_box_count", "max_box_count",
+                        "box_count_mode", "static_filter", "static_diff_threshold"}
+    structural_update = {k: v for k, v in data.items() if k in structural_fields}
+    defaults_update = {k: v for k, v in data.items() if k not in structural_fields and k in allowed_defaults}
+    if not structural_update and not defaults_update:
+        return JSONResponse({"error": "No valid fields to update"}, status_code=400)
+    try:
+        if structural_update:
+            registry.update_type(key, structural_update)
+        if defaults_update:
+            for k, v in defaults_update.items():
+                error = _validate_default_value(k, v)
+                if error:
+                    return JSONResponse({"error": error}, status_code=400)
+            registry.update_defaults(key, defaults_update)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return {"success": True, "key": key, "algorithm": _algo_to_response(key, registry.get(key))}
+
+
+@router.delete("/algorithms/{key}")
+async def delete_algorithm(key: str, request: Request):
+    if registry.get(key) is None:
+        return JSONResponse({"error": f"Unknown algorithm: {key}"}, status_code=404)
+    camera_manager = getattr(request.app.state, "camera_manager", None)
+    if camera_manager is not None:
+        referencing = camera_manager.get_camera_ids_with_type(key)
+        if referencing:
+            return JSONResponse(
+                {"error": f"Algorithm '{key}' is referenced by camera '{referencing[0]}'"},
+                status_code=409)
+    registry.delete_type(key)
     return {"success": True, "key": key}
