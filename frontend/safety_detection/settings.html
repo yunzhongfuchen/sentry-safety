@@ -162,7 +162,6 @@
             <div class="glass-card" style="padding: 0; overflow: hidden;">
                 <div class="gc-tabs" style="padding: 0 24px; margin-bottom: 0; border-bottom: 1px solid var(--glass-edge);">
                     <div :class="['gc-tab', { active: tab === 'cameras' }]" @click="tab = 'cameras'">摄像头</div>
-                    <div :class="['gc-tab', { active: tab === 'detection' }]" @click="tab = 'detection'">检测配置</div>
                     <div :class="['gc-tab', { active: tab === 'system' }]" @click="tab = 'system'">系统设置</div>
                 </div>
 
@@ -171,7 +170,6 @@
                     <div v-if="tab === 'cameras'">
                         <div style="display: flex; gap: 10px; margin-bottom: 18px;">
                             <button class="clay-button primary" @click="openCameraDialog()">+ 添加摄像头</button>
-                            <button class="clay-button" v-if="selectedCameras.length" @click="openBatchDialog">批量配置 ({{ selectedCameras.length }})</button>
                         </div>
 
                         <div class="gc-table-wrap">
@@ -209,45 +207,6 @@
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-
-                    <!-- Detection Tab -->
-                    <div v-if="tab === 'detection'">
-                        <div v-if="!settings.default_detection_types" style="color: var(--text-muted); padding: 40px; text-align: center;">
-                            加载中...
-                        </div>
-                        <template v-else>
-                        <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 16px;">VLM 配置</div>
-                        <div class="gc-form-grid">
-                            <div class="gc-form-field">
-                                <label>VLM 最大并发</label>
-                                <input type="number" class="clay-input" v-model.number="settings.vlm_max_concurrent" min="1" />
-                            </div>
-                            <div class="gc-form-field">
-                                <label>VLM 巡检间隔 (s, 0=关闭)</label>
-                                <input type="number" class="clay-input" v-model.number="settings.vlm_inspection_interval" min="0" />
-                            </div>
-                        </div>
-                        <button class="clay-button primary" @click="saveVlmSettings">保存 VLM 配置</button>
-
-                        <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin: 28px 0 16px;">检测类型默认值</div>
-                        <div class="type-cards-grid">
-                            <div v-for="t in detectionTypes" :key="t.key" class="glass-card type-card" :style="{ borderTopColor: t.color }">
-                                <div class="type-card-header" :style="{ color: t.color }">{{ t.label }}</div>
-                                <div class="type-card-checkboxes">
-                                    <label class="type-card-checkbox"><input type="checkbox" v-model="settings.default_detection_types[t.key].enabled" /> 启用</label>
-                                    <label class="type-card-checkbox"><input type="checkbox" v-model="settings.default_detection_types[t.key].use_vlm" /> VLM</label>
-                                </div>
-                                <div class="type-card-grid">
-                                    <div class="type-card-field"><label>间隔</label><input type="number" v-model.number="settings.default_detection_types[t.key].interval" /></div>
-                                    <div class="type-card-field"><label>阈值</label><input type="number" step="0.1" v-model.number="settings.default_detection_types[t.key].threshold" /></div>
-                                    <div class="type-card-field"><label>连续</label><input type="number" v-model.number="settings.default_detection_types[t.key].consecutive_required" /></div>
-                                    <div class="type-card-field"><label>冷却</label><input type="number" v-model.number="settings.default_detection_types[t.key].cooldown" min="0" /></div>
-                                </div>
-                            </div>
-                        </div>
-                        <button class="clay-button primary" @click="saveDefaultTypes">保存检测默认值</button>
-                        </template>
                     </div>
 
                     <!-- System Tab -->
@@ -370,7 +329,6 @@
                             <div class="type-mini-card-title" :style="{ color: t.color }">{{ t.label }}</div>
                             <div class="type-mini-card-toggles" @click.stop>
                                 <label><input type="checkbox" v-model="cameraDialog.detection_types[t.key].enabled" /> 启用</label>
-                                <label><input type="checkbox" v-model="cameraDialog.detection_types[t.key].use_vlm" /> VLM</label>
                             </div>
                         </div>
                     </div>
@@ -388,35 +346,8 @@
             <div class="type-config-box">
                 <h4>
                     <span class="type-color-dot" :style="{ backgroundColor: typeConfigType.color }"></span>
-                    {{ typeConfigType.label }} — 详细配置
+                    {{ typeConfigType.label }} — ROI 配置
                 </h4>
-                <!-- 运行参数 -->
-                <div class="type-param-row">
-                    <div class="type-param"><label>间隔</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].interval" /></div>
-                    <div class="type-param"><label>阈值</label><input type="number" step="0.1" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].threshold" /></div>
-                    <div class="type-param"><label>连续</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].consecutive_required" /></div>
-                    <div class="type-param"><label>冷却</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].cooldown" /></div>
-                </div>
-                <!-- 报警条件 -->
-                <div class="type-param-row">
-                    <div class="type-param">
-                        <label>报警条件</label>
-                        <select class="clay-select" v-model="cameraDialog.detection_types[typeConfigDialog].box_count_mode">
-                            <option value="gte">目标数 ≥ a</option>
-                            <option value="lte">目标数 ≤ b</option>
-                            <option value="between">a ≤ 目标数 ≤ b</option>
-                            <option value="outside">目标数 < a 或 > b</option>
-                        </select>
-                    </div>
-                    <div class="type-param" v-if="['gte','lte'].includes(cameraDialog.detection_types[typeConfigDialog].box_count_mode)">
-                        <label>{{ cameraDialog.detection_types[typeConfigDialog].box_count_mode === 'gte' ? 'a' : 'b' }}</label>
-                        <input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].box_count_a" />
-                    </div>
-                    <template v-if="['between','outside'].includes(cameraDialog.detection_types[typeConfigDialog].box_count_mode)">
-                        <div class="type-param"><label>a</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].box_count_a" /></div>
-                        <div class="type-param"><label>b</label><input type="number" class="clay-input" v-model.number="cameraDialog.detection_types[typeConfigDialog].box_count_b" /></div>
-                    </template>
-                </div>
                 <!-- ROI -->
                 <div class="type-checkbox-row">
                     <button class="clay-button" @click="openRoiDialog(typeConfigDialog)">绘制 ROI</button>
@@ -425,10 +356,6 @@
                         <button class="clay-button ghost" @click="cameraDialog.detection_types[typeConfigDialog].roi = null">清除</button>
                     </span>
                     <label><input type="checkbox" v-model="cameraDialog.detection_types[typeConfigDialog].roi_invert" /> 区域外报警</label>
-                </div>
-                <!-- 静态过滤 -->
-                <div class="type-checkbox-row">
-                    <label><input type="checkbox" v-model="cameraDialog.detection_types[typeConfigDialog].static_filter" /> 静态目标过滤（连续帧框区域内容无变化时视为误判，适合烟火类动态目标）</label>
                 </div>
                 <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
                     <button class="clay-button primary" @click="typeConfigDialog = null">完成</button>
@@ -460,41 +387,6 @@
             </div>
         </div>
 
-        <!-- Batch Config Modal -->
-        <div v-if="batchDialog" class="gc-modal-overlay" @click.self="batchDialog = false">
-            <div class="gc-modal-box">
-                <div class="gc-modal-header">
-                    <h3 style="font-size: 16px; font-weight: 700;">批量配置 ({{ selectedCameras.length }} 个摄像头)</h3>
-                    <button class="clay-button ghost" @click="batchDialog = false">&times;</button>
-                </div>
-                <div class="gc-modal-body">
-                    <div class="gc-table-wrap" style="overflow-x: auto;">
-                        <table class="gc-table">
-                            <thead>
-                                <tr><th>类型</th><th>启用</th><th>间隔</th><th>阈值</th><th>连续</th><th>冷却</th><th>VLM</th></tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="t in detectionTypes" :key="t.key">
-                                    <td :style="{ color: t.color, fontWeight: 600 }">{{ t.label }}</td>
-                                    <td><input type="checkbox" v-model="batchTypes[t.key].enabled" /></td>
-                                    <td><input type="number" class="clay-input" v-model.number="batchTypes[t.key].interval" style="width: 70px;" /></td>
-                                    <td><input type="number" step="0.1" class="clay-input" v-model.number="batchTypes[t.key].threshold" style="width: 70px;" /></td>
-                                    <td><input type="number" class="clay-input" v-model.number="batchTypes[t.key].consecutive_required" style="width: 70px;" /></td>
-                                    <td><input type="number" class="clay-input" v-model.number="batchTypes[t.key].cooldown" min="0" style="width: 70px;" /></td>
-                                    <td><input type="checkbox" v-model="batchTypes[t.key].use_vlm" /></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="gc-modal-footer">
-                    <button class="clay-button" @click="batchDialog = false">取消</button>
-                    <button class="clay-button" @click="batchTypes = JSON.parse(JSON.stringify(settings.default_detection_types || defaultDetectionTypes()))">恢复默认</button>
-                    <button class="clay-button primary" @click="saveBatchConfig">应用</button>
-                </div>
-            </div>
-        </div>
-
         <div v-if="toast" :class="['toast', toast.type]">{{ toast.message }}</div>
     </div>
 
@@ -515,8 +407,6 @@
                 const roiDialog = ref(null);
                 const roiCanvas = ref(null);
                 let roiPoints = [];
-                const batchDialog = ref(false);
-                const batchTypes = ref(defaultDetectionTypes());
                 const toast = ref(null);
                 const logs = ref([]);
                 const systemMode = ref('');
@@ -654,23 +544,17 @@
                 }
 
                 function openCameraDialog(cam = null) {
-                    const baseTypes = settings.value.default_detection_types
-                        ? JSON.parse(JSON.stringify(settings.value.default_detection_types))
-                        : defaultDetectionTypes();
+                    const defs = defaultDetectionTypes();
+                    const baseTypes = {};
+                    for (const key of Object.keys(defs)) {
+                        baseTypes[key] = { enabled: false, roi: null, roi_invert: false };
+                    }
                     if (cam) {
                         cameraDialog.value = {
                             ...JSON.parse(JSON.stringify(cam)),
                             detection_types: { ...baseTypes, ...(cam.detection_types || {}) },
                             _existing: true
                         };
-                        // 转换人数条件为前端格式
-                        for (const key of Object.keys(cameraDialog.value.detection_types)) {
-                            const cfg = cameraDialog.value.detection_types[key];
-                            const fc = fieldsToBoxCountMode(cfg.min_box_count, cfg.max_box_count, cfg.box_count_mode);
-                            cfg.box_count_mode = fc.mode;
-                            cfg.box_count_a = fc.a;
-                            cfg.box_count_b = fc.b;
-                        }
                     } else {
                         cameraDialog.value = {
                             camera_id: '', name: '', source: '', source_type: 'auto',
@@ -692,33 +576,23 @@
 
                 function resetCameraTypes() {
                     if (!cameraDialog.value) return;
-                    cameraDialog.value.detection_types = settings.value.default_detection_types
-                        ? JSON.parse(JSON.stringify(settings.value.default_detection_types))
-                        : defaultDetectionTypes();
-                    // 转换人数条件为前端格式（与 openCameraDialog 保持一致）
-                    for (const key of Object.keys(cameraDialog.value.detection_types)) {
-                        const cfg = cameraDialog.value.detection_types[key];
-                        const fc = fieldsToBoxCountMode(cfg.min_box_count, cfg.max_box_count, cfg.box_count_mode);
-                        cfg.box_count_mode = fc.mode;
-                        cfg.box_count_a = fc.a;
-                        cfg.box_count_b = fc.b;
+                    const defs = defaultDetectionTypes();
+                    const baseTypes = {};
+                    for (const key of Object.keys(defs)) {
+                        baseTypes[key] = { enabled: false, roi: null, roi_invert: false };
                     }
+                    cameraDialog.value.detection_types = baseTypes;
                 }
 
                 async function saveCamera() {
                     const d = cameraDialog.value;
                     if (!d.camera_id || !d.source) { showToast('ID 和源地址必填', 'error'); return; }
-                    // 转换人数条件为后端格式
+                    // 净化 detection_types，只保留 enabled, roi, roi_invert
+                    const keep = ['enabled', 'roi', 'roi_invert'];
                     for (const key of Object.keys(d.detection_types)) {
                         const cfg = d.detection_types[key];
-                        const mode = cfg.box_count_mode || 'gte';
-                        const fields = boxCountModeToFields(mode, cfg.box_count_a, cfg.box_count_b);
-                        cfg.min_box_count = fields.min_box_count;
-                        cfg.max_box_count = fields.max_box_count;
-                        cfg.box_count_mode = fields.box_count_mode;
-                        // 删除前端临时字段，避免发送到后端
-                        delete cfg.box_count_a;
-                        delete cfg.box_count_b;
+                        d.detection_types[key] = Object.fromEntries(
+                            Object.entries(cfg).filter(([k]) => keep.includes(k)));
                     }
                     try {
                         const url = d._existing ? `/cameras/${d.camera_id}/config` : '/cameras/add';
@@ -800,26 +674,11 @@
                 }
 
                 function openBatchDialog() {
-                    batchTypes.value = settings.value.default_detection_types
-                        ? JSON.parse(JSON.stringify(settings.value.default_detection_types))
-                        : defaultDetectionTypes();
-                    batchDialog.value = true;
+                    // Batch dialog removed - no longer needed
                 }
 
                 async function saveBatchConfig() {
-                    try {
-                        const res = await fetch('/cameras/batch-config', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ camera_ids: selectedCameras.value, detection_types: batchTypes.value })
-                        });
-                        showToast(res.ok ? '批量配置成功' : '批量配置失败', res.ok ? 'success' : 'error');
-                        if (res.ok) {
-                            batchDialog.value = false;
-                            selectedCameras.value = [];
-                            loadCameras();
-                        }
-                    } catch (e) { showToast('批量配置失败', 'error'); }
+                    // Batch config removed - no longer needed
                 }
 
                 function toggleSelectAll(e) {
@@ -875,12 +734,12 @@
 
                 return {
                     tab, sidebar, cameras, settings, models, detectorInfo, selectedCameras,
-                    cameraDialog, typeConfigDialog, typeConfigType, roiDialog, roiCanvas, batchDialog, batchTypes, toast, logs, systemMode, detectionTypes,
+                    cameraDialog, typeConfigDialog, typeConfigType, roiDialog, roiCanvas, toast, logs, systemMode, detectionTypes,
                     loadCameras, loadSettings, loadModels,
                     saveVlmSettings, saveDefaultTypes, saveSystemSettings,
                     openCameraDialog, closeCameraDialog, resetCameraTypes, saveCamera, deleteCamera,
                     openTypeConfig, openRoiDialog, onSnapshotLoad, onSnapshotError, onRoiClick, onRoiDblClick, clearRoi, saveRoi,
-                    openBatchDialog, saveBatchConfig, toggleSelectAll,
+                    toggleSelectAll,
                     restartSystem, toggleSettingsNav
                 };
             }
