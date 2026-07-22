@@ -1090,13 +1090,24 @@ async def ignore_alert(record_id: str):
 
 # ── 摄像头配置 API ──
 
+def sanitize_camera_algorithms(raw: dict) -> dict:
+    """摄像头级算法配置只保留 enabled/roi/roi_invert，参数由算法注册表统一维护"""
+    keep = ("enabled", "roi", "roi_invert")
+    return {
+        dtype: {k: v for k, v in (cfg or {}).items() if k in keep}
+        for dtype, cfg in raw.items()
+    }
+
+
 @app.post("/cameras/{camera_id}/config")
 async def update_camera_config(camera_id: str, data: dict):
     """动态修改单路摄像头配置（检测类型 + 名称/源/分辨率等）"""
     if camera_manager is None or multi_detector is None:
         return JSONResponse({"error": "Not initialized"}, status_code=500)
 
-    detection_types = data.get("detection_types", {})
+    detection_types = sanitize_camera_algorithms(
+        data.get("algorithms") or data.get("detection_types") or {}
+    )
     if detection_types:
         multi_detector.update_camera_config(camera_id, detection_types)
 
@@ -1141,7 +1152,7 @@ async def update_camera_config(camera_id: str, data: dict):
             if "enabled" in data:
                 cam["enabled"] = bool(data["enabled"])
             if detection_types:
-                cam["detection_types"] = detection_types
+                cam["algorithms"] = detection_types
             break
     app_config.save_camera_configs(cameras)
 
@@ -1156,12 +1167,14 @@ async def batch_camera_config(data: dict):
         return JSONResponse({"error": "Not initialized"}, status_code=500)
 
     camera_ids = data.get("camera_ids", [])
-    detection_types = data.get("detection_types", {})
+    detection_types = sanitize_camera_algorithms(
+        data.get("algorithms") or data.get("detection_types") or {}
+    )
 
     cameras = app_config.load_camera_configs()
     for cam in cameras:
         if cam["camera_id"] in camera_ids:
-            cam["detection_types"] = detection_types
+            cam["algorithms"] = detection_types
             multi_detector.update_camera_config(cam["camera_id"], detection_types)
 
     app_config.save_camera_configs(cameras)
