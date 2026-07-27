@@ -423,6 +423,7 @@ class DetectionTypeRegistry:
                 "model_confidence": td.get("model_confidence", 0.5),
                 "vlm_prompt": td.get("vlm_prompt", ""),
                 "inspection_label": td.get("inspection_label", td.get("label", key)),
+                "alarm_description": td.get("alarm_description", ""),
                 "defaults": dict(td.get("defaults", {})),
             })
         return result
@@ -467,6 +468,7 @@ class DetectionTypeRegistry:
             "model_confidence": type_def.get("model_confidence", 0.5),
             "vlm_prompt": type_def.get("vlm_prompt", ""),
             "inspection_label": type_def.get("inspection_label", label),
+            "alarm_description": type_def.get("alarm_description", ""),
             "defaults": merged,
         }
         self._save(self._types)
@@ -490,7 +492,7 @@ class DetectionTypeRegistry:
                 raise ValueError(f"Unknown model: {updates['model_key']}")
             td["model_key"] = updates["model_key"]
             td["post_process"] = model_registry.get(updates["model_key"]).get("post_process", "yolo_box")
-        for field in ("color", "classes", "model_confidence", "vlm_prompt", "inspection_label"):
+        for field in ("color", "classes", "model_confidence", "vlm_prompt", "inspection_label", "alarm_description"):
             if field in updates:
                 td[field] = updates[field]
         self._save(self._types)

@@ -431,3 +431,22 @@ def test_static_filter_disabled_allows_static_target():
     md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
 
     assert md._cooldowns["cam1"]["fire"] > 0
+
+def test_alarm_description_persisted(tmp_path, monkeypatch):
+    from backend.detection_registry import DetectionTypeRegistry, model_registry
+    monkeypatch.setattr("backend.detection_registry.ALGORITHMS_FILE", tmp_path / "algorithms.json")
+    reg = DetectionTypeRegistry.__new__(DetectionTypeRegistry)
+    reg._types = {}
+    # If model_registry needs a real model, mock it
+    monkeypatch.setattr(model_registry, "get", lambda k: {"file": "x.pt", "post_process": "yolo_box"})
+    monkeypatch.setattr(model_registry, "file_exists", lambda k: True)
+    key = reg.add_type({
+        "label": "测试报警",
+        "color": "#888888",
+        "model_key": "test",
+        "alarm_description": "自定义报警说明",
+    })
+    assert reg.get(key)["alarm_description"] == "自定义报警说明"
+    # Update
+    reg.update_type(key, {"alarm_description": "更新后说明"})
+    assert reg.get(key)["alarm_description"] == "更新后说明"
