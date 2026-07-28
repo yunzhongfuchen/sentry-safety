@@ -240,7 +240,7 @@
                             </div>
 
                             <div class="type-card-field" style="margin-top: 12px;">
-                                <label>类别过滤（不勾 = 不过滤）</label>
+                                <label>类别选择（全不勾选 = 全部选择）</label>
                                 <div class="type-card-checkboxes" style="flex-wrap: wrap;">
                                     <label v-for="c in availableClasses" :key="c.id" class="type-card-checkbox">
                                         <input type="checkbox" :value="c.id" v-model="dialog.classesChecked" /> {{ c.id }}:{{ c.name }}
