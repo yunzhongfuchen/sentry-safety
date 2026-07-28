@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+import threading
 from unittest.mock import patch, MagicMock
 from dataclasses import dataclass
 
@@ -450,3 +451,63 @@ def test_alarm_description_persisted(tmp_path, monkeypatch):
     # Update
     reg.update_type(key, {"alarm_description": "更新后说明"})
     assert reg.get(key)["alarm_description"] == "更新后说明"
+
+
+def test_alarm_description_used_in_reason(monkeypatch):
+    from backend.safety_detection.detector_core import MultiDetector, TypeSchedule
+    # Minimal stub
+    md = MultiDetector.__new__(MultiDetector)
+    md._cooldowns = {"cam1": {}}
+    md._alert_states = {"cam1": {}}
+    md._latest_results = {}
+    md._static_regions = {}
+    md.camera_manager = None
+    md.trigger_callback = None
+    md.vlm_result_callback = None
+    md.vlm_queue = None
+    md.safety_detector = None
+    md.strategy = None
+    md._running = False
+    md._lock = threading.RLock()
+    md._schedules = {"cam1": {"fire": TypeSchedule(dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=0)}}
+    md._schedules["cam1"]["fire"].consecutive_count = 3
+
+    # Mock registry
+    class FakeRegistry:
+        def get(self, dtype):
+            return {"label": "明火", "alarm_description": "发现明火请处理"}
+    monkeypatch.setattr("backend.safety_detection.detector_core.registry", FakeRegistry())
+
+    result = {"detected": True, "boxes": [[1,2,3,4]], "scores": [0.9], "max_confidence": 0.9}
+    frame = object()
+    md._handle_standard_detection("cam1", "fire", frame, result, md._schedules["cam1"]["fire"])
+    assert result["reason"] == "发现明火请处理"
+    assert result["level"] == "small_model_alarm"
+
+
+def test_alarm_description_fallback_when_empty(monkeypatch):
+    from backend.safety_detection.detector_core import MultiDetector, TypeSchedule
+    md = MultiDetector.__new__(MultiDetector)
+    md._cooldowns = {"cam1": {}}
+    md._alert_states = {"cam1": {}}
+    md._latest_results = {}
+    md._static_regions = {}
+    md.camera_manager = None
+    md.trigger_callback = None
+    md.vlm_result_callback = None
+    md.vlm_queue = None
+    md.safety_detector = None
+    md.strategy = None
+    md._running = False
+    md._lock = threading.RLock()
+    md._schedules = {"cam1": {"smoke": TypeSchedule(dtype="smoke", enabled=True, interval=1, threshold=0.5, cooldown=0)}}
+    md._schedules["cam1"]["smoke"].consecutive_count = 3
+
+    class FakeRegistry:
+        def get(self, dtype):
+            return {"label": "烟雾", "alarm_description": ""}
+    monkeypatch.setattr("backend.safety_detection.detector_core.registry", FakeRegistry())
+
+    result = {"detected": True, "boxes": [[1,2,3,4]], "scores": [0.9], "max_confidence": 0.9}
+    md._handle_standard_detection("cam1", "smoke", object(), result, md._schedules["cam1"]["smoke"])
+    assert result["reason"] == "检测到烟雾异常"
