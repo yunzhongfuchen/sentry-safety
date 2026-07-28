@@ -77,3 +77,37 @@ class TestDeleteModel:
              patch("backend.safety_detection.api.registry", mock_reg):
             resp = client.delete("/models/m")
             assert resp.status_code == 200
+
+
+class TestReplaceModel:
+    def test_replace_model_file_updates_entry(self, client):
+        mock_mr = MagicMock()
+        mock_mr.get.side_effect = lambda k: {"name": "M", "file": "m.pt",
+                                              "post_process": "yolo_box",
+                                              "class_names": {"0": "old"}} if k == "m" else None
+        mock_mr.replace_model_file.return_value = MagicMock(name="m_new.pt")
+        with patch("backend.safety_detection.api.model_registry", mock_mr), \
+             patch("backend.safety_detection.api.parse_model_metadata",
+                   return_value={"post_process": "yolo_pose", "class_names": {"0": "person"}}):
+            resp = client.post("/models/m/replace",
+                               files={"file": ("m_new.pt", io.BytesIO(b"fake"), "application/octet-stream")})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["key"] == "m"
+            mock_mr.replace_model_file.assert_called_once()
+
+    def test_replace_unknown_model_returns_404(self, client):
+        mock_mr = MagicMock()
+        mock_mr.get.return_value = None
+        with patch("backend.safety_detection.api.model_registry", mock_mr):
+            resp = client.post("/models/missing/replace",
+                               files={"file": ("x.pt", io.BytesIO(b"fake"), "application/octet-stream")})
+            assert resp.status_code == 404
+
+    def test_replace_rejects_bad_extension(self, client):
+        mock_mr = MagicMock()
+        mock_mr.get.return_value = {"name": "M", "file": "m.pt"}
+        with patch("backend.safety_detection.api.model_registry", mock_mr):
+            resp = client.post("/models/m/replace",
+                               files={"file": ("x.exe", io.BytesIO(b"fake"), "application/octet-stream")})
+            assert resp.status_code == 400

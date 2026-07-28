@@ -46,6 +46,7 @@
                     </div>
                     <div class="model-card-actions">
                         <button class="clay-button" @click="openEdit(m)">编辑</button>
+                        <button class="clay-button" @click="openReplace(m)">更换权重</button>
                         <button class="clay-button" @click="deleteModel(m)">删除</button>
                     </div>
                 </div>
@@ -65,6 +66,22 @@
                 <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
                     <button class="clay-button" @click="uploadDialog = false">取消</button>
                     <button class="clay-button primary" :disabled="uploading" @click="doUpload">{{ uploading ? '上传解析中…' : '上传' }}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 更换权重弹窗 -->
+        <div v-if="replaceDialog" class="modal-overlay" @click.self="replaceDialog = null">
+            <div class="modal-box">
+                <h3 style="margin-bottom: 16px;">更换权重 — {{ replaceDialog.name }}</h3>
+                <div class="form-field">
+                    <label>选择新权重文件 (.pt / .rknn)</label>
+                    <input type="file" accept=".pt,.rknn" @change="onReplaceFileChange" />
+                    <span class="hint">.pt 文件将重新解析类别清单；原模型文件会被替换</span>
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                    <button class="clay-button" @click="replaceDialog = null">取消</button>
+                    <button class="clay-button primary" :disabled="replacing" @click="doReplace">{{ replacing ? '替换中…' : '确认替换' }}</button>
                 </div>
             </div>
         </div>
@@ -104,9 +121,12 @@
                 const uploadName = ref('');
                 const uploading = ref(false);
                 const editDialog = ref(null);
+                const replaceDialog = ref(null);
+                const replacing = ref(false);
                 const toast = ref(null);
                 const sidebar = ref(getSidebarContext());
                 let uploadFile = null;
+                const replaceFile = ref(null);
 
                 sidebar.value.page = 'models';
 
@@ -169,6 +189,10 @@
                 }
 
                 async function deleteModel(m) {
+                    if (m.used_by > 0) {
+                        showToast(`该模型已被 ${m.used_by} 个算法引用，无法删除`, 'error');
+                        return;
+                    }
                     if (!confirm(`确定删除模型 "${m.name}"？模型文件将一并删除。`)) return;
                     try {
                         const res = await fetch(`/models/${m.key}`, { method: 'DELETE' });
@@ -177,13 +201,44 @@
                     } catch (e) { showToast('删除失败', 'error'); }
                 }
 
+                function openReplace(m) {
+                    replaceDialog.value = { key: m.key, name: m.name };
+                    replaceFile.value = null;
+                }
+
+                function onReplaceFileChange(e) {
+                    replaceFile.value = e.target.files ? e.target.files[0] : null;
+                }
+
+                async function doReplace() {
+                    if (!replaceFile.value) { showToast('请选择新权重文件', 'error'); return; }
+                    replacing.value = true;
+                    const formData = new FormData();
+                    formData.append('file', replaceFile.value);
+                    try {
+                        const res = await fetch(`/models/${replaceDialog.value.key}/replace`, {
+                            method: 'POST', body: formData
+                        });
+                        if (res.ok) {
+                            showToast('权重更换成功');
+                            replaceDialog.value = null;
+                            replaceFile.value = null;
+                            loadModels();
+                        } else {
+                            const err = await res.json();
+                            showToast(err.error || '更换失败', 'error');
+                        }
+                    } catch (e) { showToast('更换失败', 'error'); }
+                    finally { replacing.value = false; }
+                }
+
                 onMounted(() => {
                     const root = document.getElementById('sidebar-root');
                     if (root) renderSidebar(root, sidebar.value);
                     loadModels();
                 });
 
-                return { models, uploadDialog, uploadName, uploading, editDialog, toast, sidebar, doUpload, openEdit, saveEdit, deleteModel };
+                return { models, uploadDialog, uploadName, uploading, editDialog, replaceDialog, replacing, toast, sidebar, doUpload, openEdit, saveEdit, deleteModel, openReplace, doReplace, onReplaceFileChange };
             }
         }).mount('#app');
     </script>

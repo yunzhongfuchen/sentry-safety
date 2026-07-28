@@ -312,6 +312,29 @@ async def delete_model_entry(key: str):
     return {"success": True, "key": key}
 
 
+@router.post("/models/{key}/replace")
+async def replace_model_file(key: str, file: UploadFile = File(...)):
+    """更换模型文件（保留条目 key/name，替换 weights/ 下文件并重新解析 .pt 元数据）"""
+    if model_registry.get(key) is None:
+        return JSONResponse({"error": f"Unknown model: {key}"}, status_code=404)
+    filename = file.filename or ""
+    if not filename.endswith((".pt", ".rknn")):
+        return JSONResponse({"error": "Only .pt and .rknn files are allowed"}, status_code=400)
+    content = await file.read()
+    try:
+        model_registry.replace_model_file(key, filename, content)
+    except KeyError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    entry = model_registry.get(key)
+    return {
+        "success": True,
+        "key": key,
+        "file": entry["file"],
+        "post_process": entry["post_process"],
+        "class_names": entry["class_names"],
+    }
+
+
 # ---------- 算法管理 ----------
 
 def _algo_to_response(key: str, td: dict) -> dict:
