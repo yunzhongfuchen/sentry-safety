@@ -68,3 +68,24 @@ class TestLegacyUploadCompat:
             mock_reg.update_type.assert_called_once()
             updates = mock_reg.update_type.call_args[0][1]
             assert updates == {"model_key": "fire_smoke"}
+
+
+class TestListAlgorithms:
+    def test_list_response_includes_alarm_description(self, client):
+        mock_reg = MagicMock()
+        mock_reg.to_api_list.return_value = [
+            {
+                "key": "fire", "label": "明火", "color": "#ef4444",
+                "model_key": "fire_smoke", "model_path": "fire_smoke.pt",
+                "post_process": "yolo_box", "classes": [0, 1],
+                "model_confidence": 0.5, "vlm_prompt": "",
+                "inspection_label": "明火", "alarm_description": "检测到明火",
+                "defaults": {},
+            }
+        ]
+        with patch("backend.safety_detection.api.registry", mock_reg):
+            resp = client.get("/algorithms")
+            assert resp.status_code == 200
+            algorithms = {a["key"]: a for a in resp.json()["algorithms"]}
+            assert "alarm_description" in algorithms["fire"]
+            assert algorithms["fire"]["alarm_description"] == "检测到明火"

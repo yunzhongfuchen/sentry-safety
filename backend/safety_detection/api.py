@@ -326,6 +326,7 @@ def _algo_to_response(key: str, td: dict) -> dict:
         "model_confidence": td.get("model_confidence", 0.5),
         "vlm_prompt": td.get("vlm_prompt", ""),
         "inspection_label": td.get("inspection_label", td.get("label", key)),
+        "alarm_description": td.get("alarm_description", ""),
         "defaults": td.get("defaults", {}),
     }
 
@@ -351,7 +352,7 @@ async def update_algorithm(key: str, data: dict):
     if registry.get(key) is None:
         return JSONResponse({"error": f"Unknown algorithm: {key}"}, status_code=404)
     structural_fields = {"label", "color", "model_key", "classes", "model_confidence",
-                         "vlm_prompt", "inspection_label"}
+                         "vlm_prompt", "inspection_label", "alarm_description"}
     allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
                         "cooldown", "use_vlm", "min_box_count", "max_box_count",
                         "box_count_mode", "static_filter", "static_diff_threshold"}
