@@ -235,6 +235,11 @@
                             </div>
 
                             <div class="type-card-field" style="margin-top: 12px;">
+                                <label>报警说明（留空则使用默认模板：检测到xx异常）</label>
+                                <input v-model="dialog.alarm_description" placeholder="如：发现明火，请立即处理" />
+                            </div>
+
+                            <div class="type-card-field" style="margin-top: 12px;">
                                 <label>类别过滤（不勾 = 不过滤）</label>
                                 <div class="type-card-checkboxes" style="flex-wrap: wrap;">
                                     <label v-for="c in availableClasses" :key="c.id" class="type-card-checkbox">
@@ -343,7 +348,7 @@
                         dialog.value = {
                             label: '', color: '#888888', model_key: '',
                             classesChecked: [], model_confidence: 0.5,
-                            vlm_prompt: '', inspection_label: '', _existing: false,
+                            vlm_prompt: '', inspection_label: '', alarm_description: '', _existing: false,
                             defaults: defaultDefaults()
                         };
                     }
@@ -356,7 +361,8 @@
                         label: d.label, color: d.color, model_key: d.model_key,
                         classes: d.classesChecked && d.classesChecked.length ? d.classesChecked.map(Number) : null,
                         model_confidence: d.model_confidence,
-                        vlm_prompt: d.vlm_prompt || '', inspection_label: d.inspection_label || d.label
+                        vlm_prompt: d.vlm_prompt || '', inspection_label: d.inspection_label || d.label,
+                        alarm_description: d.alarm_description || ''
                     };
                     const bc = boxCountModeToFields(d.defaults.box_count_mode || 'gte', d.defaults.box_count_a ?? 1, d.defaults.box_count_b);
                     const defaultsPayload = {
