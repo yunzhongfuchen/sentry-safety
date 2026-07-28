@@ -337,7 +337,7 @@ async def replace_model_file(key: str, file: UploadFile = File(...)):
 
 # ---------- 算法管理 ----------
 
-def _algo_to_response(key: str, td: dict) -> dict:
+def _algo_to_response(key: str, td: dict, used_by_cameras: int = 0) -> dict:
     return {
         "key": key,
         "label": td.get("label", key),
@@ -351,12 +351,20 @@ def _algo_to_response(key: str, td: dict) -> dict:
         "inspection_label": td.get("inspection_label", td.get("label", key)),
         "alarm_description": td.get("alarm_description", ""),
         "defaults": td.get("defaults", {}),
+        "used_by_cameras": used_by_cameras,
     }
 
 
 @router.get("/algorithms")
-async def list_algorithms():
-    return {"algorithms": [_algo_to_response(t["key"], t) for t in registry.to_api_list()]}
+async def list_algorithms(request: Request):
+    camera_manager = getattr(request.app.state, "camera_manager", None)
+    enabled_counts = {}
+    if camera_manager is not None:
+        for t in registry.to_api_list():
+            enabled_counts[t["key"]] = len(
+                camera_manager.get_camera_ids_with_type(t["key"], enabled_only=True)
+            )
+    return {"algorithms": [_algo_to_response(t["key"], t, enabled_counts.get(t["key"], 0)) for t in registry.to_api_list()]}
 
 
 @router.post("/algorithms")
