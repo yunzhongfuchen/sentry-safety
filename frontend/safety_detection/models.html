@@ -15,6 +15,35 @@
         .model-card-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
         .model-card-classes { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
         .class-chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--bg-elevated); color: var(--text-secondary); font-family: var(--font-mono); }
+        .meta-label-file { color: #0d9488; font-weight: 600; }
+        .meta-label-post { color: var(--warning); font-weight: 600; }
+        .used-count { color: #7c3aed; font-weight: 700; }
+
+        .clay-button.btn-replace {
+            background: var(--accent);
+            color: #fff;
+            box-shadow:
+                4px 4px 10px rgba(37, 99, 235, 0.25),
+                -4px -4px 10px rgba(255, 255, 255, 0.5);
+        }
+        .clay-button.btn-replace:hover { background: var(--accent-hover); }
+        .clay-button.btn-replace:active {
+            transform: translateY(1px);
+            box-shadow: var(--clay-shadow-pressed);
+        }
+
+        .clay-button.btn-delete {
+            background: var(--danger);
+            color: #fff;
+            box-shadow:
+                4px 4px 10px rgba(220, 38, 38, 0.25),
+                -4px -4px 10px rgba(255, 255, 255, 0.5);
+        }
+        .clay-button.btn-delete:hover { background: #b91c1c; }
+        .clay-button.btn-delete:active {
+            transform: translateY(1px);
+            box-shadow: var(--clay-shadow-pressed);
+        }
         .model-card-actions { display: flex; gap: 8px; margin-top: 12px; }
         .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .modal-box { background: var(--bg-soft); border: 1px solid var(--glass-edge); border-radius: var(--radius-lg); box-shadow: var(--glass-shadow); padding: 24px; width: 90%; max-width: 560px; max-height: 80vh; overflow-y: auto; }
@@ -38,16 +67,16 @@
             <div class="model-cards-grid">
                 <div v-for="m in models" :key="m.key" class="glass-card model-card">
                     <div class="model-card-header">{{ m.name }}</div>
-                    <div class="model-card-meta">文件: {{ m.file }}<span v-if="m.file_size">（{{ (m.file_size / 1048576).toFixed(1) }} MB）</span></div>
-                    <div class="model-card-meta">策略: {{ m.post_process }} · 被 {{ m.used_by }} 个算法引用</div>
+                    <div class="model-card-meta"><span class="meta-label-file">文件:</span> {{ m.file }}<span v-if="m.file_size">（{{ (m.file_size / 1048576).toFixed(1) }} MB）</span></div>
+                    <div class="model-card-meta"><span class="meta-label-post">策略:</span> {{ m.post_process }} · 被 <span class="used-count">{{ m.used_by }}</span> 个算法引用</div>
                     <div class="model-card-classes">
                         <span v-for="(name, id) in m.class_names" :key="id" class="class-chip">{{ id }}:{{ name }}</span>
                         <span v-if="!Object.keys(m.class_names || {}).length" class="hint">未解析到类别</span>
                     </div>
                     <div class="model-card-actions">
                         <button class="clay-button" @click="openEdit(m)">编辑</button>
-                        <button class="clay-button" @click="openReplace(m)">更换权重</button>
-                        <button class="clay-button" @click="deleteModel(m)">删除</button>
+                        <button class="clay-button btn-replace" @click="openReplace(m)">更换权重</button>
+                        <button class="clay-button btn-delete" @click="deleteModel(m)">删除</button>
                     </div>
                 </div>
             </div>
