@@ -5,6 +5,35 @@ from unittest.mock import Mock
 from backend.safety_detection.detector_core import MultiDetector, TypeSchedule
 
 
+class FakeRegistry:
+    """中性 defaults 的假注册表：register_camera 现在以注册表 defaults 为基底，
+    测试需隔离用户本地 algorithms.json 的影响（与真实 merge_camera_config 行为一致）"""
+
+    NEUTRAL_DEFAULTS = {
+        "enabled": False,
+        "interval": 1.0, "threshold": 0.5, "cooldown": 60.0,
+        "consecutive_required": 3, "use_vlm": False,
+        "min_box_count": None, "max_box_count": None, "box_count_mode": None,
+        "static_filter": False, "static_diff_threshold": 0.02,
+    }
+    LABELS = {"fire": "明火", "sleep": "睡岗"}
+
+    def get(self, dtype):
+        return {"label": self.LABELS.get(dtype, dtype), "alarm_description": ""}
+
+    def merge_camera_config(self, dtype, overrides):
+        result = dict(self.NEUTRAL_DEFAULTS)
+        for k, v in (overrides or {}).items():
+            if k in result or k in ("roi", "roi_invert"):
+                result[k] = v
+        return result
+
+
+@pytest.fixture(autouse=True)
+def fake_registry(monkeypatch):
+    monkeypatch.setattr("backend.safety_detection.detector_core.registry", FakeRegistry())
+
+
 def make_frame():
     return np.zeros((60, 80, 3), dtype=np.uint8)
 

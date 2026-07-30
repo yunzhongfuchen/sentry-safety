@@ -85,7 +85,7 @@ async def get_detection_type(dtype: str):
 
 
 @router.put("/detector/types/{dtype}")
-async def update_detection_type(dtype: str, data: dict):
+async def update_detection_type(dtype: str, data: dict, request: Request):
     """更新检测类型（结构性字段 + defaults）"""
     type_def = registry.get(dtype)
     if type_def is None:
@@ -113,6 +113,11 @@ async def update_detection_type(dtype: str, data: dict):
             registry.update_defaults(dtype, defaults_update)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
+
+    # 热同步所有启用该算法的摄像头调度（阈值/间隔/冷却等立即生效）
+    multi_detector = getattr(request.app.state, "multi_detector", None)
+    if multi_detector is not None:
+        multi_detector.refresh_type_schedule(dtype)
 
     return {"success": True, "dtype": dtype, "type": registry.get(dtype)}
 
@@ -379,7 +384,7 @@ async def create_algorithm(data: dict):
 
 
 @router.put("/algorithms/{key}")
-async def update_algorithm(key: str, data: dict):
+async def update_algorithm(key: str, data: dict, request: Request):
     if registry.get(key) is None:
         return JSONResponse({"error": f"Unknown algorithm: {key}"}, status_code=404)
     structural_fields = {"label", "color", "model_key", "classes", "model_confidence",
@@ -402,6 +407,10 @@ async def update_algorithm(key: str, data: dict):
             registry.update_defaults(key, defaults_update)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
+    # 热同步所有启用该算法的摄像头调度（阈值/间隔/冷却等立即生效）
+    multi_detector = getattr(request.app.state, "multi_detector", None)
+    if multi_detector is not None:
+        multi_detector.refresh_type_schedule(key)
     return {"success": True, "key": key, "algorithm": _algo_to_response(key, registry.get(key))}
 
 

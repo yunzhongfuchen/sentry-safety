@@ -397,6 +397,27 @@ class MultiDetector:
     # 摄像头注册
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _build_schedule(dtype: str, cfg: dict) -> TypeSchedule:
+        """以注册表 defaults 为基底，叠加摄像头级配置（enabled/roi/roi_invert）构建调度"""
+        merged = registry.merge_camera_config(dtype, cfg or {})
+        return TypeSchedule(
+            dtype=dtype,
+            enabled=True,
+            interval=merged.get("interval", 1.0),
+            threshold=merged.get("threshold", 0.5),
+            cooldown=merged.get("cooldown", 60.0),
+            consecutive_required=merged.get("consecutive_required", 3),
+            use_vlm=merged.get("use_vlm", False),
+            roi=merged.get("roi"),
+            roi_invert=merged.get("roi_invert", False),
+            min_box_count=merged.get("min_box_count"),
+            max_box_count=merged.get("max_box_count"),
+            box_count_mode=merged.get("box_count_mode"),
+            static_filter=merged.get("static_filter", False),
+            static_diff_threshold=merged.get("static_diff_threshold", 0.02),
+        )
+
     def register_camera(self, camera_id: str, detection_types: Dict[str, dict]) -> None:
         """注册摄像头检测配置"""
         with self._lock:
@@ -406,23 +427,7 @@ class MultiDetector:
             for dtype, cfg in detection_types.items():
                 if not cfg.get("enabled", False):
                     continue
-                schedule = TypeSchedule(
-                    dtype=dtype,
-                    enabled=True,
-                    interval=cfg.get("interval", 1.0),
-                    threshold=cfg.get("threshold", 0.5),
-                    cooldown=cfg.get("cooldown", 60.0),
-                    consecutive_required=cfg.get("consecutive_required", 3),
-                    use_vlm=cfg.get("use_vlm", False),
-                    roi=cfg.get("roi"),
-                    roi_invert=cfg.get("roi_invert", False),
-                    min_box_count=cfg.get("min_box_count"),
-                    max_box_count=cfg.get("max_box_count"),
-                    box_count_mode=cfg.get("box_count_mode"),
-                    static_filter=cfg.get("static_filter", False),
-                    static_diff_threshold=cfg.get("static_diff_threshold", 0.02),
-                )
-                self._schedules[camera_id][dtype] = schedule
+                self._schedules[camera_id][dtype] = self._build_schedule(dtype, cfg)
             if self.camera_manager is not None:
                 self.camera_manager.clear_all_detection_frames(camera_id)
             logger.info(f"Camera {camera_id} registered with {len(self._schedules[camera_id])} types")
@@ -877,3 +882,19 @@ class MultiDetector:
         # 懒加载新类型模型（复用当前设备配置，不再硬编码 use_npu=False）
         enabled = [dtype for dtype, cfg in detection_types.items() if cfg.get("enabled")]
         self.safety_detector.ensure_models_loaded(enabled)
+
+    def refresh_type_schedule(self, dtype: str) -> int:
+        """算法 defaults 变更后热同步所有启用该算法的摄像头（保留摄像头级 roi/roi_invert），返回同步的摄像头数"""
+        synced = 0
+        with self._lock:
+            for schedules in self._schedules.values():
+                old = schedules.get(dtype)
+                if old is None:
+                    continue
+                schedules[dtype] = self._build_schedule(
+                    dtype, {"enabled": True, "roi": old.roi, "roi_invert": old.roi_invert}
+                )
+                synced += 1
+        if synced:
+            logger.info(f"Type {dtype} schedule refreshed on {synced} cameras")
+        return synced
