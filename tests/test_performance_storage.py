@@ -88,3 +88,35 @@ def test_save_records_serializes_numpy_types(tmp_path, bypass_records_cache):
     assert loaded[0]["confidence"] == pytest.approx(0.876)
     assert loaded[0]["small_model"]["boxes"] == [[1.0, 2.0, 3.0, 4.0]]
     assert loaded[0]["frame_count"] == 3
+
+
+def test_cleanup_orphan_images_removes_only_orphans(tmp_path):
+    """孤儿图片应被删除，有元数据的图片和非图片文件应保留"""
+    frames = tmp_path / "frames"
+    frames.mkdir()
+    (frames / "orphan1_snapshot.jpg").write_bytes(b"x")
+    (frames / "orphan1_frame_000.jpg").write_bytes(b"x")
+    (frames / "known1_snapshot.jpg").write_bytes(b"x")
+    (frames / "not_an_image.txt").write_bytes(b"x")
+    ps.save_records([{"id": "known1", "time": "2026-07-30T00:00:00"}])
+
+    removed = ps.cleanup_orphan_images(data_dir=tmp_path, max_age_seconds=0)
+
+    assert removed == 2
+    assert not (frames / "orphan1_snapshot.jpg").exists()
+    assert not (frames / "orphan1_frame_000.jpg").exists()
+    assert (frames / "known1_snapshot.jpg").exists()
+    assert (frames / "not_an_image.txt").exists()
+
+
+def test_cleanup_orphan_images_keeps_recent_files(tmp_path):
+    """修改时间不足 max_age_seconds 的孤儿文件应保留（避免误删正在写入的图片）"""
+    frames = tmp_path / "frames"
+    frames.mkdir()
+    (frames / "new1_snapshot.jpg").write_bytes(b"x")
+    ps.save_records([])
+
+    removed = ps.cleanup_orphan_images(data_dir=tmp_path, max_age_seconds=3600)
+
+    assert removed == 0
+    assert (frames / "new1_snapshot.jpg").exists()

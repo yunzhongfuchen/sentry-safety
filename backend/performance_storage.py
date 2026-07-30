@@ -5,6 +5,7 @@
 import json
 import base64
 import logging
+import re
 import threading
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Union
@@ -407,6 +408,39 @@ def cleanup_oldest_records(ratio: float = 0.2, data_dir: Path = DATA_DIR) -> int
     return remove_count
 
 
+_ORPHAN_IMAGE_PATTERN = re.compile(r"^(.*)_(snapshot|frame_\d{3})\.jpg$")
+
+
+def cleanup_orphan_images(data_dir: Path = DATA_DIR, max_age_seconds: float = 3600.0) -> int:
+    """
+    删除没有元数据对应的孤儿图片（防止目录被无记录的图片占满）
+    只删除修改时间超过 max_age_seconds 的文件，避免误删正在写入的记录图片
+    返回删除的文件数
+    """
+    records = load_records()
+    known_ids = {r.get("id") for r in records}
+    frames_dir = data_dir / "frames"
+    if not frames_dir.exists():
+        return 0
+
+    now = time.time()
+    removed = 0
+    for p in frames_dir.iterdir():
+        m = _ORPHAN_IMAGE_PATTERN.match(p.name)
+        if m is None or m.group(1) in known_ids:
+            continue
+        if now - p.stat().st_mtime < max_age_seconds:
+            continue
+        try:
+            p.unlink()
+            removed += 1
+        except OSError:
+            pass
+    if removed:
+        logger.warning(f"Orphan image cleanup: removed {removed} files")
+    return removed
+
+
 def storage_cleanup_loop(
     max_records: int = 100,
     max_storage_mb: float = 500.0,
@@ -445,6 +479,7 @@ def storage_cleanup_loop(
 
             if triggered:
                 cleanup_oldest_records(emergency_cleanup_ratio)
+                cleanup_orphan_images()
 
         except Exception as e:
             logger.error(f"Storage cleanup loop error: {e}")
