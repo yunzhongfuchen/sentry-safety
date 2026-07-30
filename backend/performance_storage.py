@@ -11,11 +11,26 @@ from typing import List, Dict, Optional, Tuple, Union
 from dataclasses import dataclass
 import time
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 RECORDS_FILE = DATA_DIR / "records.json"
 FRAMES_DIR = DATA_DIR / "frames"
+
+
+class NumpyJSONEncoder(json.JSONEncoder):
+    """JSON encoder that handles numpy scalar and array types."""
+
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
 
 
 # 图片缓存 (LRU)
@@ -153,7 +168,7 @@ def save_records(records: List[Dict]):
     ensure_dirs()
     try:
         with open(RECORDS_FILE, "w", encoding="utf-8") as f:
-            json.dump(records, f, ensure_ascii=False)
+            json.dump(records, f, ensure_ascii=False, cls=NumpyJSONEncoder)
         logger.info(f"Saved {len(records)} records metadata")
         _records_cache = records
     except Exception as e:

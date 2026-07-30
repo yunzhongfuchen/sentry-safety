@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 import backend.performance_storage as ps
 
@@ -9,6 +10,20 @@ def isolate_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(ps, "_records_cache", None)
     yield
     monkeypatch.setattr(ps, "_records_cache", None)
+
+
+@pytest.fixture
+def bypass_records_cache(monkeypatch):
+    """防止 save_records 写入缓存导致 load_records 直接返回内存对象"""
+    monkeypatch.setattr(ps, "_records_cache", None)
+    original_save = ps.save_records
+
+    def save_without_cache(records):
+        original_save(records)
+        monkeypatch.setattr(ps, "_records_cache", None)
+
+    monkeypatch.setattr(ps, "save_records", save_without_cache)
+    yield
 
 
 def test_summary_uses_status_and_level():
@@ -52,3 +67,24 @@ def test_summary_missing_fields():
     assert summary["by_status"]["unknown"] == 1
     assert summary["by_status"]["pending"] == 1
     assert summary["by_level"]["unknown"] == 2
+
+
+def test_save_records_serializes_numpy_types(tmp_path, bypass_records_cache):
+    """回归测试：numpy.float32 等类型不应导致保存失败"""
+    records = [
+        {
+            "id": "1",
+            "camera_id": "cam01",
+            "detection_type": "fire",
+            "confidence": np.float32(0.876),
+            "small_model": {"boxes": np.array([[1, 2, 3, 4]], dtype=np.float32)},
+            "frame_count": np.int64(3),
+        }
+    ]
+    ps.save_records(records)
+
+    loaded = ps.load_records()
+    assert len(loaded) == 1
+    assert loaded[0]["confidence"] == pytest.approx(0.876)
+    assert loaded[0]["small_model"]["boxes"] == [[1.0, 2.0, 3.0, 4.0]]
+    assert loaded[0]["frame_count"] == 3
