@@ -505,15 +505,29 @@ class CameraManager:
         with self._lock:
             return list(self._cameras.keys())
 
-    def get_camera_ids_with_type(self, dtype: str) -> List[str]:
-        """获取配置了指定检测类型的摄像头 ID 列表（无论是否启用，有配置即算引用）"""
+    def get_camera_ids_with_type(self, dtype: str, enabled_only: bool = False) -> List[str]:
+        """获取配置了指定检测类型的摄像头 ID 列表
+
+        enabled_only=True: 只返回启用该类型的摄像头
+        enabled_only=False: 返回所有配置了该类型的摄像头（无论是否启用）
+        """
         matched = []
         with self._lock:
             for camera_id, state in self._cameras.items():
                 detection_types = state.config.detection_types
                 if detection_types and dtype in detection_types:
+                    if enabled_only and not detection_types[dtype].get("enabled", False):
+                        continue
                     matched.append(camera_id)
         return matched
+
+    def remove_type_from_all_cameras(self, dtype: str) -> None:
+        """从所有摄像头配置中移除指定检测类型（用于算法删除前清理禁用引用）"""
+        with self._lock:
+            for state in self._cameras.values():
+                detection_types = state.config.detection_types
+                if detection_types and dtype in detection_types:
+                    del detection_types[dtype]
 
     def start_recording(self, camera_id: str, output_dir: Optional[str] = None) -> Optional[str]:
         """开始录制原始视频帧，返回高清录制文件路径。

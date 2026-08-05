@@ -51,6 +51,32 @@ class TestFilterByRoi:
         assert len(out["subjects"]) == 1
         assert out["subjects"][0]["sleeping"] is True
 
+    def test_multi_roi_keeps_box_in_any_region(self):
+        result = {"detected": True, "boxes": [[500, 400, 600, 460]], "scores": [0.9]}
+        rois = [
+            [[0.0, 0.0], [0.3, 0.0], [0.3, 0.3], [0.0, 0.3]],
+            [[0.7, 0.7], [1.0, 0.7], [1.0, 1.0], [0.7, 1.0]],
+        ]
+        out = self.filter_by_roi(result, rois, False, 640, 480)
+        assert len(out["boxes"]) == 1
+        assert out["detected"] is True
+
+    def test_multi_roi_invert_keeps_outside_all_regions(self):
+        result = {"detected": True, "boxes": [[100, 100, 200, 200], [500, 400, 600, 460]], "scores": [0.9, 0.8]}
+        rois = [
+            [[0.0, 0.0], [0.3, 0.0], [0.3, 0.3], [0.0, 0.3]],
+            [[0.7, 0.7], [1.0, 0.7], [1.0, 1.0], [0.7, 1.0]],
+        ]
+        out = self.filter_by_roi(result, rois, True, 640, 480)
+        assert len(out["boxes"]) == 1
+
+    def test_single_roi_list_compatible(self):
+        """旧格式单个 polygon 仍应被识别为单区域"""
+        result = {"detected": True, "boxes": [[100, 100, 200, 200]], "scores": [0.9]}
+        roi = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+        out = self.filter_by_roi(result, roi, False, 640, 480)
+        assert len(out["boxes"]) == 1
+
 
 # ---------- check_box_count ----------
 
@@ -432,6 +458,7 @@ def test_static_filter_disabled_allows_static_target():
     md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
 
     assert md._cooldowns["cam1"]["fire"] > 0
+
 
 def test_alarm_description_persisted(tmp_path, monkeypatch):
     from backend.detection_registry import DetectionTypeRegistry, model_registry

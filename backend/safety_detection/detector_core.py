@@ -101,14 +101,15 @@ class TypeSchedule:
 
 def filter_by_roi(result: dict, roi: list, roi_invert: bool,
                   frame_width: int, frame_height: int) -> dict:
-    """按 ROI 多边形过滤检测框，保持 subjects 与 boxes 索引一致"""
+    """按 ROI 多边形过滤检测框，支持单个多边形或 polygon 列表，保持 subjects 与 boxes 索引一致"""
     if not roi:
         return result
 
-    polygon = np.array([
-        [int(x * frame_width), int(y * frame_height)]
-        for x, y in roi
-    ], dtype=np.int32)
+    # 兼容旧格式：单个多边形 [[x, y], ...]；新格式为 polygon 列表
+    if roi and len(roi) > 0 and len(roi[0]) > 0 and isinstance(roi[0][0], (int, float)):
+        rois = [roi]
+    else:
+        rois = roi
 
     filtered_boxes, filtered_scores = [], []
     filtered_subjects = []
@@ -117,8 +118,16 @@ def filter_by_roi(result: dict, roi: list, roi_invert: bool,
     for i, (box, score) in enumerate(zip(result.get("boxes", []), result.get("scores", []))):
         cx = (box[0] + box[2]) / 2
         cy = (box[1] + box[3]) / 2
-        inside = cv2.pointPolygonTest(polygon, (cx, cy), False) >= 0
-        keep = inside if not roi_invert else not inside
+        inside_any = False
+        for polygon_pts in rois:
+            polygon = np.array([
+                [int(x * frame_width), int(y * frame_height)]
+                for x, y in polygon_pts
+            ], dtype=np.int32)
+            if cv2.pointPolygonTest(polygon, (cx, cy), False) >= 0:
+                inside_any = True
+                break
+        keep = inside_any if not roi_invert else not inside_any
         if keep:
             filtered_boxes.append(box)
             filtered_scores.append(score)

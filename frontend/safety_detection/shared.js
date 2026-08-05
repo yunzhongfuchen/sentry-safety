@@ -207,7 +207,6 @@ function getSidebarContext() {
 }
 
 function renderSidebar(container, context) {
-    const expandedClass = context.settingsExpanded ? 'open' : '';
     container.innerHTML = `
         <aside class="app-sidebar">
             <div class="sidebar-brand">
@@ -225,24 +224,18 @@ function renderSidebar(container, context) {
                     <a href="/records.html" class="nav-item ${context.page === 'records' ? 'active' : ''}">
                         <span class="nav-item-label">记录</span>
                     </a>
-                </div>
-                <div class="nav-group">
-                    <button
-                        type="button"
-                        class="nav-item parent ${context.page === 'settings' ? 'active' : ''}"
-                        aria-expanded="${String(context.settingsExpanded)}"
-                        onclick="window.toggleSettingsNav && window.toggleSettingsNav()"
-                    >
-                        <span class="nav-item-label">设置</span>
-                        <span class="nav-item-caret">›</span>
-                    </button>
-                    <div class="nav-children ${expandedClass}">
-                        <a href="/settings.html?tab=cameras" class="nav-item child ${context.page === 'settings' && context.tab === 'cameras' ? 'active' : ''}">摄像头</a>
-                        <a href="/settings.html?tab=detection" class="nav-item child ${context.page === 'settings' && context.tab === 'detection' ? 'active' : ''}">检测配置</a>
-                        <a href="/models.html" class="nav-item child ${context.page === 'models' ? 'active' : ''}">模型管理</a>
-                        <a href="/algorithms.html" class="nav-item child ${context.page === 'algorithms' ? 'active' : ''}">算法管理</a>
-                        <a href="/settings.html?tab=system" class="nav-item child ${context.page === 'settings' && context.tab === 'system' ? 'active' : ''}">系统设置</a>
-                    </div>
+                    <a href="/settings.html?tab=cameras" class="nav-item ${context.page === 'settings' && context.tab === 'cameras' ? 'active' : ''}">
+                        <span class="nav-item-label">摄像头</span>
+                    </a>
+                    <a href="/models.html" class="nav-item ${context.page === 'models' ? 'active' : ''}">
+                        <span class="nav-item-label">模型管理</span>
+                    </a>
+                    <a href="/algorithms.html" class="nav-item ${context.page === 'algorithms' ? 'active' : ''}">
+                        <span class="nav-item-label">算法管理</span>
+                    </a>
+                    <a href="/settings.html?tab=system" class="nav-item ${context.page === 'settings' && context.tab === 'system' ? 'active' : ''}">
+                        <span class="nav-item-label">系统设置</span>
+                    </a>
                 </div>
             </nav>
         </aside>
@@ -313,4 +306,134 @@ function drawRoiOnCanvas(canvas, points, closed = false) {
         ctx.arc(x * w, y * h, 4, 0, Math.PI * 2);
         ctx.fill();
     }
+}
+
+function clamp01(v) {
+    return Math.max(0, Math.min(1, v));
+}
+
+function squareToPolygon(x1, y1, x2, y2) {
+    const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+    const half = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1)) / 2;
+    return [
+        [clamp01(cx - half), clamp01(cy - half)],
+        [clamp01(cx + half), clamp01(cy - half)],
+        [clamp01(cx + half), clamp01(cy + half)],
+        [clamp01(cx - half), clamp01(cy + half)],
+    ];
+}
+
+function diamondToPolygon(x1, y1, x2, y2) {
+    const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+    const rx = Math.abs(x2 - x1) / 2;
+    const ry = Math.abs(y2 - y1) / 2;
+    return [
+        [clamp01(cx), clamp01(cy - ry)],
+        [clamp01(cx + rx), clamp01(cy)],
+        [clamp01(cx), clamp01(cy + ry)],
+        [clamp01(cx - rx), clamp01(cy)],
+    ];
+}
+
+function ellipseToPolygon(x1, y1, x2, y2, segments = 32) {
+    const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+    const rx = Math.abs(x2 - x1) / 2;
+    const ry = Math.abs(y2 - y1) / 2;
+    const pts = [];
+    for (let i = 0; i < segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        pts.push([clamp01(cx + rx * Math.cos(a)), clamp01(cy + ry * Math.sin(a))]);
+    }
+    return pts;
+}
+
+function shapeToPolygon(region) {
+    if (region.shape === 'free') return region.points;
+    if (!region.drag.start || !region.drag.end) return null;
+    const [x1, y1] = region.drag.start;
+    const [x2, y2] = region.drag.end;
+    if (region.shape === 'square') return squareToPolygon(x1, y1, x2, y2);
+    if (region.shape === 'diamond') return diamondToPolygon(x1, y1, x2, y2);
+    if (region.shape === 'ellipse') return ellipseToPolygon(x1, y1, x2, y2);
+    return null;
+}
+
+function drawPolygon(ctx, points, w, h) {
+    ctx.beginPath();
+    ctx.moveTo(points[0][0] * w, points[0][1] * h);
+    for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i][0] * w, points[i][1] * h);
+    }
+    ctx.closePath();
+}
+
+function drawRegionPoints(ctx, region, w, h) {
+    ctx.fillStyle = '#22c55e';
+    if (region.shape === 'free') {
+        for (const [x, y] of region.points) {
+            ctx.beginPath();
+            ctx.arc(x * w, y * h, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    } else if (region.drag.start && region.drag.end) {
+        [region.drag.start, region.drag.end].forEach(([x, y]) => {
+            ctx.beginPath();
+            ctx.arc(x * w, y * h, 5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+}
+
+/**
+ * 根据当前 ROI 状态绘制形状（支持多个区域和反向框选）
+ * @param {HTMLCanvasElement} canvas
+ * @param {object} state - { regions: [{ shape, points, drag }], currentRegionIndex, invert }
+ */
+function drawRoiShape(canvas, state) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    const regions = state.regions || [];
+    const current = state.currentRegionIndex ?? 0;
+    ctx.clearRect(0, 0, w, h);
+
+    const validRegions = regions.map((r, i) => ({ poly: shapeToPolygon(r), idx: i })).filter(r => r.poly && r.poly.length >= 3);
+    if (validRegions.length === 0) return;
+
+    ctx.fillStyle = 'rgba(34, 197, 94, 0.35)';
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 2;
+
+    if (state.invert) {
+        ctx.fillRect(0, 0, w, h);
+        ctx.globalCompositeOperation = 'destination-out';
+        validRegions.forEach(({ poly }) => {
+            drawPolygon(ctx, poly, w, h);
+            ctx.fill();
+        });
+        ctx.globalCompositeOperation = 'source-over';
+        validRegions.forEach(({ poly, idx }) => {
+            ctx.setLineDash(idx === current ? [] : [6, 4]);
+            drawPolygon(ctx, poly, w, h);
+            ctx.stroke();
+        });
+        ctx.setLineDash([]);
+    } else {
+        validRegions.forEach(({ poly, idx }) => {
+            ctx.setLineDash(idx === current ? [] : [6, 4]);
+            drawPolygon(ctx, poly, w, h);
+            ctx.fill();
+            ctx.stroke();
+        });
+        ctx.setLineDash([]);
+    }
+
+    validRegions.forEach(({ poly, idx }) => {
+        drawRegionPoints(ctx, regions[idx], w, h);
+    });
+}
+
+/** @deprecated 使用 shapeToPolygon(region) */
+function _legacyShapeToPolygon(state) {
+    return shapeToPolygon(state);
 }

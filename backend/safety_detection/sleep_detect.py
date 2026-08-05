@@ -4,6 +4,7 @@
 """
 
 import logging
+import time
 
 import numpy as np
 from ultralytics import YOLO
@@ -118,6 +119,17 @@ def analyze_sleep(keypoints, bbox):
     # 6. 头埋臂弯信号
     head_hidden = head_visible_count == 0 and len(sh_y_vals) > 0
 
+    # 7. 头-肩二维位移（俯视/高角度下头与肩是"前后"关系，head_drop 的垂直假设失效）
+    head_shoulder_disp = 0.0
+    head_shoulder_dy = 0.0
+    if head_visible_count > 0 and len(sh_y_vals) > 0:
+        head_pts_2d = np.array([keypoints[i, :2] for i in head_kpt_indices
+                                if keypoints[i, 2] > KPT_CONF_THRESHOLD])
+        head_c = head_pts_2d.mean(axis=0)
+        sh_c = np.array([np.mean(sh_x_vals), np.mean(sh_y_vals)])
+        head_shoulder_disp = float(np.linalg.norm(head_c - sh_c) / max(bbox_h, 1))
+        head_shoulder_dy = float((head_c[1] - sh_c[1]) / max(bbox_h, 1))
+
     # ===== 综合判断: 是否在睡觉 =====
     # 办公室场景：看不到眼睛，只通过身体姿态判断
     # 目标：趴桌(头部明显下沉) 或 躺下(身体横卧) 才算异常
@@ -143,7 +155,34 @@ def analyze_sleep(keypoints, bbox):
         sleep_score = min(0.5 + head_drop_ratio, 1.0)
         is_sleeping = True
         sleep_reason = 'head_on_desk'
-    # 3. 其他情况都不算睡岗（包括轻微低头、正常办公、站立）
+    # 3. 头埋臂弯判定：头部关键点全部不可见但肩膀可见（趴睡时脸被手臂/桌面遮挡），
+    #    AR>0.7 排除背对摄像头站立/端坐的竖直框
+    elif head_hidden and aspect_ratio > 0.7:
+        sleep_score = 0.5
+        is_sleeping = True
+        sleep_reason = 'head_hidden'
+    # 4. 头侧靠/侧埋判定：头部关键点仅 1 个可见（侧趴时耳朵可见、脸被头发/手臂遮挡），
+    #    头不在肩膀上方（未抬头），框非竖直 → 侧趴睡
+    #    清醒坐姿可见头部关键点 ≥2，可见数是最稳的区分信号
+    elif (head_visible_count == 1 and len(sh_y_vals) > 0
+          and head_drop > -0.05 and aspect_ratio > 0.7):
+        sleep_score = 0.5
+        is_sleeping = True
+        sleep_reason = 'head_side'
+    # 5. 趴伏判定（俯视/高角度兜底）：头相对肩明显前移（二维位移 ≥0.13 倍框高），
+    #    且头几乎不低于肩膀水平线（dy ≥ -0.14），头部关键点 1-3 个可见。
+    #    dy 阈值 -0.14 的取舍（睡岗6_1 实测，低频抽帧场景宁漏勿误）：
+    #    - 高角度端坐者头在图像中仍明显高于肩（dy ≤ -0.16），被排除；
+    #    - 放宽到 -0.15 与清醒样本余量仅 0.01，姿态抖动即误报；
+    #    - 代价：浅趴睡者（dy -0.13~-0.15）命中减半，由其他规则部分兜底。
+    #    conf 0.5 低于告警阈值 0.7，仅进显示不单独告警。
+    elif (1 <= head_visible_count <= 3 and len(sh_y_vals) > 0
+          and aspect_ratio > 0.7
+          and head_shoulder_disp >= 0.13 and head_shoulder_dy >= -0.14):
+        sleep_score = 0.5
+        is_sleeping = True
+        sleep_reason = 'slumped'
+    # 6. 其他情况都不算睡岗（包括轻微低头、正常办公、站立）
     else:
         sleep_score = 0.0
         is_sleeping = False
@@ -167,9 +206,11 @@ def analyze_sleep(keypoints, bbox):
         posture_conf = max(1.0 - sleep_score, 0.1)
         scores = {}
 
-    sleep_reason = 'lying (AR)' if aspect_ratio > 1.5 and head_drop <= 0.1 else \
-                   'head_drop' if head_below_shoulder else \
-                   'head_hidden' if head_hidden else 'none'
+    # 旧版 reason 归一化：只对原有分支生效，不覆盖新分支的 reason
+    if sleep_reason in ('lying', 'head_on_desk', 'none'):
+        sleep_reason = 'lying (AR)' if aspect_ratio > 1.5 and head_drop <= 0.1 else \
+                       'head_drop' if head_below_shoulder else \
+                       'head_hidden' if head_hidden else 'none'
 
     return {
         'is_sleeping': is_sleeping,
@@ -189,6 +230,113 @@ def analyze_sleep(keypoints, bbox):
     }
 
 
+def _upper_body_quality(kp):
+    """上半身关键点质量：头(0-4)+肩(5,6) 置信度之和"""
+    return float(np.sum(kp[:7, 2]))
+
+
+def _inter_area(a, b):
+    x1 = max(a[0], b[0])
+    y1 = max(a[1], b[1])
+    x2 = min(a[2], b[2])
+    y2 = min(a[3], b[3])
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+def _box_iou(a, b):
+    inter = _inter_area(a, b)
+    if inter <= 0:
+        return 0.0
+    area_a = (a[2] - a[0]) * (a[3] - a[1])
+    area_b = (b[2] - b[0]) * (b[3] - b[1])
+    return inter / (area_a + area_b - inter + 1e-6)
+
+
+class SleepDisplayTracker:
+    """睡岗显示时序防抖：跨帧跟踪每个人，原始判定需持续一段时间才翻转显示状态。
+
+    单帧硬判决在阈值附近会逐帧翻转（画面闪烁）。本跟踪器做时间迟滞：
+    进入睡眠需持续 ENTER_SECONDS，退出需持续 EXIT_SECONDS。
+    这是机制级防抖，与具体判定阈值无关，对任何临界目标都稳定。
+    """
+
+    ENTER_SECONDS = 0.4
+    EXIT_SECONDS = 1.0
+    MAX_MISS_SECONDS = 1.5
+    MATCH_IOU = 0.3
+
+    def __init__(self, now=time.monotonic):
+        self._tracks = []
+        self._now = now
+
+    def update(self, subjects):
+        """输入本帧 subject 列表（含 box/sleeping/sleep_confidence），原地稳定后返回"""
+        now = self._now()
+        unmatched = list(range(len(self._tracks)))
+        for s in subjects:
+            box = s['box']
+            best_i, best_iou = None, self.MATCH_IOU
+            for i in unmatched:
+                iou = _box_iou(box, self._tracks[i]['box'])
+                if iou > best_iou:
+                    best_i, best_iou = i, iou
+            raw = bool(s.get('sleeping'))
+            if best_i is None:
+                track = {'box': box, 'display': False, 'last_raw': raw,
+                         'streak_start': now, 'last_conf': 0.0, 'last_seen': now}
+                self._tracks.append(track)
+            else:
+                unmatched.remove(best_i)
+                track = self._tracks[best_i]
+                track['box'] = box
+                track['last_seen'] = now
+                if raw != track['last_raw']:
+                    track['streak_start'] = now
+                    track['last_raw'] = raw
+            if raw and s.get('sleep_confidence'):
+                track['last_conf'] = s['sleep_confidence']
+            # 时间迟滞：状态翻转要求原始判定持续足够时长（epsilon 容差避免浮点累加误差）
+            if not track['display'] and raw and now - track['streak_start'] >= self.ENTER_SECONDS - 1e-6:
+                track['display'] = True
+            elif track['display'] and not raw and now - track['streak_start'] >= self.EXIT_SECONDS - 1e-6:
+                track['display'] = False
+            # 用稳定后的显示状态覆盖本帧输出
+            s['sleeping'] = track['display']
+            if track['display']:
+                if not raw:
+                    s['sleep_confidence'] = track['last_conf']
+            else:
+                s['sleep_confidence'] = 0.0
+        self._tracks = [t for t in self._tracks if now - t['last_seen'] <= self.MAX_MISS_SECONDS]
+        return subjects
+
+
+def dedupe_subjects(subjects, iou_thr=0.5, contain_thr=0.7):
+    """同一人重复框去重：IoU 高或一方被包含时，保留上半身关键点质量更高的框。
+
+    趴睡姿态下姿态模型可能对同一人输出"上半身"和"全身"两个框，
+    默认 NMS(iou=0.7) 拦不住，这里按上半身信息质量二次去重。
+    """
+    keep = []
+    ordered = sorted(subjects, key=lambda s: _upper_body_quality(s['keypoints']), reverse=True)
+    for s in ordered:
+        dup = False
+        for k in keep:
+            inter = _inter_area(s['box'], k['box'])
+            if inter <= 0:
+                continue
+            area_s = (s['box'][2] - s['box'][0]) * (s['box'][3] - s['box'][1])
+            area_k = (k['box'][2] - k['box'][0]) * (k['box'][3] - k['box'][1])
+            iou = inter / (area_s + area_k - inter + 1e-6)
+            containment = inter / (min(area_s, area_k) + 1e-6)
+            if iou >= iou_thr or containment >= contain_thr:
+                dup = True
+                break
+        if not dup:
+            keep.append(s)
+    return keep
+
+
 def process_frame(pose_model, frame, conf=0.25):
     """对单帧进行睡岗检测推理。
 
@@ -203,7 +351,8 @@ def process_frame(pose_model, frame, conf=0.25):
     """
     results = []
     try:
-        r = pose_model.predict(frame, conf=conf, verbose=False)
+        # iou=0.5 收紧模型自带 NMS（默认 0.7 对趴睡姿态的重复框太宽松）
+        r = pose_model.predict(frame, conf=conf, iou=0.5, verbose=False)
         if r and r[0].boxes is not None:
             for i in range(len(r[0].boxes)):
                 bbox = r[0].boxes.xyxy[i].cpu().numpy()
@@ -222,4 +371,4 @@ def process_frame(pose_model, frame, conf=0.25):
                     })
     except Exception as e:
         logging.getLogger(__name__).warning(f"Sleep detection inference error: {e}")
-    return results
+    return dedupe_subjects(results)

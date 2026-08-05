@@ -18,17 +18,17 @@ POST /cameras/add
 
 ### 请求参数
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `camera_id` | string | **是** | 摄像头唯一标识，不可重复 |
-| `source` | string | **是** | 视频源地址，如 RTSP 地址、本地摄像头索引、本地视频文件路径 |
-| `name` | string | 否 | 显示名称，默认空字符串 |
-| `enabled` | bool | 否 | 是否立即启用，默认 `true` |
-| `source_type` | string | 否 | 源类型：`"auto"` / `"camera"` / `"rtsp"`，默认 `"auto"` |
-| `width` | int | 否 | 分辨率宽，默认 `640` |
-| `height` | int | 否 | 分辨率高，默认 `480` |
-| `fps` | int | 否 | 帧率，默认 `15` |
-| `detection_types` | object | 否 | 检测类型配置，详见下方「检测类型配置」 |
+| 字段                | 类型   | 必填         | 说明                                                            |
+| ------------------- | ------ | ------------ | --------------------------------------------------------------- |
+| `camera_id`       | string | **是** | 摄像头唯一标识，不可重复                                        |
+| `source`          | string | **是** | 视频源地址，如 RTSP 地址、本地摄像头索引、本地视频文件路径      |
+| `name`            | string | 否           | 显示名称，默认空字符串                                          |
+| `enabled`         | bool   | 否           | 是否立即启用，默认`true`                                      |
+| `source_type`     | string | 否           | 源类型：`"auto"` / `"camera"` / `"rtsp"`，默认 `"auto"` |
+| `width`           | int    | 否           | 分辨率宽，默认`640`                                           |
+| `height`          | int    | 否           | 分辨率高，默认`480`                                           |
+| `fps`             | int    | 否           | 帧率，默认`15`                                                |
+| `detection_types` | object | 否           | 检测类型配置，详见下方「检测类型配置」                          |
 
 ### 请求示例
 
@@ -87,21 +87,21 @@ POST /cameras/{camera_id}/config
 
 ### 路径参数
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
+| 字段          | 类型   | 必填         | 说明              |
+| ------------- | ------ | ------------ | ----------------- |
 | `camera_id` | string | **是** | 要修改的摄像头 ID |
 
 ### 请求参数
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `name` | string | 否 | 显示名称 |
-| `source` | string | 否 | 视频源地址（修改时需要同时传 `source_type`） |
-| `source_type` | string | 否 | 源类型，与 `source` 配合使用 |
-| `width` | int | 否 | 分辨率宽 |
-| `height` | int | 否 | 分辨率高 |
-| `enabled` | bool | 否 | 启用/禁用摄像头 |
-| `detection_types` | object | 否 | 检测类型配置，详见下方「检测类型配置」 |
+| 字段                | 类型   | 必填 | 说明                                          |
+| ------------------- | ------ | ---- | --------------------------------------------- |
+| `name`            | string | 否   | 显示名称                                      |
+| `source`          | string | 否   | 视频源地址（修改时需要同时传`source_type`） |
+| `source_type`     | string | 否   | 源类型，与`source` 配合使用                 |
+| `width`           | int    | 否   | 分辨率宽                                      |
+| `height`          | int    | 否   | 分辨率高                                      |
+| `enabled`         | bool   | 否   | 启用/禁用摄像头                               |
+| `detection_types` | object | 否   | 检测类型配置，详见下方「检测类型配置」        |
 
 ### 请求示例
 
@@ -156,8 +156,8 @@ DELETE /cameras/{camera_id}
 
 ### 路径参数
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
+| 字段          | 类型   | 必填         | 说明              |
+| ------------- | ------ | ------------ | ----------------- |
 | `camera_id` | string | **是** | 要删除的摄像头 ID |
 
 ### 响应示例
@@ -186,25 +186,25 @@ DELETE /cameras/{camera_id}
 
 ### 支持的检测类型
 
-| 类型 | 说明 |
-|------|------|
-| `fire` | 火焰检测 |
-| `smoke` | 烟雾检测 |
-| `uniform` | 工服/反光背心检测 |
-| `mask` | 口罩佩戴检测 |
-| `cigarette` | 吸烟检测 |
-| `sleep` | 睡岗检测 |
+| 类型          | 说明              |
+| ------------- | ----------------- |
+| `fire`      | 火焰检测          |
+| `smoke`     | 烟雾检测          |
+| `uniform`   | 工服/反光背心检测 |
+| `mask`      | 口罩佩戴检测      |
+| `cigarette` | 吸烟检测          |
+| `sleep`     | 睡岗检测          |
 
 ### 单类型配置字段
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `enabled` | bool | 否 | 是否启用该类型检测，默认 `false` |
-| `interval` | float | 否 | 检测间隔（秒），默认按类型不同 |
-| `threshold` | float | 否 | 置信度阈值，默认按类型不同 |
-| `consecutive_required` | int | 否 | 连续检测到多少次才触发告警，默认按类型不同 |
-| `cooldown` | float | 否 | 两次告警之间的冷却时间（秒），默认按类型不同 |
-| `use_vlm` | bool | 否 | 是否使用 VLM 复核，默认 `false` |
+| 字段                     | 类型  | 必填 | 说明                                         |
+| ------------------------ | ----- | ---- | -------------------------------------------- |
+| `enabled`              | bool  | 否   | 是否启用该类型检测，默认`false`            |
+| `interval`             | float | 否   | 检测间隔（秒），默认按类型不同               |
+| `threshold`            | float | 否   | 置信度阈值，默认按类型不同                   |
+| `consecutive_required` | int   | 否   | 连续检测到多少次才触发告警，默认按类型不同   |
+| `cooldown`             | float | 否   | 两次告警之间的冷却时间（秒），默认按类型不同 |
+| `use_vlm`              | bool  | 否   | 是否使用 VLM 复核，默认`false`             |
 
 ### 各类型默认值
 
@@ -265,13 +265,13 @@ DELETE /cameras/{camera_id}
 
 ## 5. 其他相关接口
 
-| 接口 | 说明 |
-|------|------|
-| `GET /cameras` | 列出所有摄像头及其状态 |
-| `POST /cameras/{camera_id}/enable` | 启用指定摄像头 |
-| `POST /cameras/{camera_id}/disable` | 禁用指定摄像头 |
-| `POST /cameras/{camera_id}/source` | 只切换视频源 |
-| `POST /cameras/batch-config` | 批量修改多个摄像头的检测类型 |
+| 接口                                       | 说明                         |
+| ------------------------------------------ | ---------------------------- |
+| `GET /cameras`                           | 列出所有摄像头及其状态       |
+| `POST /cameras/{camera_id}/enable`       | 启用指定摄像头               |
+| `POST /cameras/{camera_id}/disable`      | 禁用指定摄像头               |
+| `POST /cameras/{camera_id}/source`       | 只切换视频源                 |
+| `POST /cameras/batch-config`             | 批量修改多个摄像头的检测类型 |
 | `POST /cameras/{camera_id}/reset-config` | 恢复单个摄像头到全局默认配置 |
 
 ---

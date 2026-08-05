@@ -128,23 +128,24 @@
         .log-entry:last-child { border-bottom: none; }
         .log-time { color: var(--text-muted); margin-right: 10px; }
 
-        .type-mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-        .type-mini-card { border: 1px solid var(--border); border-left: 4px solid; border-radius: 8px; padding: 12px; cursor: pointer; background: var(--bg-soft); transition: box-shadow 0.15s; }
-        .type-mini-card:hover { box-shadow: var(--glass-shadow); }
-        .type-mini-card-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
-        .type-mini-card-toggles { display: flex; gap: 14px; }
-        .type-mini-card-toggles label { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
-        .type-config-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1100; }
-        .type-config-box { background: var(--bg-soft); border: 1px solid var(--glass-edge); border-radius: var(--radius-lg); box-shadow: var(--glass-shadow); padding: 20px; width: 90%; max-width: 480px; max-height: 80vh; overflow-y: auto; }
-        .type-config-box h4 { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-        .type-param-row { display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-end; flex-wrap: wrap; }
-        .type-param { display: flex; flex-direction: column; gap: 4px; }
-        .type-param label { font-size: 12px; color: var(--text-muted); }
-        .type-param input { width: 80px; padding: 6px 8px; box-sizing: border-box; }
-        .type-param select { min-width: 170px; padding: 6px 8px; box-sizing: border-box; }
-        .type-param input[type="checkbox"] { width: auto; }
-        .type-checkbox-row { display: flex; gap: 16px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
-        .type-checkbox-row label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+        .algo-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+        .algo-card { border: 1px solid var(--border); border-left: 4px solid var(--glass-edge); border-radius: 8px; padding: 14px; background: var(--bg-soft); }
+        .algo-card-header { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+        .algo-card-remove { margin-left: auto; font-size: 18px; line-height: 1; padding: 2px 8px; }
+        .algo-card-meta { font-size: 12px; margin-bottom: 12px; }
+        .algo-card-actions { display: flex; gap: 8px; }
+
+        .roi-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+        .roi-toolbar button { padding: 6px 12px; font-size: 13px; }
+        .roi-invert-label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); cursor: pointer; margin-left: auto; }
+        .roi-canvas-wrap { position: relative; display: inline-block; max-width: 100%; }
+        .roi-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
+        .roi-fallback { position: relative; background: repeating-linear-gradient(45deg, var(--bg-soft), var(--bg-soft) 10px, var(--glass-edge) 10px, var(--glass-edge) 20px); border: 1px dashed var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
+        .roi-hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+        .roi-regions-list { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .roi-region-chip { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 16px; font-size: 12px; cursor: pointer; background: var(--bg-soft); }
+        .roi-region-chip.active { border-color: #22c55e; background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+        .roi-region-remove { font-size: 14px; line-height: 1; padding: 0 4px; }
     </style>
 </head>
 <body>
@@ -324,64 +325,83 @@
                     </div>
 
                     <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin: 20px 0 12px;">检测类型配置</div>
-                    <div class="type-mini-grid">
-                        <div v-for="t in detectionTypes" :key="t.key" class="type-mini-card" :style="{ borderLeftColor: t.color }" @click="openTypeConfig(t.key)">
-                            <div class="type-mini-card-title" :style="{ color: t.color }">{{ t.label }}</div>
-                            <div class="type-mini-card-toggles" @click.stop>
-                                <label><input type="checkbox" v-model="cameraDialog.detection_types[t.key].enabled" /> 启用</label>
+                    <div style="display: flex; gap: 10px; margin-bottom: 14px;">
+                        <select class="clay-select" v-model="selectedAlgorithmKey">
+                            <option value="">请选择算法</option>
+                            <option v-for="t in availableAlgorithms" :key="t.key" :value="t.key">{{ t.label }}</option>
+                        </select>
+                        <button class="clay-button" @click="addAlgorithm" :disabled="!selectedAlgorithmKey">添加</button>
+                    </div>
+                    <div v-if="!addedAlgorithms.length" style="color: var(--text-muted); font-size: 13px; padding: 8px 0;">未添加任何检测算法</div>
+                    <div class="algo-cards-grid">
+                        <div v-for="t in addedAlgorithms" :key="t.key" class="glass-card algo-card">
+                            <div class="algo-card-header">
+                                <span class="type-color-dot" :style="{ backgroundColor: t.color }"></span>
+                                <span :style="{ color: t.color }">{{ t.label }}</span>
+                                <button class="clay-button ghost algo-card-remove" @click="removeAlgorithm(t.key)" title="移除">×</button>
+                            </div>
+                            <div class="algo-card-meta">
+                                <span v-if="cameraDialog.detection_types[t.key].roi" style="color: var(--success);">已配置检测区域</span>
+                                <span v-else style="color: var(--text-muted);">未配置检测区域</span>
+                            </div>
+                            <div class="algo-card-actions">
+                                <button class="clay-button" @click="openRoiDialog(t.key)">{{ cameraDialog.detection_types[t.key].roi ? '重新框选' : '框选检测区域' }}</button>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="gc-modal-footer">
                     <button class="clay-button" @click="closeCameraDialog">取消</button>
-                    <button class="clay-button" @click="resetCameraTypes">恢复默认</button>
+                    <button class="clay-button" @click="resetCameraTypes">清空</button>
                     <button class="clay-button primary" @click="saveCamera">保存</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- 类型配置浮层 -->
-        <div v-if="typeConfigDialog" class="type-config-overlay" @click.self="typeConfigDialog = null">
-            <div class="type-config-box">
-                <h4>
-                    <span class="type-color-dot" :style="{ backgroundColor: typeConfigType.color }"></span>
-                    {{ typeConfigType.label }} — ROI 配置
-                </h4>
-                <!-- ROI -->
-                <div class="type-checkbox-row">
-                    <button class="clay-button" @click="openRoiDialog(typeConfigDialog)">绘制 ROI</button>
-                    <span v-if="cameraDialog.detection_types[typeConfigDialog].roi" style="color: var(--text-muted); font-size: 13px;">
-                        已绘制 {{ cameraDialog.detection_types[typeConfigDialog].roi.length }} 个顶点
-                        <button class="clay-button ghost" @click="cameraDialog.detection_types[typeConfigDialog].roi = null">清除</button>
-                    </span>
-                    <label><input type="checkbox" v-model="cameraDialog.detection_types[typeConfigDialog].roi_invert" /> 区域外报警</label>
-                </div>
-                <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
-                    <button class="clay-button primary" @click="typeConfigDialog = null">完成</button>
                 </div>
             </div>
         </div>
 
         <!-- ROI 绘制弹窗 -->
         <div v-if="roiDialog" class="gc-modal-overlay" @click.self="roiDialog = null">
-            <div class="gc-modal-box" style="max-width: 800px;">
+            <div class="gc-modal-box" style="max-width: 900px;">
                 <div class="gc-modal-header">
-                    <h3 style="font-size: 16px; font-weight: 700;">绘制 ROI — {{ roiDialog.dtype }}</h3>
+                    <h3 style="font-size: 16px; font-weight: 700;">框选检测区域 — {{ roiDialogLabel }}</h3>
                     <button class="clay-button ghost" @click="roiDialog = null">&times;</button>
                 </div>
                 <div class="gc-modal-body">
-                    <div v-if="roiDialog.snapshotFailed" style="padding: 40px; text-align: center; color: var(--text-muted);">
+                    <div class="roi-toolbar">
+                        <button class="clay-button" :class="{ primary: currentRegion.shape === 'square' }" @click="setRoiShape('square')">正方形</button>
+                        <button class="clay-button" :class="{ primary: currentRegion.shape === 'diamond' }" @click="setRoiShape('diamond')">菱形</button>
+                        <button class="clay-button" :class="{ primary: currentRegion.shape === 'ellipse' }" @click="setRoiShape('ellipse')">椭圆</button>
+                        <button class="clay-button" :class="{ primary: currentRegion.shape === 'free' }" @click="setRoiShape('free')">自选四点</button>
+                        <button class="clay-button" @click="addRoiRegion">+ 添加区域</button>
+                        <label class="roi-invert-label"><input type="checkbox" v-model="roiState.invert" @change="redrawRoi" /> 反向框选</label>
+                    </div>
+
+                    <div class="roi-regions-list">
+                        <div v-for="(r, i) in roiState.regions" :key="i"
+                            class="roi-region-chip"
+                            :class="{ active: roiState.currentRegionIndex === i }"
+                            @click="selectRegion(i)">
+                            区域 {{ i + 1 }}
+                            <button class="clay-button ghost roi-region-remove" @click.stop="removeRegion(i)" title="删除">×</button>
+                        </div>
+                    </div>
+
+                    <div v-if="roiState.snapshotFailed" class="roi-fallback" :style="roiFallbackStyle">
                         无法获取摄像头画面
                     </div>
-                    <div v-else style="position: relative; display: inline-block;">
-                        <img :src="roiDialog.snapshotUrl" style="max-width: 100%; display: block;" @load="onSnapshotLoad" @error="onSnapshotError" />
-                        <canvas ref="roiCanvas" style="position: absolute; top: 0; left: 0; cursor: crosshair;" @click="onRoiClick" @dblclick="onRoiDblClick"></canvas>
+                    <div v-else class="roi-canvas-wrap">
+                        <img :src="roiState.snapshotUrl" style="max-width: 100%; display: block;" @load="onSnapshotLoad" @error="onSnapshotError" />
+                        <canvas ref="roiCanvas" class="roi-canvas"
+                            @mousedown="onRoiMouseDown" @mousemove="onRoiMouseMove" @mouseup="onRoiMouseUp" @mouseleave="onRoiMouseUp"
+                            @click="onRoiClick"></canvas>
+                    </div>
+                    <div class="roi-hint">
+                        <span v-if="currentRegion.shape === 'free'">点击画布添加顶点，至少 3 点形成区域</span>
+                        <span v-else>在画面上拖动绘制形状</span>
                     </div>
                 </div>
                 <div class="gc-modal-footer">
                     <button class="clay-button" @click="roiDialog = null">取消</button>
-                    <button class="clay-button" @click="clearRoi">清除</button>
+                    <button class="clay-button" @click="clearCurrentRegion">清除当前</button>
                     <button class="clay-button primary" @click="saveRoi">保存</button>
                 </div>
             </div>
@@ -403,10 +423,21 @@
                 const detectorInfo = ref({});
                 const selectedCameras = ref([]);
                 const cameraDialog = ref(null);
-                const typeConfigDialog = ref(null);
                 const roiDialog = ref(null);
                 const roiCanvas = ref(null);
-                let roiPoints = [];
+                const selectedAlgorithmKey = ref('');
+                const roiState = ref({
+                    dtype: 'fire',
+                    snapshotUrl: '',
+                    snapshotFailed: false,
+                    invert: false,
+                    currentRegionIndex: 0,
+                    regions: [{
+                        shape: 'square',
+                        points: [],
+                        drag: { start: null, end: null, active: false }
+                    }]
+                });
                 const toast = ref(null);
                 const logs = ref([]);
                 const systemMode = ref('');
@@ -538,68 +569,88 @@
 
                 function closeCameraDialog() {
                     cameraDialog.value = null;
-                    typeConfigDialog.value = null;  // 联动关闭类型配置浮层
-                    roiDialog.value = null;  // 联动关闭 ROI 弹窗
+                    roiDialog.value = null;
+                    selectedAlgorithmKey.value = '';
                 }
 
                 function openCameraDialog(cam = null) {
-                    const defs = defaultDetectionTypes();
-                    const baseTypes = {};
-                    for (const key of Object.keys(defs)) {
-                        baseTypes[key] = { enabled: false, roi: null, roi_invert: false };
-                    }
                     if (cam) {
+                        const enabledTypes = {};
+                        for (const [key, cfg] of Object.entries(cam.detection_types || {})) {
+                            if (cfg.enabled) {
+                                enabledTypes[key] = {
+                                    roi: cfg.roi ? JSON.parse(JSON.stringify(cfg.roi)) : null,
+                                    roi_invert: !!cfg.roi_invert
+                                };
+                            }
+                        }
                         cameraDialog.value = {
                             ...JSON.parse(JSON.stringify(cam)),
-                            detection_types: { ...baseTypes, ...(cam.detection_types || {}) },
+                            detection_types: enabledTypes,
                             _existing: true
                         };
                     } else {
                         cameraDialog.value = {
                             camera_id: '', name: '', source: '', source_type: 'auto',
                             width: 640, height: 480, enabled: true,
-                            detection_types: baseTypes
+                            detection_types: {}
                         };
                     }
-                    typeConfigDialog.value = null;
+                    selectedAlgorithmKey.value = '';
                 }
 
-                const typeConfigType = computed(() => {
-                    if (!typeConfigDialog.value) return {};
-                    return detectionTypes.value.find(t => t.key === typeConfigDialog.value) || {};
+                const availableAlgorithms = computed(() => {
+                    if (!cameraDialog.value) return [];
+                    const added = new Set(Object.keys(cameraDialog.value.detection_types));
+                    return detectionTypes.value.filter(t => !added.has(t.key));
                 });
 
-                function openTypeConfig(key) {
-                    typeConfigDialog.value = key;
+                const addedAlgorithms = computed(() => {
+                    if (!cameraDialog.value) return [];
+                    return Object.keys(cameraDialog.value.detection_types).map(key => {
+                        const t = detectionTypes.value.find(x => x.key === key);
+                        return { key, label: t?.label || key, color: t?.color || '#94a3b8' };
+                    });
+                });
+
+                function addAlgorithm() {
+                    const key = selectedAlgorithmKey.value;
+                    if (!key || !cameraDialog.value) return;
+                    if (!cameraDialog.value.detection_types[key]) {
+                        cameraDialog.value.detection_types[key] = { roi: null, roi_invert: false };
+                    }
+                    selectedAlgorithmKey.value = '';
+                }
+
+                function removeAlgorithm(key) {
+                    if (!cameraDialog.value) return;
+                    const types = { ...cameraDialog.value.detection_types };
+                    delete types[key];
+                    cameraDialog.value.detection_types = types;
                 }
 
                 function resetCameraTypes() {
                     if (!cameraDialog.value) return;
-                    const defs = defaultDetectionTypes();
-                    const baseTypes = {};
-                    for (const key of Object.keys(defs)) {
-                        baseTypes[key] = { enabled: false, roi: null, roi_invert: false };
-                    }
-                    cameraDialog.value.detection_types = baseTypes;
+                    cameraDialog.value.detection_types = {};
                 }
 
                 async function saveCamera() {
                     const d = cameraDialog.value;
                     if (!d.camera_id || !d.source) { showToast('ID 和源地址必填', 'error'); return; }
-                    // 净化 detection_types，只保留 enabled, roi, roi_invert
-                    const keep = ['enabled', 'roi', 'roi_invert'];
-                    for (const key of Object.keys(d.detection_types)) {
-                        const cfg = d.detection_types[key];
-                        d.detection_types[key] = Object.fromEntries(
-                            Object.entries(cfg).filter(([k]) => keep.includes(k)));
+                    // 只保留添加的算法，且仅保留 roi/roi_invert
+                    const detection_types = {};
+                    for (const [key, cfg] of Object.entries(d.detection_types)) {
+                        detection_types[key] = { enabled: true };
+                        if (cfg.roi) detection_types[key].roi = JSON.parse(JSON.stringify(cfg.roi));
+                        if (cfg.roi_invert) detection_types[key].roi_invert = true;
                     }
                     try {
                         const url = d._existing ? `/cameras/${d.camera_id}/config` : '/cameras/add';
                         const payload = d._existing ? {
                             name: d.name, source: d.source, source_type: d.source_type,
                             width: d.width, height: d.height, enabled: d.enabled,
-                            detection_types: d.detection_types
-                        } : d;
+                            detection_types
+                        } : { ...d, detection_types };
                         const res = await fetch(url, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -613,12 +664,57 @@
                     } catch (e) { showToast('保存失败', 'error'); }
                 }
 
+                const roiDialogLabel = computed(() => {
+                    if (!roiDialog.value) return '';
+                    const t = detectionTypes.value.find(x => x.key === roiDialog.value);
+                    return t?.label || roiDialog.value;
+                });
+
+                const roiFallbackStyle = computed(() => {
+                    if (!cameraDialog.value) return {};
+                    const ratio = cameraDialog.value.height / Math.max(cameraDialog.value.width, 1);
+                    return { width: '100%', paddingBottom: `${ratio * 100}%` };
+                });
+
+                const currentRegion = computed(() => roiState.value.regions[roiState.value.currentRegionIndex] || roiState.value.regions[0]);
+
                 function openRoiDialog(dtype) {
                     const camId = cameraDialog.value.camera_id;
-                    roiDialog.value = { dtype, snapshotUrl: `/cameras/${camId}/snapshot?t=${Date.now()}`, snapshotFailed: false };
-                    roiPoints = cameraDialog.value.detection_types[dtype].roi
-                        ? JSON.parse(JSON.stringify(cameraDialog.value.detection_types[dtype].roi))
-                        : [];
+                    const existing = cameraDialog.value.detection_types[dtype] || {};
+                    const rawRoi = existing.roi;
+                    let regions;
+                    if (Array.isArray(rawRoi) && rawRoi.length > 0) {
+                        // 多区域：[[polygon1], [polygon2], ...]
+                        if (Array.isArray(rawRoi[0]) && Array.isArray(rawRoi[0][0])) {
+                            regions = rawRoi.map(poly => ({
+                                shape: 'free',
+                                points: JSON.parse(JSON.stringify(poly)),
+                                drag: { start: null, end: null, active: false }
+                            }));
+                        } else {
+                            // 旧格式单 polygon
+                            regions = [{
+                                shape: 'free',
+                                points: JSON.parse(JSON.stringify(rawRoi)),
+                                drag: { start: null, end: null, active: false }
+                            }];
+                        }
+                    } else {
+                        regions = [{
+                            shape: 'square',
+                            points: [],
+                            drag: { start: null, end: null, active: false }
+                        }];
+                    }
+                    roiState.value = {
+                        dtype,
+                        snapshotUrl: `/cameras/${camId}/snapshot?t=${Date.now()}`,
+                        snapshotFailed: false,
+                        invert: !!existing.roi_invert,
+                        currentRegionIndex: 0,
+                        regions
+                    };
+                    roiDialog.value = dtype;
                 }
 
                 function onSnapshotLoad(e) {
@@ -626,41 +722,105 @@
                     if (!canvas) return;
                     canvas.width = e.target.width;
                     canvas.height = e.target.height;
-                    drawRoiOnCanvas(canvas, roiPoints, roiPoints.length >= 3);
+                    drawRoiShape(canvas, roiState.value);
                 }
 
                 function onSnapshotError() {
-                    if (roiDialog.value) roiDialog.value.snapshotFailed = true;
+                    roiState.value.snapshotFailed = true;
+                }
+
+                function getRoiNormPoint(e) {
+                    const canvas = roiCanvas.value;
+                    const rect = canvas.getBoundingClientRect();
+                    return [clamp01((e.clientX - rect.left) / rect.width), clamp01((e.clientY - rect.top) / rect.height)];
+                }
+
+                function selectRegion(index) {
+                    if (index >= 0 && index < roiState.value.regions.length) {
+                        roiState.value.currentRegionIndex = index;
+                        drawRoiShape(roiCanvas.value, roiState.value);
+                    }
+                }
+
+                function addRoiRegion() {
+                    roiState.value.regions.push({
+                        shape: 'square',
+                        points: [],
+                        drag: { start: null, end: null, active: false }
+                    });
+                    roiState.value.currentRegionIndex = roiState.value.regions.length - 1;
+                    drawRoiShape(roiCanvas.value, roiState.value);
+                }
+
+                function removeRegion(index) {
+                    const regions = roiState.value.regions.filter((_, i) => i !== index);
+                    roiState.value.regions = regions;
+                    roiState.value.currentRegionIndex = Math.min(roiState.value.currentRegionIndex, regions.length - 1);
+                    if (regions.length === 0) addRoiRegion();
+                    drawRoiShape(roiCanvas.value, roiState.value);
+                }
+
+                function setRoiShape(shape) {
+                    const region = currentRegion.value;
+                    region.shape = shape;
+                    region.drag = { start: null, end: null, active: false };
+                    drawRoiShape(roiCanvas.value, roiState.value);
+                }
+
+                function redrawRoi() {
+                    drawRoiShape(roiCanvas.value, roiState.value);
+                }
+
+                function onRoiMouseDown(e) {
+                    const region = currentRegion.value;
+                    if (region.shape === 'free') return;
+                    const [x, y] = getRoiNormPoint(e);
+                    region.drag = { start: [x, y], end: [x, y], active: true };
+                    drawRoiShape(roiCanvas.value, roiState.value);
+                }
+
+                function onRoiMouseMove(e) {
+                    const region = currentRegion.value;
+                    if (region.shape === 'free' || !region.drag.active) return;
+                    region.drag.end = getRoiNormPoint(e);
+                    drawRoiShape(roiCanvas.value, roiState.value);
+                }
+
+                function onRoiMouseUp(e) {
+                    const region = currentRegion.value;
+                    if (region.shape === 'free' || !region.drag.active) return;
+                    region.drag.end = getRoiNormPoint(e);
+                    region.drag.active = false;
+                    drawRoiShape(roiCanvas.value, roiState.value);
                 }
 
                 function onRoiClick(e) {
-                    if (roiDialog.value && roiDialog.value.snapshotFailed) return;
-                    const canvas = roiCanvas.value;
-                    if (!canvas) return;
-                    const rect = canvas.getBoundingClientRect();
-                    const x = (e.clientX - rect.left) / rect.width;
-                    const y = (e.clientY - rect.top) / rect.height;
-                    roiPoints.push([x, y]);
-                    drawRoiOnCanvas(canvas, roiPoints, false);
+                    const region = currentRegion.value;
+                    if (region.shape !== 'free') return;
+                    const [x, y] = getRoiNormPoint(e);
+                    region.points.push([x, y]);
+                    drawRoiShape(roiCanvas.value, roiState.value);
                 }
 
-                function onRoiDblClick() {
-                    if (roiPoints.length < 3) { showToast('至少需要 3 个顶点', 'error'); return; }
-                    drawRoiOnCanvas(roiCanvas.value, roiPoints, true);
-                }
-
-                function clearRoi() {
-                    if (roiDialog.value && roiDialog.value.snapshotFailed) return;
-                    roiPoints = [];
-                    drawRoiOnCanvas(roiCanvas.value, [], false);
+                function clearCurrentRegion() {
+                    const region = currentRegion.value;
+                    region.points = [];
+                    region.drag = { start: null, end: null, active: false };
+                    drawRoiShape(roiCanvas.value, roiState.value);
                 }
 
                 function saveRoi() {
-                    if (roiDialog.value && roiDialog.value.snapshotFailed) { showToast('无法获取摄像头画面，不能保存 ROI', 'error'); return; }
-                    if (roiPoints.length < 3) { showToast('至少需要 3 个顶点', 'error'); return; }
-                    cameraDialog.value.detection_types[roiDialog.value.dtype].roi = roiPoints;
+                    if (roiState.value.snapshotFailed) { showToast('无法获取摄像头画面，不能保存 ROI', 'error'); return; }
+                    const polygons = [];
+                    for (const region of roiState.value.regions) {
+                        const poly = shapeToPolygon(region);
+                        if (poly && poly.length >= 3) polygons.push(poly);
+                    }
+                    if (polygons.length === 0) { showToast('请至少绘制一个有效区域', 'error'); return; }
+                    cameraDialog.value.detection_types[roiDialog.value].roi = polygons;
+                    cameraDialog.value.detection_types[roiDialog.value].roi_invert = roiState.value.invert;
                     roiDialog.value = null;
-                    showToast('ROI 已保存');
+                    showToast('检测区域已保存');
                 }
 
                 async function deleteCamera(id) {
@@ -733,11 +893,15 @@
 
                 return {
                     tab, sidebar, cameras, settings, models, detectorInfo, selectedCameras,
-                    cameraDialog, typeConfigDialog, typeConfigType, roiDialog, roiCanvas, toast, logs, systemMode, detectionTypes,
+                    cameraDialog, roiDialog, roiCanvas, toast, logs, systemMode, detectionTypes,
+                    selectedAlgorithmKey, roiState, currentRegion, availableAlgorithms, addedAlgorithms, roiDialogLabel, roiFallbackStyle,
                     loadCameras, loadSettings, loadModels,
                     saveVlmSettings, saveDefaultTypes, saveSystemSettings,
                     openCameraDialog, closeCameraDialog, resetCameraTypes, saveCamera, deleteCamera,
-                    openTypeConfig, openRoiDialog, onSnapshotLoad, onSnapshotError, onRoiClick, onRoiDblClick, clearRoi, saveRoi,
+                    addAlgorithm, removeAlgorithm,
+                    openRoiDialog, onSnapshotLoad, onSnapshotError,
+                    onRoiMouseDown, onRoiMouseMove, onRoiMouseUp, onRoiClick,
+                    setRoiShape, redrawRoi, addRoiRegion, removeRegion, selectRegion, clearCurrentRegion, saveRoi,
                     toggleSelectAll,
                     restartSystem, toggleSettingsNav
                 };

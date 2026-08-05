@@ -1105,10 +1105,11 @@ async def update_camera_config(camera_id: str, data: dict):
     if camera_manager is None or multi_detector is None:
         return JSONResponse({"error": "Not initialized"}, status_code=500)
 
+    has_types = "algorithms" in data or "detection_types" in data
     detection_types = sanitize_camera_algorithms(
         data.get("algorithms") or data.get("detection_types") or {}
     )
-    if detection_types:
+    if has_types:
         multi_detector.update_camera_config(camera_id, detection_types)
 
     # 更新运行时配置
@@ -1132,7 +1133,7 @@ async def update_camera_config(camera_id: str, data: dict):
                     camera_manager.start_camera(camera_id)
             else:
                 camera_manager.stop_camera(camera_id)
-        if detection_types:
+        if has_types:
             cfg.detection_types = detection_types
 
     # 持久化
@@ -1151,7 +1152,7 @@ async def update_camera_config(camera_id: str, data: dict):
                 cam["height"] = int(data["height"])
             if "enabled" in data:
                 cam["enabled"] = bool(data["enabled"])
-            if detection_types:
+            if has_types:
                 cam["algorithms"] = detection_types
             break
     app_config.save_camera_configs(cameras)
@@ -1517,6 +1518,7 @@ class SelectedCameraDisplay:
         self._frame_timestamp: float = 0.0
         self._last_detection_results: Dict[str, dict] = {}
         self._overlay_expires_at: float = 0.0
+        self._sleep_tracker = None  # 睡岗显示防抖，切换摄像头时重置
 
     @staticmethod
     def _clamp_display_interval(value: float) -> float:
@@ -1542,6 +1544,7 @@ class SelectedCameraDisplay:
             # 不清空 _latest_frame：继续显示旧画面直到新 session 有帧，避免切换黑屏
             self._last_detection_results = {}
             self._overlay_expires_at = 0.0
+            self._sleep_tracker = None  # 换摄像头后跟踪状态作废，重新建立
 
         if camera_id is not None and self._running:
             threading.Thread(
@@ -1710,6 +1713,21 @@ class SelectedCameraDisplay:
                 time.sleep(0.1)
         log_message("SelectedCameraDisplay display loop stopped")
 
+    def _stabilize_pose_results(self, results: dict):
+        """对含 subjects 的姿态类结果做时序防抖，消除阈值附近的逐帧闪烁。"""
+        subjects_results = [res for res in results.values() if res and res.get("subjects")]
+        if not subjects_results:
+            return
+        if self._sleep_tracker is None:
+            from safety_detection.sleep_detect import SleepDisplayTracker
+            self._sleep_tracker = SleepDisplayTracker()
+        for res in subjects_results:
+            self._sleep_tracker.update(res["subjects"])
+            res["count"] = sum(1 for s in res["subjects"] if s.get("sleeping"))
+            res["detected"] = res["count"] > 0
+            res["scores"] = [s.get("sleep_confidence", 0) for s in res["subjects"]]
+            res["max_confidence"] = max(res["scores"]) if res["scores"] else 0.0
+
     def _detect_loop(self):
         """检测循环：按配置间隔直接对最新帧做推理并更新显示缓存。
 
@@ -1745,6 +1763,7 @@ class SelectedCameraDisplay:
                 try:
                     safety_detector.ensure_models_loaded(types_to_detect)
                     results = safety_detector.detect(frame.copy(), types_to_detect)
+                    self._stabilize_pose_results(results)
                 except Exception as e:
                     logger.error(f"SelectedCameraDisplay {camera_id} detection error: {e}")
                     continue

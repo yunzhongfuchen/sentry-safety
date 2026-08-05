@@ -130,6 +130,26 @@ class ModelRegistry:
         path = WEIGHTS_DIR / m["file"]
         return str(path) if path.exists() else None
 
+    def replace_model_file(self, key: str, filename: str, content: bytes) -> Path:
+        """更换模型文件，保留 key 与 name，更新 file / file_size / uploaded_at / 元数据"""
+        m = self.get(key)
+        if m is None:
+            raise KeyError(f"Unknown model: {key}")
+        old_file = m.get("file")
+        path = self.save_model_file(filename, content)
+        meta = parse_model_metadata(path)
+        m["file"] = path.name
+        m["file_size"] = len(content)
+        m["uploaded_at"] = datetime.now(timezone.utc).isoformat()
+        m["post_process"] = meta.get("post_process", m.get("post_process", "yolo_box"))
+        m["class_names"] = meta.get("class_names", {})
+        self._save()
+        if old_file and old_file != path.name:
+            old_path = WEIGHTS_DIR / old_file
+            if old_path.exists():
+                old_path.unlink()
+        return path
+
 
 model_registry = ModelRegistry()
 model_registry.load()
