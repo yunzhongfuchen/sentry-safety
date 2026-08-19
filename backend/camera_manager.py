@@ -66,6 +66,7 @@ class CameraState:
     status: CameraStatus = CameraStatus.IDLE
     cap: Optional[cv2.VideoCapture] = None
     current_frame: Optional[np.ndarray] = None
+    frame_seq: int = 0
     last_frame_time: float = 0
     frame_count: int = 0
     error_count: int = 0
@@ -351,6 +352,15 @@ class CameraManager:
             state = self._cameras[camera_id]
             with state.lock:
                 return state.current_frame.copy() if state.current_frame is not None else None
+
+    def get_frame_seq(self, camera_id: str) -> int:
+        """当前帧序号（解码线程每写一帧 +1），无此摄像头返回 -1"""
+        with self._lock:
+            state = self._cameras.get(camera_id)
+        if state is None:
+            return -1
+        with state.lock:
+            return state.frame_seq
 
     def get_latest_frame(self, camera_id: str) -> Optional[np.ndarray]:
         """获取指定摄像头的最新帧"""
