@@ -89,7 +89,7 @@
                 <div class="form-field"><label>模型名称（默认取文件名）</label><input v-model="uploadName" placeholder="如：漏液检测模型" /></div>
                 <div class="form-field">
                     <label>选择文件 (.pt / .rknn)</label>
-                    <input type="file" accept=".pt,.rknn" @change="e => uploadFile = e.target.files[0]" />
+                    <input type="file" accept=".pt,.rknn" @change="onUploadFileChange" />
                     <span class="hint">.pt 上传后自动解析类别清单，可能需要几秒钟</span>
                 </div>
                 <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
@@ -154,7 +154,7 @@
                 const replacing = ref(false);
                 const toast = ref(null);
                 const sidebar = ref(getSidebarContext());
-                let uploadFile = null;
+                const uploadFile = ref(null);
                 const replaceFile = ref(null);
 
                 sidebar.value.page = 'models';
@@ -171,11 +171,15 @@
                     } catch (e) { showToast('加载模型失败', 'error'); }
                 }
 
+                function onUploadFileChange(e) {
+                    uploadFile.value = e.target.files ? e.target.files[0] : null;
+                }
+
                 async function doUpload() {
-                    if (!uploadFile) { showToast('请选择文件', 'error'); return; }
+                    if (!uploadFile.value) { showToast('请选择文件', 'error'); return; }
                     uploading.value = true;
                     const formData = new FormData();
-                    formData.append('file', uploadFile);
+                    formData.append('file', uploadFile.value);
                     try {
                         const res = await fetch(`/models/upload?name=${encodeURIComponent(uploadName.value)}`, {
                             method: 'POST', body: formData
@@ -184,7 +188,7 @@
                             showToast('上传成功');
                             uploadDialog.value = false;
                             uploadName.value = '';
-                            uploadFile = null;
+                            uploadFile.value = null;
                             loadModels();
                         } else {
                             const err = await res.json();
@@ -267,7 +271,7 @@
                     loadModels();
                 });
 
-                return { models, uploadDialog, uploadName, uploading, editDialog, replaceDialog, replacing, toast, sidebar, doUpload, openEdit, saveEdit, deleteModel, openReplace, doReplace, onReplaceFileChange };
+                return { models, uploadDialog, uploadName, uploading, editDialog, replaceDialog, replacing, toast, sidebar, doUpload, onUploadFileChange, openEdit, saveEdit, deleteModel, openReplace, doReplace, onReplaceFileChange };
             }
         }).mount('#app');
     </script>

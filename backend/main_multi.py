@@ -4,6 +4,7 @@ Sentry 多摄像头版本主程序
 """
 
 import asyncio
+import base64
 import concurrent.futures
 import os
 import sys
@@ -67,6 +68,8 @@ try:
     from safety_detection.api import router as safety_router
     from alarm_state import create_record, apply_vlm_review, confirm_alarm, confirm_false_positive
     from backend.frame_utils import draw_timestamp_on_frame
+    from backend.alarm_push import PushManager
+    from backend.alarm_push.webhook import WebhookChannel
 except ImportError as e:
     logger.error(f"Import error: {e}")
     raise
@@ -100,6 +103,8 @@ stream_server = get_stream_server()
 _global_settings: dict = {}
 gpu_scheduler = None
 _save_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+# 报警推送管理器（init_components 中根据配置构建，无启用通道时 push 为空操作）
+push_manager: Optional[PushManager] = None
 
 # 状态管理
 _status_lock = threading.Lock()
@@ -175,6 +180,7 @@ def on_trigger(camera_id: str, dtype: str, frame: Optional[np.ndarray], result: 
 
     trigger_ts = time.time()
     record_id = f"{camera_id}_{dtype}_{int(trigger_ts * 1000)}"
+    snapshot_bytes = None
 
     # 保存快照（只画触发类型的框）
     if frame is not None:
@@ -206,8 +212,8 @@ def on_trigger(camera_id: str, dtype: str, frame: Optional[np.ndarray], result: 
     mark_records_dirty()
 
     # 保存检测帧序列
+    detection_frames = result.get("detection_frames", [])
     try:
-        detection_frames = result.get("detection_frames", [])
         record["frame_count"] = len(detection_frames)
 
         if _save_executor is not None:
@@ -223,6 +229,20 @@ def on_trigger(camera_id: str, dtype: str, frame: Optional[np.ndarray], result: 
             )
     except Exception as e:
         logger.error(f"Failed to schedule detection frames save for {record_id}: {e}")
+
+    # 推送 alarm.created（后台线程，不阻塞检测主流程）
+    if push_manager is not None and push_manager.enabled:
+        try:
+            snapshot_b64 = base64.b64encode(snapshot_bytes).decode("utf-8") if frame is not None else None
+            frames_b64 = [base64.b64encode(fb).decode("utf-8") for _, fb in detection_frames]
+            threading.Thread(
+                target=push_manager.push_created,
+                args=(record, snapshot_b64, frames_b64),
+                daemon=True,
+                name=f"alarm-push-{record_id}",
+            ).start()
+        except Exception as e:
+            logger.error(f"Failed to schedule alarm push for {record_id}: {e}")
 
 
 def _convert_ultralytics_result(dtype: str, result) -> Optional[dict]:
@@ -287,12 +307,21 @@ def init_components():
     """初始化所有组件（新架构）"""
     global camera_manager, safety_detector, multi_detector
     global vlm_queue, vlm_inspector, stream_server, _global_settings, gpu_scheduler
+    global push_manager
 
     log_message("Initializing Sentry Safety Detection System...")
 
     # 1. 加载全局配置
     _global_settings = app_config.load_global_settings()
     log_message(f"Global settings loaded")
+
+    # 1.1 构建报警推送通道（后续新增飞书/钉钉在此追加）
+    push_channels = []
+    webhook_url = _global_settings.get("alarm_push_webhook_url", "").strip()
+    if webhook_url:
+        push_channels.append(WebhookChannel(webhook_url, log=log_message))
+        log_message(f"Alarm push webhook enabled: {webhook_url}")
+    push_manager = PushManager(push_channels)
 
     # 2. 初始化摄像头管理器
     camera_manager = CameraManager()
@@ -384,6 +413,14 @@ def init_components():
         if updated_record:
             mark_records_dirty()
             log_message(f"Record {record_id} updated by VLM: level={updated_record['level']}, status={updated_record['status']}")
+            # 推送 alarm.reviewed（后台线程，不阻塞主流程）
+            if push_manager is not None and push_manager.enabled:
+                threading.Thread(
+                    target=push_manager.push_reviewed,
+                    args=(updated_record,),
+                    daemon=True,
+                    name=f"alarm-push-reviewed-{record_id}",
+                ).start()
 
     multi_detector = MultiDetector(
         camera_manager=camera_manager,
@@ -868,9 +905,10 @@ async def enable_camera(camera_id: str):
     
     # 更新配置中的 enabled 状态
     with camera_manager._lock:
-        if camera_id in camera_manager._cameras:
-            camera_manager._cameras[camera_id].config.enabled = True
-    
+        if camera_id not in camera_manager._cameras:
+            return JSONResponse({"error": "Camera not found"}, status_code=404)
+        camera_manager._cameras[camera_id].config.enabled = True
+
     camera_manager.start_camera(camera_id)
     
     # 保存配置到文件
@@ -887,9 +925,10 @@ async def disable_camera(camera_id: str):
     
     # 更新配置中的 enabled 状态
     with camera_manager._lock:
-        if camera_id in camera_manager._cameras:
-            camera_manager._cameras[camera_id].config.enabled = False
-    
+        if camera_id not in camera_manager._cameras:
+            return JSONResponse({"error": "Camera not found"}, status_code=404)
+        camera_manager._cameras[camera_id].config.enabled = False
+
     camera_manager.stop_camera(camera_id)
     
     # 保存配置到文件
@@ -1105,6 +1144,12 @@ async def update_camera_config(camera_id: str, data: dict):
     if camera_manager is None or multi_detector is None:
         return JSONResponse({"error": "Not initialized"}, status_code=500)
 
+    # 存在性校验：运行时与持久化配置中都不存在 → 404，避免静默"假成功"
+    state = camera_manager._cameras.get(camera_id)
+    cameras = app_config.load_camera_configs()
+    if state is None and not any(c["camera_id"] == camera_id for c in cameras):
+        return JSONResponse({"error": "Camera not found"}, status_code=404)
+
     has_types = "algorithms" in data or "detection_types" in data
     detection_types = sanitize_camera_algorithms(
         data.get("algorithms") or data.get("detection_types") or {}
@@ -1113,7 +1158,6 @@ async def update_camera_config(camera_id: str, data: dict):
         multi_detector.update_camera_config(camera_id, detection_types)
 
     # 更新运行时配置
-    state = camera_manager._cameras.get(camera_id)
     if state:
         cfg = state.config
         if "name" in data:
@@ -1137,7 +1181,6 @@ async def update_camera_config(camera_id: str, data: dict):
             cfg.detection_types = detection_types
 
     # 持久化
-    cameras = app_config.load_camera_configs()
     for cam in cameras:
         if cam["camera_id"] == camera_id:
             if "name" in data:
@@ -1173,14 +1216,27 @@ async def batch_camera_config(data: dict):
     )
 
     cameras = app_config.load_camera_configs()
+    persisted_ids = {c["camera_id"] for c in cameras}
+    updated, not_found = [], []
+    for cid in camera_ids:
+        if cid in persisted_ids or cid in camera_manager._cameras:
+            updated.append(cid)
+        else:
+            not_found.append(cid)
+
     for cam in cameras:
-        if cam["camera_id"] in camera_ids:
+        if cam["camera_id"] in updated:
             cam["algorithms"] = detection_types
-            multi_detector.update_camera_config(cam["camera_id"], detection_types)
+    for cid in updated:
+        # 同步运行时配置，避免后续 save_camera_configs 用旧值覆盖本次批量修改
+        state = camera_manager._cameras.get(cid)
+        if state:
+            state.config.detection_types = detection_types
+        multi_detector.update_camera_config(cid, detection_types)
 
     app_config.save_camera_configs(cameras)
-    log_message(f"Batch config updated for {len(camera_ids)} cameras")
-    return {"success": True, "updated": camera_ids}
+    log_message(f"Batch config updated for {len(updated)} cameras")
+    return {"success": True, "updated": updated, "not_found": not_found}
 
 
 @app.post("/cameras/{camera_id}/reset-config")
@@ -1252,6 +1308,8 @@ async def switch_camera_source(camera_id: str, data: dict):
     source_type = data.get("source_type", "auto")
     if not source:
         return JSONResponse({"error": "source is required"}, status_code=400)
+    if camera_id not in camera_manager._cameras:
+        return JSONResponse({"error": "Camera not found"}, status_code=404)
 
     success = camera_manager.set_camera_source(camera_id, source, source_type)
     if success:
@@ -1303,6 +1361,11 @@ async def add_camera(data: dict):
     """动态添加摄像头"""
     if camera_manager is None:
         return JSONResponse({"error": "Camera manager not initialized"}, status_code=500)
+
+    if not data.get("camera_id"):
+        return JSONResponse({"error": "camera_id is required"}, status_code=400)
+    if not data.get("source"):
+        return JSONResponse({"error": "source is required"}, status_code=400)
 
     try:
         from camera_manager import CameraConfig

@@ -151,6 +151,8 @@ def get_default_global_settings() -> dict:
         "display_detection_types": ddt,
         "display_detection_interval": 1.0,
         "save_image_timestamp": True,
+        # 报警推送：webhook 接收地址，空字符串表示不推送
+        "alarm_push_webhook_url": "",
     }
 
 
@@ -175,6 +177,7 @@ except Exception:
         "display_detection_types": {"fire": True, "smoke": True, "uniform": True, "mask": True, "cigarette": True, "sleep": True},
         "display_detection_interval": 1.0,
         "save_image_timestamp": True,
+        "alarm_push_webhook_url": "",
     }
 
 # ==================== 默认摄像头参数（全局模板） ====================

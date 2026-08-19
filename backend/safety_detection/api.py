@@ -262,10 +262,10 @@ async def test_alert(camera_id: str, data: dict, request: Request):
 @router.get("/models")
 async def list_model_entries():
     """模型列表（含被引用算法数）"""
-    in_use = registry.get_model_keys_in_use()
+    counts = registry.get_model_usage_counts()
     models = []
     for m in model_registry.to_api_list():
-        m["used_by"] = 1 if m["key"] in in_use else 0
+        m["used_by"] = counts.get(m["key"], 0)
         models.append(m)
     return {"models": models}
 

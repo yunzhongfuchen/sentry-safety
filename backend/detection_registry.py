@@ -373,6 +373,15 @@ class DetectionTypeRegistry:
     def get_model_keys_in_use(self) -> set[str]:
         return {td.get("model_key") for td in self._types.values() if td.get("model_key")}
 
+    def get_model_usage_counts(self) -> dict[str, int]:
+        """每个模型被多少个算法引用（模型管理页 used_by 展示用）"""
+        counts: dict[str, int] = {}
+        for td in self._types.values():
+            mk = td.get("model_key")
+            if mk:
+                counts[mk] = counts.get(mk, 0) + 1
+        return counts
+
     def get_color_bgr(self, dtype: str) -> tuple[int, int, int]:
         td = self._types.get(dtype)
         if td is None:

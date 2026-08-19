@@ -363,6 +363,14 @@ class TestAlgorithmModelKey:
         r.add_type({"label": "漏液", "color": "#facc15", "model_key": mkey})
         assert mkey in r.get_model_keys_in_use()
 
+    def test_get_model_usage_counts_multiple_algorithms(self, both):
+        """同一模型被多个算法引用时返回真实引用数（used_by 展示用）"""
+        r, mr, mkey = both
+        assert mkey not in r.get_model_usage_counts()
+        r.add_type({"label": "安全帽", "color": "#facc15", "model_key": mkey})
+        r.add_type({"label": "反光背心", "color": "#facc15", "model_key": mkey})
+        assert r.get_model_usage_counts()[mkey] == 2
+
     def test_model_path_none_when_model_deleted(self, both):
         r, mr, mkey = both
         key = r.add_type({"label": "漏液", "color": "#facc15", "model_key": mkey})

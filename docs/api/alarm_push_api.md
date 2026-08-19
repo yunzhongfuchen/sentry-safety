@@ -16,7 +16,7 @@
 | 地址     | 由接收方提供，如`https://<接收方>/api/alarm`                                                       |
 | 请求头   | `Content-Type: application/json; charset=utf-8Authorization: Bearer <token>`（token 双方线下约定） |
 | 成功响应 | HTTP 200，body`{"code": 0}`                                                                        |
-| 失败处理 | 其余响应视为失败；推送方按 5s / 30s / 5min 间隔重试 3 次（复用同一`event_id`），仍失败记死信日志   |
+| 失败处理 | 其余响应视为失败；推送方**失败即丢弃**，仅记录日志，不重试（避免阻塞检测主流程）                   |
 | 幂等     | 接收方以`event_id` 去重；同一 `data.id` 的报文按后者覆盖前者（upsert）                           |
 
 ## 2. 报文结构
@@ -50,7 +50,7 @@
 
 - 只有**启用了 VLM 复核的算法**才会产生 `alarm.reviewed`；未启用的算法只有 `alarm.created` 一条
 - 复核结论可能是确认（`vlm_alarm`）也可能是排除（`vlm_ignore`），两种都会推送
-- `alarm.reviewed` 一定晚于同记录的 `alarm.created` 到达（推送方按序发送），接收方以 `data.id` 关联两条报文
+- `alarm.reviewed` 通常晚于同记录的 `alarm.created` 产生，但两条报文经独立后台线程推送、失败即丢弃，**接收方不应假设严格的到达顺序或两者都必达**，以 `data.id` + `event` 关联去重
 
 ## 4. data 字段说明
 
