@@ -66,8 +66,8 @@ def test_overlap_miss():
     assert evaluate_rule(raw, rule)["detected"] is False
 
 def test_above():
-    # 人中心 y=50 高于脚手架顶部 y=100，且水平重叠
-    raw = {"m": [_box(100, 0, 160, 100, 1, 0.9), _box(90, 100, 300, 300, 4, 0.8)]}
+    # 人中心 y=60 高于脚手架顶部 y=100，且与脚手架有重叠（inter/area=0.167）
+    raw = {"m": [_box(100, 0, 160, 120, 1, 0.9), _box(90, 100, 300, 300, 4, 0.8)]}
     rule = _rule({"left": _side(1), "op": "above", "right": _side(4), "iou": 0.001})
     assert evaluate_rule(raw, rule)["detected"] is True
 
@@ -98,7 +98,7 @@ def test_pure_global_hit_conf_is_1():
 ```python
 def test_same_left_binds_same_object():
     # 张三(在脚手架上,含安全带) + 李四(不在脚手架上,不含安全带) → 不得拼合命中
-    zhang = _box(100, 0, 160, 100, 1, 0.9)     # 在脚手架上
+    zhang = _box(100, 0, 160, 120, 1, 0.9)    # 在脚手架上
     li = _box(400, 300, 460, 500, 1, 0.9)      # 在地面上
     scaffold = _box(90, 100, 300, 300, 4, 0.8)
     harness = _box(110, 20, 150, 60, 5, 0.8)   # 张三的安全带
@@ -111,7 +111,7 @@ def test_same_left_binds_same_object():
 
 def test_same_left_binds_same_object_hit():
     # 李四在脚手架上且不含安全带 → 命中，报李四
-    li = _box(100, 0, 160, 100, 1, 0.9)
+    li = _box(100, 0, 160, 120, 1, 0.9)
     zhang = _box(400, 300, 460, 500, 1, 0.9)
     scaffold = _box(90, 100, 300, 300, 4, 0.8)
     harness = _box(410, 320, 450, 360, 5, 0.8)  # 张三(地面)的安全带
@@ -121,7 +121,7 @@ def test_same_left_binds_same_object_hit():
         {"left": _side(1), "op": "not_contain", "right": _side(5), "ratio": 0.5},
     )
     r = evaluate_rule(raw, rule)
-    assert r["detected"] is True and r["boxes"] == [[100, 0, 160, 100]]
+    assert r["detected"] is True and r["boxes"] == [[100, 0, 160, 120]]
 
 def test_groups_or():
     raw = {"m": [_box(0, 0, 10, 10, 2, 0.9)]}
@@ -392,7 +392,7 @@ git commit -m "feat: 组合规则求值器（条件组DNF + 同左侧对象绑�
         "label": "明火",
         "color": "#ef4444",
         "post_process": "yolo_relation",
-        "models": [{"model_key": "fire_smoke", "model_confidence": 0.5}],
+        "models": [{"model_key": "fire_smoke", "model_path": "fire_smoke.pt", "model_confidence": 0.5}],
         "rule": {"groups": [{"conditions": [
             {"left": {"model_key": "fire_smoke", "classes": [0]}, "op": "exists"}
         ]}]},
@@ -402,8 +402,8 @@ git commit -m "feat: 组合规则求值器（条件组DNF + 同左侧对象绑�
     },
 ```
 
-- sleep 条目：`"post_process": "yolo_pose"`，`"models": [{"model_key": "yolov8n-pose", "model_confidence": 0.1}]`，`"rule": None`，删除 `classes`。
-- 内置条目引用的 model_key（fire_smoke / uniform / mask / cigarette / yolov8n-pose）由迁移逻辑按 model_path 生成（见 Step 2，key = 文件名 stem，与 `_migrate_type_dicts` 现有行为一致）。
+- sleep 条目：`"post_process": "yolo_pose"`，`"models": [{"model_key": "yolov8n-pose", "model_path": "yolov8n-pose.pt", "model_confidence": 0.1}]`，`"rule": None`，删除 `classes`。
+- **内置条目必须在 models 里带 `model_path`**：全新安装时 `migrate_legacy_registry` 用它播种 models.json。`_migrate_type_dicts` 需同步改造：从 `models[].model_path` 取文件名注册模型，并把 `add_model` 实际生成的 key 回写到 algorithms.json 条目的 `models[].model_key`（同时替换 rule 条件里引用的同名占位 key——条件 side 的 model_key 与 models 条目的占位 key 相同，直接按 models entry 的旧 key → 新 key 映射做字符串替换）。
 
 - [ ] **Step 2: 写迁移函数**
 
