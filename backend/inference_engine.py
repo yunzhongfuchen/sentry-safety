@@ -46,19 +46,9 @@ PROJECT_ROOT = Path(__file__).parent.parent
 WEIGHTS_DIR = PROJECT_ROOT / "weights"
 
 
-# 内部 person 模型路径（person 不在检测类型注册表中）
-_PERSON_PATHS = {
-    "cpu": [
-        str(WEIGHTS_DIR / "yolov8n.pt"),
-        str(PROJECT_ROOT / "yolov8n.pt"),
-        "models/yolov8n.pt",
-    ],
-    "npu": [
-        str(WEIGHTS_DIR / "yolov8n.rknn"),
-        str(PROJECT_ROOT / "yolov8n.rknn"),
-        "models/yolov8n.rknn",
-    ],
-}
+# 内部 person 模型文件名（person 不在检测类型注册表中）
+_PERSON_MODEL_CPU = "yolov8n.pt"
+_PERSON_MODEL_NPU = "yolov8n.rknn"
 
 
 def detect_npu_cores() -> int:
@@ -119,8 +109,8 @@ def _device_fallback_order(preferred: str) -> List[str]:
     return result
 
 
-def _resolve_model_path(dtype: str, use_npu: bool) -> Optional[str]:
-    """解析模型路径：优先环境变量，其次按注册表文件名在标准目录中查找
+def _resolve_model_path(dtype: str, model_path: str, use_npu: bool = False) -> Optional[str]:
+    """解析模型路径：按 dtype + model_path 精确选择，优先环境变量，其次按注册表文件名在标准目录中查找
 
     model_path 存储当前环境实际的模型文件名（NPU 部署配 .rknn，CPU/GPU 部署配 .pt），
     程序不做后缀推导，读什么用什么。
@@ -133,18 +123,22 @@ def _resolve_model_path(dtype: str, use_npu: bool) -> Optional[str]:
     type_def = registry.get(dtype)
     if type_def is not None:
         models = type_def.get("models") or []
-        filename = models[0].get("model_path") if models else None
-        if filename is None:
+        # 校验请求的 model_path 确实属于该 dtype
+        if not any(m.get("model_path") == model_path for m in models):
             return None
+        filename = model_path
         candidates = [
             str(WEIGHTS_DIR / filename),
             str(PROJECT_ROOT / filename),
             f"models/{filename}",
         ]
     elif dtype == "person":
-        # 内部 person 模型不在注册表中，使用硬编码候选路径
-        key = "npu" if use_npu else "cpu"
-        candidates = _PERSON_PATHS.get(key, [])
+        # 内部 person 模型不在注册表中，按传入的 model_path 构造候选路径
+        candidates = [
+            str(WEIGHTS_DIR / model_path),
+            str(PROJECT_ROOT / model_path),
+            f"models/{model_path}",
+        ]
     else:
         return None
 
@@ -275,7 +269,7 @@ class SafetyDetector:
                 dtype = _first_dtype_by_path(model_path)
                 if dtype is None:
                     return
-                path = _resolve_model_path(dtype, use_npu=True)
+                path = _resolve_model_path(dtype, model_path, use_npu=True)
                 if path and RKNN_AVAILABLE:
                     self._npu_models[model_path] = {}
                     for core_id in range(self._npu_cores):
@@ -297,7 +291,7 @@ class SafetyDetector:
                 dtype = _first_dtype_by_path(model_path)
                 if dtype is None:
                     return
-                path = _resolve_model_path(dtype, use_npu=False)
+                path = _resolve_model_path(dtype, model_path, use_npu=False)
                 if path and ULTRALYTICS_AVAILABLE:
                     model = YOLO(path)
                     try:
@@ -313,7 +307,7 @@ class SafetyDetector:
                 dtype = _first_dtype_by_path(model_path)
                 if dtype is None:
                     return
-                path = _resolve_model_path(dtype, use_npu=False)
+                path = _resolve_model_path(dtype, model_path, use_npu=False)
                 if path and ULTRALYTICS_AVAILABLE:
                     self._cpu_models[model_path] = YOLO(path)
                     logger.info(f"{model_path} CPU model loaded from {path}")
@@ -336,7 +330,7 @@ class SafetyDetector:
                 break
             try:
                 if try_device == "npu" and self._npu_cores > 0:
-                    path = _resolve_model_path(dtype, use_npu=True)
+                    path = _resolve_model_path(dtype, _PERSON_MODEL_NPU, use_npu=True)
                     if path and RKNN_AVAILABLE:
                         self._npu_models[dtype] = {}
                         for core_id in range(self._npu_cores):
@@ -360,7 +354,7 @@ class SafetyDetector:
                         logger.warning("Person RKNN model not found")
 
                 elif try_device == "gpu":
-                    path = _resolve_model_path(dtype, use_npu=False)
+                    path = _resolve_model_path(dtype, _PERSON_MODEL_CPU, use_npu=False)
                     if path and ULTRALYTICS_AVAILABLE:
                         model = YOLO(path)
                         model = model.to("cuda")
@@ -371,7 +365,7 @@ class SafetyDetector:
                         logger.warning("Person GPU model not found")
 
                 else:  # cpu
-                    path = _resolve_model_path(dtype, use_npu=False)
+                    path = _resolve_model_path(dtype, _PERSON_MODEL_CPU, use_npu=False)
                     if path and ULTRALYTICS_AVAILABLE:
                         model = YOLO(path)
                         self._cpu_models[dtype] = model

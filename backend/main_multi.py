@@ -486,7 +486,14 @@ def init_components():
             # 并按各自的 classes 过滤结果；否则后加载的类型会被跳过，导致漏检。
             for dtype in registry.all_types():
                 type_def = registry.get(dtype)
-                model_path = _resolve_model_path(dtype, use_npu=False)
+                models = type_def.get("models") or []
+                if not models:
+                    continue
+                # GPU 调度器当前按类型单一模型配置；取该类型第一个模型路径
+                first_model_path = models[0].get("model_path")
+                if not first_model_path:
+                    continue
+                model_path = _resolve_model_path(dtype, first_model_path, use_npu=False)
                 if not model_path:
                     continue
                 classes = type_def.get("classes")
