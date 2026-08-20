@@ -154,13 +154,11 @@ function defaultDetectionTypes() {
     const result = {};
     for (const t of DETECTION_TYPES) {
         if (t.defaults) {
-            result[t.key] = { box_count_mode: 'gte', ...t.defaults };
+            result[t.key] = { ...t.defaults };
         } else {
             result[t.key] = {
                 enabled: false, interval: 1, threshold: 0.5,
                 consecutive_required: 3, cooldown: 60, use_vlm: false,
-                min_box_count: 1, max_box_count: null,
-                box_count_mode: 'gte',
             };
         }
     }
@@ -240,38 +238,6 @@ function renderSidebar(container, context) {
             </nav>
         </aside>
     `;
-}
-
-/**
- * 将人数条件模式转换为后端字段
- * @param {string} mode - 'gte' | 'lte' | 'between' | 'outside'
- * @param {number} a - 下界
- * @param {number} b - 上界（可选）
- * @returns {{min_box_count: number|null, max_box_count: number|null, box_count_mode: string}}
- */
-function boxCountModeToFields(mode, a, b) {
-    switch (mode) {
-        case 'gte': return { min_box_count: a, max_box_count: null, box_count_mode: 'gte' };
-        case 'lte': return { min_box_count: null, max_box_count: a, box_count_mode: 'lte' };
-        case 'between': return { min_box_count: a, max_box_count: b, box_count_mode: 'between' };
-        case 'outside': return { min_box_count: a, max_box_count: b, box_count_mode: 'outside' };
-        default: return { min_box_count: null, max_box_count: null, box_count_mode: null };
-    }
-}
-
-/**
- * 将后端字段转换为人数条件模式
- * @param {number|null} min - min_box_count
- * @param {number|null} max - max_box_count
- * @param {string|null} mode - box_count_mode
- * @returns {{mode: string, a: number|null, b: number|null}}
- */
-function fieldsToBoxCountMode(min, max, mode) {
-    if (mode === 'outside') return { mode: 'outside', a: min, b: max };
-    if (min !== null && max !== null) return { mode: 'between', a: min, b: max };
-    if (min !== null) return { mode: 'gte', a: min, b: null };
-    if (max !== null) return { mode: 'lte', a: max, b: null };
-    return { mode: 'gte', a: null, b: null };
 }
 
 /**
