@@ -220,7 +220,7 @@
             <div class="type-cards-grid">
                 <div v-for="t in types" :key="t.key" class="glass-card type-card" :style="{ borderTopColor: t.color }">
                     <div class="type-card-header" :style="{ color: t.color }">{{ t.label }}</div>
-                    <div class="type-card-meta">模型: {{ t.models?.map(m => modelName(m.model_key)).join(' + ') || '未设置' }} · 被 {{ t.used_by_cameras || 0 }} 个摄像头使用</div>
+                    <div class="type-card-meta">模型: {{ t.models?.map(m => m.model_key).join(' + ') || '未设置' }} · 被 {{ t.used_by_cameras || 0 }} 个摄像头使用</div>
                     <div class="type-card-meta">策略: {{ t.post_process }} · 阈值 {{ t.defaults?.threshold }} · 间隔 {{ t.defaults?.interval }}s · 冷却 {{ t.defaults?.cooldown }}s</div>
                     <div class="type-card-actions">
                         <button class="clay-button" @click="openDialog(t)">编辑</button>
@@ -458,6 +458,10 @@
                     return Object.entries(m.class_names || {}).map(([id, name]) => ({ id: Number(id), name }));
                 }
 
+                function hasSelectableClasses(modelKey) {
+                    return classOptions(modelKey).length > 0;
+                }
+
                 const relationOps = Vue.computed(() => (operators.value || []).filter(o => o.group === 'relation'));
                 const globalOps = Vue.computed(() => (operators.value || []).filter(o => o.group === 'global'));
 
@@ -530,13 +534,14 @@
                 }
 
                 function cleanCondition(c) {
-                    const out = {
-                        left: { model_key: c.left.model_key, classes: (c.left.classes || []).map(Number) },
-                        op: c.op
-                    };
+                    const leftClasses = (c.left.classes || []).map(Number);
+                    const out = { left: { model_key: c.left.model_key }, op: c.op };
+                    if (leftClasses.length) out.left.classes = leftClasses;
                     if (c.left.conf !== null && c.left.conf !== undefined && c.left.conf !== '') out.left.conf = Number(c.left.conf);
                     if (isRelationOp(c.op)) {
-                        out.right = { model_key: c.right.model_key, classes: (c.right.classes || []).map(Number) };
+                        const rightClasses = (c.right.classes || []).map(Number);
+                        out.right = { model_key: c.right.model_key };
+                        if (rightClasses.length) out.right.classes = rightClasses;
                         if (c.right.conf !== null && c.right.conf !== undefined && c.right.conf !== '') out.right.conf = Number(c.right.conf);
                         if (c.op === 'overlap' || c.op === 'above' || c.op === 'not_overlap') out.iou = Number(c.iou);
                         if (c.op === 'contain' || c.op === 'not_contain') out.ratio = Number(c.ratio);
@@ -605,7 +610,23 @@
                         const conditions = [];
                         for (const c of g.conditions) {
                             if (!c.left.model_key) continue;
-                            if (isRelationOp(c.op) && !c.right.model_key) continue;
+                            if (hasSelectableClasses(c.left.model_key) && !(c.left.classes || []).length) continue;
+                            if (isRelationOp(c.op)) {
+                                if (!c.right.model_key) continue;
+                                if (hasSelectableClasses(c.right.model_key) && !(c.right.classes || []).length) continue;
+                            }
+                            if (isCountOp(c.op)) {
+                                if (c.cmp === 'outside') {
+                                    if (c.min === '' || c.min === null || c.min === undefined || isNaN(c.min) ||
+                                        c.max === '' || c.max === null || c.max === undefined || isNaN(c.max)) {
+                                        showToast('数量条件需填写 min 和 max', 'error'); return;
+                                    }
+                                } else {
+                                    if (c.value === '' || c.value === null || c.value === undefined || isNaN(c.value)) {
+                                        showToast('数量条件需填写有效数值', 'error'); return;
+                                    }
+                                }
+                            }
                             conditions.push(cleanCondition(c));
                         }
                         if (conditions.length) groupsPayload.push({ conditions });
