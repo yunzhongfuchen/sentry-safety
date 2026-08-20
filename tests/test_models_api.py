@@ -56,7 +56,7 @@ class TestUploadModel:
         mock_mr = MagicMock()
         mock_mr.save_model_file.return_value = MagicMock(name="leak.pt", stem="leak", suffix=".pt")
         mock_mr.add_model.return_value = "leak"
-        mock_mr.get.return_value = {"post_process": "yolo_box", "class_names": {"0": "leak"}}
+        mock_mr.get.return_value = {"post_process": "yolo_relation", "class_names": {"0": "leak"}}
         with patch("backend.safety_detection.api.model_registry", mock_mr), \
              patch("backend.safety_detection.api.parse_model_metadata",
                    return_value={"post_process": "yolo_box", "class_names": {"0": "leak"}}):

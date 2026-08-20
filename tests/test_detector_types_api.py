@@ -21,8 +21,8 @@ class TestListDetectionTypes:
     def test_returns_types_list(self, client):
         mock_registry = MagicMock()
         mock_registry.to_api_list.return_value = [
-            {"key": "fire", "label": "明火", "color": "#ef4444", "icon": "flame",
-             "post_process": "yolo_box", "defaults": {"enabled": False}},
+            {"key": "fire", "label": "明火", "color": "#ef4444",
+             "post_process": "yolo_relation", "defaults": {"enabled": False}},
         ]
 
         with patch("backend.safety_detection.api.registry", mock_registry):
@@ -79,9 +79,11 @@ class TestGetDetectionType:
         """GET /detector/types/{dtype} must return all structural fields so edit-save does not wipe them."""
         mock_registry = MagicMock()
         mock_registry.get.return_value = {
-            "label": "明火", "color": "#ef4444", "icon": "flame",
-            "model_path": "fire_smoke.pt",
-            "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
+            "label": "明火", "color": "#ef4444",
+            "post_process": "yolo_relation",
+            "models": [{"model_key": "fire_smoke", "model_confidence": 0.5}],
+            "rule": {"groups": [{"conditions": [
+                {"left": {"model_key": "fire_smoke", "classes": [0]}, "op": "exists"}]}]},
             "vlm_prompt": "fire_review", "inspection_label": "明火",
             "defaults": {"enabled": False},
         }
@@ -91,9 +93,9 @@ class TestGetDetectionType:
             assert resp.status_code == 200
             data = resp.json()
             assert data["key"] == "fire"
-            assert data["model_path"] == "fire_smoke.pt"
-            assert data["classes"] == [0]
-            assert data["model_confidence"] == 0.5
+            assert data["models"][0]["model_key"] == "fire_smoke"
+            assert data["post_process"] == "yolo_relation"
+            assert data["rule"]["groups"][0]["conditions"][0]["op"] == "exists"
             assert data["vlm_prompt"] == "fire_review"
             assert data["inspection_label"] == "明火"
 
@@ -123,7 +125,7 @@ class TestUpdateDetectionType:
         mock_registry.get.return_value = {"defaults": {"enabled": False}, "label": "明火"}
 
         with patch("backend.safety_detection.api.registry", mock_registry):
-            resp = client.put("/detector/types/fire", json={"model_key": "evil"})
+            resp = client.put("/detector/types/fire", json={"models": [{"model_key": "evil", "model_confidence": 0.5}]})
             assert resp.status_code == 200
             mock_registry.update_type.assert_called_once()
 
@@ -148,9 +150,6 @@ class TestUpdateDetectionType:
                 {"consecutive_required": 0},
                 {"cooldown": -1},
                 {"use_vlm": "true"},
-                {"min_box_count": -1},
-                {"max_box_count": -1},
-                {"min_box_count": True},
             ]
             for payload in invalid_cases:
                 resp = client.put("/detector/types/fire", json=payload)
@@ -160,12 +159,14 @@ class TestUpdateDetectionType:
 
 class TestCreateDetectionType:
     def test_create_type_returns_key(self, client):
-        payload = {"label": "新类型", "color": "#123456", "model_key": "new", "post_process": "yolo_box"}
+        payload = {"label": "新类型", "color": "#123456",
+                   "models": [{"model_key": "new", "model_confidence": 0.5}],
+                   "rule": {"groups": [{"conditions": [{"left": {"model_key": "new"}, "op": "exists"}]}]}}
         mock_registry = MagicMock()
         mock_registry.add_type.return_value = "xin_lei_xing_123abc"
         mock_registry.get.return_value = {
-            "label": "新类型", "color": "#123456", "icon": "",
-            "post_process": "yolo_box", "defaults": {},
+            "label": "新类型", "color": "#123456",
+            "post_process": "yolo_relation", "defaults": {},
         }
 
         with patch("backend.safety_detection.api.registry", mock_registry):
@@ -176,7 +177,9 @@ class TestCreateDetectionType:
             assert data["label"] == "新类型"
 
     def test_create_type_duplicate_label_400(self, client):
-        payload = {"label": "明火", "color": "#123456", "model_key": "x", "post_process": "yolo_box"}
+        payload = {"label": "明火", "color": "#123456",
+                   "models": [{"model_key": "x", "model_confidence": 0.5}],
+                   "rule": {"groups": [{"conditions": [{"left": {"model_key": "x"}, "op": "exists"}]}]}}
         mock_registry = MagicMock()
         mock_registry.add_type.side_effect = ValueError("label '明火' already exists")
 
@@ -200,7 +203,9 @@ class TestDeleteDetectionType:
         mock_registry.get.return_value = {"label": "待删除"}
 
         with patch("backend.safety_detection.api.registry", mock_registry):
-            resp = client.post("/detector/types", json={"label": "待删除", "color": "#000000", "model_key": "d", "post_process": "yolo_box"})
+            resp = client.post("/detector/types", json={"label": "待删除", "color": "#000000",
+                                                          "models": [{"model_key": "d", "model_confidence": 0.5}],
+                                                          "rule": {"groups": [{"conditions": [{"left": {"model_key": "d"}, "op": "exists"}]}]}})
             key = resp.json()["key"]
             client.app.state.camera_manager.get_camera_ids_with_type.return_value = []
             resp = client.delete(f"/detector/types/{key}")
@@ -232,11 +237,12 @@ class TestUploadModel:
         mock_mr.save_model_file.side_effect = lambda filename, content: Path(filename)
         mock_mr.to_api_list.return_value = []
         mock_mr.add_model.return_value = Path(saved_name).stem
+        mock_mr.get.return_value = {"post_process": "yolo_relation"}
         return mock_mr
 
     def test_upload_model_success(self, client, tmp_path):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"label": "明火", "model_key": "old"}
+        mock_registry.get.return_value = {"label": "明火", "models": [{"model_key": "test_model", "model_confidence": 0.3}]}
         mock_mr = self._mock_model_registry("test_model.pt")
 
         with patch("backend.safety_detection.api.registry", mock_registry), \
@@ -249,11 +255,15 @@ class TestUploadModel:
             assert resp.status_code == 200
             assert resp.json()["model_key"] == "test_model"
             mock_mr.save_model_file.assert_called_once_with("test_model.pt", b"fake")
-            mock_registry.update_type.assert_called_with("fire", {"model_key": "test_model"})
+            mock_registry.update_type.assert_called_once()
+            call = mock_registry.update_type.call_args
+            assert call[0][0] == "fire"
+            assert call[0][1]["models"] == [{"model_key": "test_model", "model_confidence": 0.5}]
+            assert call[0][1]["rule"] == {"groups": [{"conditions": [{"left": {"model_key": "test_model"}, "op": "exists"}]}]}
 
     def test_upload_rknn_model_success(self, client, tmp_path):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"label": "明火", "model_key": "old"}
+        mock_registry.get.return_value = {"label": "明火", "models": [{"model_key": "test_model", "model_confidence": 0.3}]}
         mock_mr = self._mock_model_registry("test_model.rknn")
 
         with patch("backend.safety_detection.api.registry", mock_registry), \
@@ -266,11 +276,14 @@ class TestUploadModel:
             assert resp.status_code == 200
             assert resp.json()["model_key"] == "test_model"
             mock_mr.save_model_file.assert_called_once_with("test_model.rknn", b"rknn")
-            mock_registry.update_type.assert_called_with("fire", {"model_key": "test_model"})
+            mock_registry.update_type.assert_called_once()
+            call = mock_registry.update_type.call_args
+            assert call[0][1]["models"] == [{"model_key": "test_model", "model_confidence": 0.5}]
+            assert call[0][1]["rule"] == {"groups": [{"conditions": [{"left": {"model_key": "test_model"}, "op": "exists"}]}]}
 
     def test_upload_reuses_existing_model_entry(self, client):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"label": "明火"}
+        mock_registry.get.return_value = {"label": "明火", "models": []}
         mock_mr = self._mock_model_registry("test_model.pt")
         mock_mr.to_api_list.return_value = [{"key": "existing", "file": "test_model.pt"}]
 
@@ -284,11 +297,14 @@ class TestUploadModel:
             assert resp.status_code == 200
             assert resp.json()["model_key"] == "existing"
             mock_mr.add_model.assert_not_called()
-            mock_registry.update_type.assert_called_with("fire", {"model_key": "existing"})
+            mock_registry.update_type.assert_called_once()
+            call = mock_registry.update_type.call_args
+            assert call[0][1]["models"] == [{"model_key": "existing", "model_confidence": 0.5}]
+            assert call[0][1]["rule"] == {"groups": [{"conditions": [{"left": {"model_key": "existing"}, "op": "exists"}]}]}
 
     def test_upload_invalid_extension_400(self, client):
         mock_registry = MagicMock()
-        mock_registry.get.return_value = {"label": "明火"}
+        mock_registry.get.return_value = {"label": "明火", "models": []}
         mock_mr = MagicMock()
 
         with patch("backend.safety_detection.api.registry", mock_registry), \

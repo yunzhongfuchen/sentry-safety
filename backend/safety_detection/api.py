@@ -60,10 +60,9 @@ async def get_detection_type(dtype: str):
         "key": dtype,
         "label": type_def.get("label", dtype),
         "color": type_def.get("color", "#888888"),
-        "model_path": type_def.get("model_path"),
-        "post_process": type_def.get("post_process", "yolo_box"),
-        "classes": type_def.get("classes"),
-        "model_confidence": type_def.get("model_confidence", 0.5),
+        "post_process": type_def.get("post_process", "yolo_relation"),
+        "models": type_def.get("models", []),
+        "rule": type_def.get("rule"),
         "vlm_prompt": type_def.get("vlm_prompt", ""),
         "inspection_label": type_def.get("inspection_label", type_def.get("label", dtype)),
         "defaults": type_def.get("defaults", {}),
@@ -77,8 +76,8 @@ async def update_detection_type(dtype: str, data: dict, request: Request):
     if type_def is None:
         return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
 
-    structural_fields = {"label", "color", "model_key",
-                        "post_process", "classes", "model_confidence", "vlm_prompt", "inspection_label"}
+    structural_fields = {"label", "color", "models", "rule",
+                        "vlm_prompt", "inspection_label", "alarm_description"}
     allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
                         "cooldown", "use_vlm",
                         "static_filter", "static_diff_threshold"}
@@ -90,6 +89,10 @@ async def update_detection_type(dtype: str, data: dict, request: Request):
 
     try:
         if structural_update:
+            if "rule" in structural_update and structural_update["rule"] is not None:
+                errors = registry.validate_rule(structural_update["rule"])
+                if errors:
+                    return JSONResponse({"error": "; ".join(errors)}, status_code=400)
             registry.update_type(dtype, structural_update)
         if defaults_update:
             for k, v in defaults_update.items():
@@ -118,10 +121,9 @@ async def create_detection_type(data: dict):
             "key": key,
             "label": type_def.get("label", key),
             "color": type_def.get("color", "#888888"),
-            "model_path": type_def.get("model_path"),
-            "post_process": type_def.get("post_process", "yolo_box"),
-            "classes": type_def.get("classes"),
-            "model_confidence": type_def.get("model_confidence", 0.5),
+            "post_process": type_def.get("post_process", "yolo_relation"),
+            "models": type_def.get("models", []),
+            "rule": type_def.get("rule"),
             "vlm_prompt": type_def.get("vlm_prompt", ""),
             "inspection_label": type_def.get("inspection_label", type_def.get("label", key)),
             "defaults": type_def.get("defaults", {}),
@@ -148,8 +150,9 @@ async def delete_detection_type(dtype: str, request: Request):
 
 @router.post("/detector/types/{dtype}/model")
 async def upload_model(dtype: str, file: UploadFile = File(...)):
-    """上传模型文件（兼容端点）：创建/复用模型条目并把算法指过去"""
-    if registry.get(dtype) is None:
+    """上传模型文件（兼容端点）：创建/复用模型条目并追加到算法的 models[]"""
+    type_def = registry.get(dtype)
+    if type_def is None:
         return JSONResponse({"error": f"Unknown detection type: {dtype}"}, status_code=404)
     filename = file.filename or ""
     if not filename.endswith((".pt", ".rknn")):
@@ -166,11 +169,25 @@ async def upload_model(dtype: str, file: UploadFile = File(...)):
         meta = parse_model_metadata(path)
         model_key = model_registry.add_model(
             file=path.name, name=path.stem,
-            post_process=meta.get("post_process", "yolo_box"),
+            post_process=meta.get("post_process", "yolo_relation"),
             class_names=meta.get("class_names", {}),
             file_size=len(content),
         )
-    registry.update_type(dtype, {"model_key": model_key})
+    # 注入 models[]：同 model_key 替换，否则追加
+    entry = model_registry.get(model_key)
+    is_pose = entry.get("post_process") == "yolo_pose" if entry else False
+    models = list(type_def.get("models", []))
+    new_model_entry = {"model_key": model_key, "model_confidence": 0.5}
+    updated = False
+    for i, m in enumerate(models):
+        if m.get("model_key") == model_key:
+            models[i] = new_model_entry
+            updated = True
+            break
+    if not updated:
+        models.append(new_model_entry)
+    rule = None if is_pose else {"groups": [{"conditions": [{"left": {"model_key": model_key}, "op": "exists"}]}]}
+    registry.update_type(dtype, {"models": models, "rule": rule})
     return {"success": True, "model_key": model_key, "dtype": dtype}
 
 
@@ -268,7 +285,7 @@ async def upload_model_file(file: UploadFile = File(...), name: str = ""):
     key = model_registry.add_model(
         file=path.name,
         name=name or path.stem,
-        post_process=meta.get("post_process", "yolo_box"),
+        post_process=meta.get("post_process", "yolo_relation"),
         class_names=meta.get("class_names", {}),
         file_size=len(content),
     )
@@ -286,8 +303,8 @@ async def update_model_entry(key: str, data: dict):
     updates = {k: v for k, v in data.items() if k in ("name", "post_process", "class_names")}
     if not updates:
         return JSONResponse({"error": "No valid fields to update"}, status_code=400)
-    if "post_process" in updates and updates["post_process"] not in ("yolo_box", "yolo_pose"):
-        return JSONResponse({"error": "post_process must be yolo_box or yolo_pose"}, status_code=400)
+    if "post_process" in updates and updates["post_process"] not in ("yolo_relation", "yolo_pose"):
+        return JSONResponse({"error": "post_process must be yolo_relation or yolo_pose"}, status_code=400)
     model_registry.update_model(key, updates)
     return {"success": True, "key": key}
 
@@ -333,11 +350,9 @@ def _algo_to_response(key: str, td: dict, used_by_cameras: int = 0) -> dict:
         "key": key,
         "label": td.get("label", key),
         "color": td.get("color", "#888888"),
-        "model_key": td.get("model_key"),
-        "model_path": td.get("model_path"),
-        "post_process": td.get("post_process", "yolo_box"),
-        "classes": td.get("classes"),
-        "model_confidence": td.get("model_confidence", 0.5),
+        "post_process": td.get("post_process", "yolo_relation"),
+        "models": td.get("models", []),
+        "rule": td.get("rule"),
         "vlm_prompt": td.get("vlm_prompt", ""),
         "inspection_label": td.get("inspection_label", td.get("label", key)),
         "alarm_description": td.get("alarm_description", ""),
@@ -358,10 +373,22 @@ async def list_algorithms(request: Request):
     return {"algorithms": [_algo_to_response(t["key"], t, enabled_counts.get(t["key"], 0)) for t in registry.to_api_list()]}
 
 
+@router.get("/algorithms/operators")
+async def list_operators():
+    """规则算子元数据（前端条件编辑器下拉）"""
+    from backend.safety_detection.relation_rules import OPERATORS, COUNT_CMPS
+    return {"operators": OPERATORS, "count_cmps": COUNT_CMPS}
+
+
 @router.post("/algorithms")
 async def create_algorithm(data: dict):
     data = dict(data)
     data.pop("model_path", None)  # model_path 由 model_key 解析，不接受直传
+    rule = data.get("rule")
+    if rule is not None:
+        errors = registry.validate_rule(rule)
+        if errors:
+            return JSONResponse({"error": "; ".join(errors)}, status_code=400)
     try:
         key = registry.add_type(data)
         return _algo_to_response(key, registry.get(key))
@@ -373,7 +400,7 @@ async def create_algorithm(data: dict):
 async def update_algorithm(key: str, data: dict, request: Request):
     if registry.get(key) is None:
         return JSONResponse({"error": f"Unknown algorithm: {key}"}, status_code=404)
-    structural_fields = {"label", "color", "model_key", "classes", "model_confidence",
+    structural_fields = {"label", "color", "models", "rule",
                          "vlm_prompt", "inspection_label", "alarm_description"}
     allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
                         "cooldown", "use_vlm",
@@ -384,6 +411,10 @@ async def update_algorithm(key: str, data: dict, request: Request):
         return JSONResponse({"error": "No valid fields to update"}, status_code=400)
     try:
         if structural_update:
+            if "rule" in structural_update and structural_update["rule"] is not None:
+                errors = registry.validate_rule(structural_update["rule"])
+                if errors:
+                    return JSONResponse({"error": "; ".join(errors)}, status_code=400)
             registry.update_type(key, structural_update)
         if defaults_update:
             for k, v in defaults_update.items():
