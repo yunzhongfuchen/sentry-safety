@@ -40,23 +40,24 @@ class TestListDetectionTypes:
         reg._types = {
             "fire": {
                 "label": "明火", "color": "#ef4444",
-                "model_key": "fire_smoke",
-                "post_process": "yolo_box", "classes": [0], "model_confidence": 0.5,
+                "post_process": "yolo_relation",
+                "models": [{"model_key": "fire_smoke", "model_confidence": 0.5}],
+                "rule": {"groups": [{"conditions": [{"left": {"model_key": "fire_smoke", "classes": [0]}, "op": "exists"}]}]},
                 "vlm_prompt": "fire_review", "inspection_label": "明火",
                 "defaults": {"enabled": False},
             }
         }
         mock_mr = MagicMock()
-        mock_mr.get.return_value = {"file": "fire_smoke.pt", "post_process": "yolo_box"}
+        mock_mr.get.return_value = {"file": "fire_smoke.pt", "post_process": "yolo_box", "class_names": {"0": "fire"}}
         with patch("backend.detection_registry.model_registry", mock_mr):
             result = reg.to_api_list()
         assert len(result) == 1
         t = result[0]
         assert t["key"] == "fire"
-        assert t["model_key"] == "fire_smoke"
-        assert t["model_path"] == "fire_smoke.pt"
-        assert t["classes"] == [0]
-        assert t["model_confidence"] == 0.5
+        assert t["models"][0]["model_key"] == "fire_smoke"
+        assert t["models"][0]["model_path"] == "fire_smoke.pt"
+        assert t["models"][0]["class_names"] == {"0": "fire"}
+        assert t["post_process"] == "yolo_relation"
         assert t["vlm_prompt"] == "fire_review"
         assert t["inspection_label"] == "明火"
 

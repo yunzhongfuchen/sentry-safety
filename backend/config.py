@@ -105,9 +105,6 @@ def get_default_type_config() -> dict:
             "consecutive_required": defaults.get("consecutive_required", 3),
             "cooldown": defaults.get("cooldown", 60),
             "use_vlm": defaults.get("use_vlm", False),
-            "min_box_count": defaults.get("min_box_count"),
-            "max_box_count": defaults.get("max_box_count"),
-            "box_count_mode": defaults.get("box_count_mode"),
             "static_filter": defaults.get("static_filter", False),
             "static_diff_threshold": defaults.get("static_diff_threshold", 0.02),
         }
@@ -119,12 +116,12 @@ try:
     DEFAULT_TYPE_CONFIG = get_default_type_config()
 except Exception:
     DEFAULT_TYPE_CONFIG = {
-        "fire": {"enabled": False, "interval": 1, "threshold": 0.6, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
-        "smoke": {"enabled": False, "interval": 1, "threshold": 0.55, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
-        "uniform": {"enabled": False, "interval": 1, "threshold": 0.5, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
-        "mask": {"enabled": False, "interval": 1, "threshold": 0.5, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
-        "cigarette": {"enabled": False, "interval": 1, "threshold": 0.5, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
-        "sleep": {"enabled": False, "interval": 60, "threshold": 0.7, "consecutive_required": 3, "cooldown": 60, "use_vlm": False, "min_box_count": 1, "max_box_count": None},
+        "fire": {"enabled": False, "interval": 1, "threshold": 0.6, "consecutive_required": 3, "cooldown": 60, "use_vlm": False},
+        "smoke": {"enabled": False, "interval": 1, "threshold": 0.55, "consecutive_required": 3, "cooldown": 60, "use_vlm": False},
+        "uniform": {"enabled": False, "interval": 1, "threshold": 0.5, "consecutive_required": 3, "cooldown": 60, "use_vlm": False},
+        "mask": {"enabled": False, "interval": 1, "threshold": 0.5, "consecutive_required": 3, "cooldown": 60, "use_vlm": False},
+        "cigarette": {"enabled": False, "interval": 1, "threshold": 0.5, "consecutive_required": 3, "cooldown": 60, "use_vlm": False},
+        "sleep": {"enabled": False, "interval": 60, "threshold": 0.7, "consecutive_required": 3, "cooldown": 60, "use_vlm": False},
     }
 
 # ==================== 默认全局配置 ====================

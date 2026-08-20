@@ -78,49 +78,6 @@ class TestFilterByRoi:
         assert len(out["boxes"]) == 1
 
 
-# ---------- check_box_count ----------
-
-class TestCheckBoxCount:
-    def setup_method(self):
-        from backend.safety_detection.detector_core import check_box_count
-        self.check_box_count = check_box_count
-
-    def test_no_limits_unchanged(self):
-        result = {"detected": True, "boxes": [[1, 1, 2, 2]], "scores": [0.9]}
-        out = self.check_box_count(result)
-        assert out["detected"] is True
-
-    def test_min_box_count_blocks(self):
-        result = {"detected": True, "boxes": [[1, 1, 2, 2]], "scores": [0.9]}
-        out = self.check_box_count(result, min_box_count=3)
-        assert out["detected"] is False
-
-    def test_min_box_count_passes(self):
-        result = {"detected": True, "boxes": [[1, 1, 2, 2], [3, 3, 4, 4], [5, 5, 6, 6]], "scores": [0.9, 0.8, 0.7]}
-        out = self.check_box_count(result, min_box_count=3)
-        assert out["detected"] is True
-
-    def test_max_box_count_zero_person_absent(self):
-        """离岗检测：0 人 → detected=True"""
-        result = {"detected": False, "boxes": [], "scores": []}
-        out = self.check_box_count(result, max_box_count=0)
-        assert out["detected"] is True
-
-    def test_max_box_count_exceeded(self):
-        """人数超限场景"""
-        result = {"detected": True, "boxes": [[1, 1, 2, 2]] * 5, "scores": [0.9] * 5}
-        out = self.check_box_count(result, max_box_count=3)
-        assert out["detected"] is False
-
-    def test_min_and_max_range(self):
-        """区间检测：min=1, max=3 → 0 人或 ≥4 人报警"""
-        result_0 = {"detected": False, "boxes": [], "scores": []}
-        assert self.check_box_count(result_0, min_box_count=1, max_box_count=3)["detected"] is False
-
-        result_2 = {"detected": True, "boxes": [[1, 1, 2, 2]] * 2, "scores": [0.9] * 2}
-        assert self.check_box_count(result_2, min_box_count=1, max_box_count=3)["detected"] is True
-
-
 # ---------- _annotate_frame 使用注册表 ----------
 
 class TestAnnotateFrameRegistry:
@@ -219,7 +176,7 @@ class TestGetDueTypesCooldown:
         assert "fire" in due
 
 
-# ---------- _handle_standard_detection ROI + box_count ----------
+# ---------- _handle_standard_detection ROI ----------
 
 class TestHandleDetectionRoiBoxCount:
     def _make_detector(self):
@@ -252,78 +209,6 @@ class TestHandleDetectionRoiBoxCount:
         md._handle_standard_detection("cam1", "fire", frame, result, s)
         assert s.consecutive_count == 0
 
-    def test_box_count_min_blocks_single_box(self):
-        from backend.safety_detection.detector_core import TypeSchedule
-
-        md = self._make_detector()
-        s = TypeSchedule(
-            dtype="person", enabled=True, interval=1, threshold=0.3, cooldown=60,
-            min_box_count=5,
-        )
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        result = {"detected": True, "boxes": [[100, 100, 200, 200]], "scores": [0.9]}
-
-        md._handle_standard_detection("cam1", "person", frame, result, s)
-        assert s.consecutive_count == 0
-
-
-def test_handle_standard_detection_outside_min_box_count_bypasses_threshold():
-    """outside 模式下，框数低于 min_box_count 时应跳过置信度阈值，触发告警"""
-    from backend.safety_detection.detector_core import MultiDetector, TypeSchedule
-    import threading
-    from collections import defaultdict
-
-    md = MultiDetector.__new__(MultiDetector)
-    md._lock = threading.RLock()
-    md._schedules = {}
-    md._cooldowns = defaultdict(dict)
-    md._alert_states = defaultdict(dict)
-    md._latest_results = {}
-    md._static_regions = {}
-    md.camera_manager = None
-    md.trigger_callback = None
-    md.vlm_queue = None
-
-    s = TypeSchedule(
-        dtype="person", enabled=True, interval=1, threshold=0.5, cooldown=60,
-        consecutive_required=2,
-        min_box_count=3,
-        box_count_mode="outside",
-    )
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    result = {"detected": False, "boxes": [], "scores": []}
-
-    md._handle_standard_detection("cam1", "person", frame, result.copy(), s)
-    assert s.consecutive_count == 1
-    assert md._cooldowns.get("cam1", {}).get("person") is None
-
-    md._handle_standard_detection("cam1", "person", frame, result.copy(), s)
-    assert s.consecutive_count == 0  # 触发告警后计数清零
-    assert md._cooldowns["cam1"]["person"] > 0  # 冷却已设置，说明确实触发了
-
-
-def test_check_box_count_outside_mode():
-    from backend.safety_detection.detector_core import check_box_count
-    result = {"boxes": [[0, 0, 10, 10]] * 5, "scores": [0.9] * 5, "detected": True}
-    # outside: < 3 或 > 8 时报警，5 在区间内，不报警
-    out = check_box_count(result, min_box_count=3, max_box_count=8, box_count_mode="outside")
-    assert out["detected"] is False
-    # outside: 2 < 3，报警
-    result2 = {"boxes": [[0, 0, 10, 10]] * 2, "scores": [0.9] * 2, "detected": False}
-    out2 = check_box_count(result2, min_box_count=3, max_box_count=8, box_count_mode="outside")
-    assert out2["detected"] is True
-    # outside: 10 > 8，报警
-    result3 = {"boxes": [[0, 0, 10, 10]] * 10, "scores": [0.9] * 10, "detected": True}
-    out3 = check_box_count(result3, min_box_count=3, max_box_count=8, box_count_mode="outside")
-    assert out3["detected"] is True
-
-
-def test_type_schedule_has_box_count_mode():
-    from backend.safety_detection.detector_core import TypeSchedule
-    s = TypeSchedule(dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=60)
-    assert hasattr(s, "box_count_mode")
-    assert s.box_count_mode is None
-
 
 def test_consecutive_count_reset_after_trigger():
     """触发后连续计数必须清零：否则冷却结束后第一次命中会立即再次触发，
@@ -347,7 +232,7 @@ def test_consecutive_count_reset_after_trigger():
         consecutive_required=2,
     )
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    hit = {"detected": True, "boxes": [[10, 10, 50, 50]], "scores": [0.9]}
+    hit = {"detected": True, "boxes": [[10, 10, 50, 50]], "scores": [0.9], "max_confidence": 0.9}
 
     # 第一次命中：count=1，不触发
     md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
@@ -387,7 +272,7 @@ def test_static_filter_rejects_static_target():
         consecutive_required=3, static_filter=True, static_diff_threshold=0.02,
     )
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
-    hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9]}
+    hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9], "max_confidence": 0.9}
 
     for _ in range(3):
         md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
@@ -417,7 +302,7 @@ def test_static_filter_passes_dynamic_target():
         dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=60,
         consecutive_required=3, static_filter=True, static_diff_threshold=0.02,
     )
-    hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9]}
+    hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9], "max_confidence": 0.9}
 
     static_frame = np.zeros((100, 100, 3), dtype=np.uint8)
     dynamic_frame = static_frame.copy()
@@ -452,7 +337,7 @@ def test_static_filter_disabled_allows_static_target():
         consecutive_required=2, static_filter=False,
     )
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
-    hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9]}
+    hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9], "max_confidence": 0.9}
 
     md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
     md._handle_standard_detection("cam1", "fire", frame, hit.copy(), s)
@@ -466,12 +351,12 @@ def test_alarm_description_persisted(tmp_path, monkeypatch):
     reg = DetectionTypeRegistry.__new__(DetectionTypeRegistry)
     reg._types = {}
     # If model_registry needs a real model, mock it
-    monkeypatch.setattr(model_registry, "get", lambda k: {"file": "x.pt", "post_process": "yolo_box"})
+    monkeypatch.setattr(model_registry, "get", lambda k: {"file": "x.pt", "post_process": "yolo_pose"})
     monkeypatch.setattr(model_registry, "file_exists", lambda k: True)
     key = reg.add_type({
         "label": "测试报警",
         "color": "#888888",
-        "model_key": "test",
+        "models": [{"model_key": "test"}],
         "alarm_description": "自定义报警说明",
     })
     assert reg.get(key)["alarm_description"] == "自定义报警说明"

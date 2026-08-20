@@ -21,20 +21,6 @@ def _validate_default_value(key: str, value):
             return f"{key} must be a boolean"
         return None
 
-    if key == "box_count_mode":
-        if value is None:
-            return None
-        if value not in ("gte", "lte", "between", "outside"):
-            return f"{key} must be one of 'gte', 'lte', 'between', 'outside' or null"
-        return None
-
-    if key in ("min_box_count", "max_box_count"):
-        if value is None:
-            return None
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            return f"{key} must be a non-negative integer or null"
-        return None
-
     if key == "consecutive_required":
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             return f"{key} must be an integer >= 1"
@@ -94,7 +80,7 @@ async def update_detection_type(dtype: str, data: dict, request: Request):
     structural_fields = {"label", "color", "model_key",
                         "post_process", "classes", "model_confidence", "vlm_prompt", "inspection_label"}
     allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
-                        "cooldown", "use_vlm", "min_box_count", "max_box_count", "box_count_mode",
+                        "cooldown", "use_vlm",
                         "static_filter", "static_diff_threshold"}
     structural_update = {k: v for k, v in data.items() if k in structural_fields}
     defaults_update = {k: v for k, v in data.items() if k not in structural_fields and k in allowed_defaults}
@@ -390,8 +376,8 @@ async def update_algorithm(key: str, data: dict, request: Request):
     structural_fields = {"label", "color", "model_key", "classes", "model_confidence",
                          "vlm_prompt", "inspection_label", "alarm_description"}
     allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
-                        "cooldown", "use_vlm", "min_box_count", "max_box_count",
-                        "box_count_mode", "static_filter", "static_diff_threshold"}
+                        "cooldown", "use_vlm",
+                        "static_filter", "static_diff_threshold"}
     structural_update = {k: v for k, v in data.items() if k in structural_fields}
     defaults_update = {k: v for k, v in data.items() if k not in structural_fields and k in allowed_defaults}
     if not structural_update and not defaults_update:

@@ -481,11 +481,13 @@ def init_components():
                         logger.error(f"GPU scheduler result handling error [{cam_id}/{dtype}]: {e}")
 
             model_configs = {}
-            # 为每个检测类型单独创建 ModelConfig，即使它们共享同一个模型文件。
-            # 这样 GPUDynamicScheduler 才能为 fire/smoke 等共享模型的类型分别调度
-            # 并按各自的 classes 过滤结果；否则后加载的类型会被跳过，导致漏检。
+            # 为每个 yolo_pose 类型单独创建 ModelConfig。
+            # 一期：GPU 动态调度器只接管 pose 类型；relation 由 MultiDetector 自身 detect 处理。
             for dtype in registry.all_types():
                 type_def = registry.get(dtype)
+                # 一期：GPU 动态调度器只接管 pose 类型；relation 由 MultiDetector 自身 detect 处理
+                if type_def is None or type_def.get("post_process") != "yolo_pose":
+                    continue
                 models = type_def.get("models") or []
                 if not models:
                     continue

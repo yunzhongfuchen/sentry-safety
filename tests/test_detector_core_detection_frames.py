@@ -13,7 +13,6 @@ class FakeRegistry:
         "enabled": False,
         "interval": 1.0, "threshold": 0.5, "cooldown": 60.0,
         "consecutive_required": 3, "use_vlm": False,
-        "min_box_count": None, "max_box_count": None, "box_count_mode": None,
         "static_filter": False, "static_diff_threshold": 0.02,
     }
     LABELS = {"fire": "明火", "sleep": "睡岗"}
@@ -46,7 +45,7 @@ def test_standard_detection_collects_frames():
         "fire": {"enabled": True, "interval": 1, "threshold": 0.5, "cooldown": 60, "consecutive_required": 3, "use_vlm": False},
     })
     schedule = md._schedules["cam1"]["fire"]
-    result = {"detected": True, "scores": [0.9]}
+    result = {"detected": True, "scores": [0.9], "max_confidence": 0.9}
 
     md._handle_standard_detection("cam1", "fire", make_frame(), result, schedule)
     md._handle_standard_detection("cam1", "fire", make_frame(), result, schedule)
@@ -81,7 +80,7 @@ def test_vlm_review_gets_recent_five_frames():
     frames = [(time.time() + i, b"frame" + str(i).encode()) for i in range(7)]
     camera_manager.get_detection_frames.return_value = frames
 
-    result = {"detected": True, "scores": [0.9]}
+    result = {"detected": True, "scores": [0.9], "max_confidence": 0.9}
     for _ in range(7):
         md._handle_standard_detection("cam1", "fire", make_frame(), result, schedule)
 
@@ -98,7 +97,7 @@ def test_sleep_detection_uses_standard_logic_and_generic_reason():
         "sleep": {"enabled": True, "interval": 1, "threshold": 0.5, "cooldown": 60, "consecutive_required": 3, "use_vlm": False},
     })
     schedule = md._schedules["cam1"]["sleep"]
-    result = {"detected": True, "scores": [0.9]}
+    result = {"detected": True, "scores": [0.9], "max_confidence": 0.9}
 
     md._handle_standard_detection("cam1", "sleep", make_frame(), result, schedule)
     md._handle_standard_detection("cam1", "sleep", make_frame(), result, schedule)
