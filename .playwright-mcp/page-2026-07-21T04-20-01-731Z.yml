@@ -1,0 +1,90 @@
+- generic [ref=f4e2]:
+  - complementary [ref=f4e4]:
+    - generic [ref=f4e5]:
+      - generic [ref=f4e6]: S
+      - generic [ref=f4e7]:
+        - generic [ref=f4e8]: 视频诊断系统
+        - generic [ref=f4e9]: 安全检测平台
+    - navigation [ref=f4e10]:
+      - generic [ref=f4e11]:
+        - link "监控" [ref=f4e12] [cursor=pointer]:
+          - /url: /monitor
+        - link "记录" [ref=f4e14] [cursor=pointer]:
+          - /url: /records.html
+      - generic [ref=f4e16]:
+        - button "设置 ›" [expanded] [ref=f4e17] [cursor=pointer]:
+          - generic [ref=f4e18]: 设置
+          - generic [ref=f4e19]: ›
+        - generic [ref=f4e20]:
+          - link "摄像头" [ref=f4e21] [cursor=pointer]:
+            - /url: /settings.html?tab=cameras
+          - link "检测配置" [ref=f4e22] [cursor=pointer]:
+            - /url: /settings.html?tab=detection
+          - link "类型管理" [ref=f4e23] [cursor=pointer]:
+            - /url: /types.html
+          - link "系统设置" [ref=f4e24] [cursor=pointer]:
+            - /url: /settings.html?tab=system
+  - main [ref=f4e25]:
+    - generic [ref=f4e26]:
+      - generic [ref=f4e27]:
+        - generic [ref=f4e28]: S
+        - generic [ref=f4e29]: 监控
+      - generic [ref=f4e30]:
+        - generic [ref=f4e31]: 在线 1 / 1
+        - generic [ref=f4e33]: 告警 5
+        - generic [ref=f4e35]: 04:20:01
+    - generic [ref=f4e36]:
+      - generic [ref=f4e37]: "1"
+      - generic [ref=f4e45]:
+        - generic [ref=f4e46]: 显示检测类型
+        - generic [ref=f4e47]:
+          - generic [ref=f4e48]: 明火
+          - generic [ref=f4e51]: 烟雾
+          - generic [ref=f4e54]: 工服
+          - generic [ref=f4e57]: 口罩
+          - generic [ref=f4e60]: 吸烟
+          - generic [ref=f4e63]: 睡岗
+          - generic [ref=f4e66]: 安全帽
+          - generic [ref=f4e69]: 漏液
+          - generic [ref=f4e72]: 反光背心
+        - generic [ref=f4e75]:
+          - generic [ref=f4e76]: 刷新频率（秒）
+          - spinbutton [ref=f4e77]: "0.2"
+      - generic [ref=f4e79]:
+        - generic [ref=f4e80]: 摄像头列表
+        - generic [ref=f4e82] [cursor=pointer]:
+          - generic [ref=f4e83]: "1"
+          - generic [ref=f4e86]: 漏液
+      - generic [ref=f4e89]:
+        - generic [ref=f4e90]: 最近告警
+        - generic [ref=f4e91]:
+          - generic [ref=f4e92] [cursor=pointer]:
+            - generic [ref=f4e93]: 2026-07-21 12:19:01
+            - generic [ref=f4e94]:
+              - generic [ref=f4e95]: "1"
+              - generic [ref=f4e96]: 漏液
+            - generic [ref=f4e97]: "级别: 小模型报警"
+          - generic [ref=f4e98] [cursor=pointer]:
+            - generic [ref=f4e99]: 2026-07-21 12:17:58
+            - generic [ref=f4e100]:
+              - generic [ref=f4e101]: "1"
+              - generic [ref=f4e102]: 漏液
+            - generic [ref=f4e103]: "级别: 小模型报警"
+          - generic [ref=f4e104] [cursor=pointer]:
+            - generic [ref=f4e105]: 2026-07-21 12:16:55
+            - generic [ref=f4e106]:
+              - generic [ref=f4e107]: "1"
+              - generic [ref=f4e108]: 漏液
+            - generic [ref=f4e109]: "级别: 小模型报警"
+          - generic [ref=f4e110] [cursor=pointer]:
+            - generic [ref=f4e111]: 2026-07-21 12:15:53
+            - generic [ref=f4e112]:
+              - generic [ref=f4e113]: "1"
+              - generic [ref=f4e114]: 漏液
+            - generic [ref=f4e115]: "级别: 小模型报警"
+          - generic [ref=f4e116] [cursor=pointer]:
+            - generic [ref=f4e117]: 2026-07-21 12:14:50
+            - generic [ref=f4e118]:
+              - generic [ref=f4e119]: "1"
+              - generic [ref=f4e120]: 漏液
+            - generic [ref=f4e121]: "级别: 小模型报警"

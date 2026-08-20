@@ -1,0 +1,24 @@
+- main [ref=f3e4]:
+  - generic [ref=f3e6]:
+    - generic [ref=f3e7]: S
+    - generic [ref=f3e8]: 设置
+  - generic [ref=f3e10]:
+    - generic [ref=f3e11]:
+      - generic [ref=f3e12] [cursor=pointer]: 摄像头
+      - generic [ref=f3e13] [cursor=pointer]: 检测配置
+      - generic [ref=f3e14] [cursor=pointer]: 系统设置
+    - generic [ref=f3e16]:
+      - button "+ 添加摄像头" [ref=f3e18] [cursor=pointer]
+      - table [ref=f3e20]:
+        - rowgroup [ref=f3e21]:
+          - row [ref=f3e22]:
+            - columnheader [ref=f3e23]:
+              - checkbox [ref=f3e24]
+            - columnheader "ID" [ref=f3e25]
+            - columnheader "名称" [ref=f3e26]
+            - columnheader "源地址" [ref=f3e27]
+            - columnheader "类型" [ref=f3e28]
+            - columnheader "分辨率" [ref=f3e29]
+            - columnheader "启用" [ref=f3e30]
+            - columnheader "操作" [ref=f3e31]
+        - rowgroup

@@ -1,0 +1,104 @@
+- generic [ref=f6e2]:
+  - complementary [ref=f6e4]:
+    - generic [ref=f6e5]:
+      - generic [ref=f6e6]: S
+      - generic [ref=f6e7]:
+        - generic [ref=f6e8]: 视频诊断系统
+        - generic [ref=f6e9]: 安全检测平台
+    - navigation [ref=f6e10]:
+      - generic [ref=f6e11]:
+        - link "监控" [ref=f6e12] [cursor=pointer]:
+          - /url: /monitor
+        - link "记录" [ref=f6e14] [cursor=pointer]:
+          - /url: /records.html
+      - generic [ref=f6e16]:
+        - button "设置 ›" [expanded] [ref=f6e17] [cursor=pointer]:
+          - generic [ref=f6e18]: 设置
+          - generic [ref=f6e19]: ›
+        - generic [ref=f6e20]:
+          - link "摄像头" [ref=f6e21] [cursor=pointer]:
+            - /url: /settings.html?tab=cameras
+          - link "检测配置" [ref=f6e22] [cursor=pointer]:
+            - /url: /settings.html?tab=detection
+          - link "模型管理" [ref=f6e23] [cursor=pointer]:
+            - /url: /models.html
+          - link "算法管理" [ref=f6e24] [cursor=pointer]:
+            - /url: /algorithms.html
+          - link "系统设置" [ref=f6e25] [cursor=pointer]:
+            - /url: /settings.html?tab=system
+  - main [ref=f6e26]:
+    - generic [ref=f6e28]:
+      - generic [ref=f6e29]: S
+      - generic [ref=f6e30]: 记录
+    - generic [ref=f6e31]:
+      - generic [ref=f6e32]:
+        - generic [ref=f6e33]:
+          - generic [ref=f6e34]: "12419"
+          - generic [ref=f6e35]: 今日告警
+        - generic [ref=f6e36]:
+          - generic [ref=f6e37]: "12416"
+          - generic [ref=f6e38]: 待确认
+        - generic [ref=f6e39]:
+          - generic [ref=f6e40]: "2"
+          - generic [ref=f6e41]: 已确认
+        - generic [ref=f6e42]:
+          - generic [ref=f6e43]: "1"
+          - generic [ref=f6e44]: 误报
+      - generic [ref=f6e45]:
+        - generic [ref=f6e46]: 明火 443
+        - generic [ref=f6e47]: 烟雾 3370
+        - generic [ref=f6e48]: 工服 0
+        - generic [ref=f6e49]: 口罩 2986
+        - generic [ref=f6e50]: 吸烟 2763
+        - generic [ref=f6e51]: 睡岗 81
+        - generic [ref=f6e52]: 安全帽 82
+        - generic [ref=f6e53]: 漏液 2588
+        - generic [ref=f6e54]: 反光背心 0
+      - generic [ref=f6e55]:
+        - generic [ref=f6e56]:
+          - generic [ref=f6e57]: 日期范围
+          - generic [ref=f6e58]:
+            - textbox [ref=f6e59]
+            - generic [ref=f6e60]: ~
+            - textbox [ref=f6e61]
+        - generic [ref=f6e62]:
+          - generic [ref=f6e63]: 摄像头
+          - combobox [ref=f6e64]:
+            - option "全部" [selected]
+            - option "1"
+            - option "2"
+        - generic [ref=f6e65]:
+          - generic [ref=f6e66]: 检测类型
+          - combobox [ref=f6e67]:
+            - option "全部" [selected]
+            - option "明火"
+            - option "烟雾"
+            - option "工服"
+            - option "口罩"
+            - option "吸烟"
+            - option "睡岗"
+            - option "安全帽"
+            - option "漏液"
+            - option "反光背心"
+        - generic [ref=f6e68]:
+          - generic [ref=f6e69]: 告警级别
+          - combobox [ref=f6e70]:
+            - option "全部" [selected]
+            - option "小模型报警"
+            - option "大模型报警"
+            - option "大模型忽略"
+        - generic [ref=f6e71]:
+          - generic [ref=f6e72]: 状态
+          - combobox [ref=f6e73]:
+            - option "全部" [selected]
+            - option "待确认"
+            - option "已确认"
+            - option "误报"
+        - generic [ref=f6e74]:
+          - generic [ref=f6e75]: 每页
+          - combobox [ref=f6e76]:
+            - option "10"
+            - option "20" [selected]
+            - option "50"
+        - button "刷新" [ref=f6e79] [cursor=pointer]
+      - generic [ref=f6e80]: 加载中...

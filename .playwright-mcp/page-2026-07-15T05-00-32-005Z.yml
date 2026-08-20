@@ -1,0 +1,110 @@
+- generic [ref=f7e2]:
+  - complementary [ref=f7e4]:
+    - generic [ref=f7e5]:
+      - generic [ref=f7e6]: S
+      - generic [ref=f7e7]:
+        - generic [ref=f7e8]: 视频诊断系统
+        - generic [ref=f7e9]: 安全检测平台
+    - navigation [ref=f7e10]:
+      - generic [ref=f7e11]:
+        - link "监控" [ref=f7e12] [cursor=pointer]:
+          - /url: /monitor
+        - link "记录" [ref=f7e14] [cursor=pointer]:
+          - /url: /records.html
+      - generic [ref=f7e16]:
+        - button "设置 ›" [expanded] [ref=f7e17] [cursor=pointer]:
+          - generic [ref=f7e18]: 设置
+          - generic [ref=f7e19]: ›
+        - generic [ref=f7e20]:
+          - link "摄像头" [ref=f7e21] [cursor=pointer]:
+            - /url: /settings.html?tab=cameras
+          - link "检测配置" [ref=f7e22] [cursor=pointer]:
+            - /url: /settings.html?tab=detection
+          - link "类型管理" [ref=f7e23] [cursor=pointer]:
+            - /url: /types.html
+          - link "系统设置" [ref=f7e24] [cursor=pointer]:
+            - /url: /settings.html?tab=system
+  - main [ref=f7e25]:
+    - generic [ref=f7e27]:
+      - generic [ref=f7e28]: S
+      - generic [ref=f7e29]: 设置
+    - generic [ref=f7e31]:
+      - generic [ref=f7e32]:
+        - generic [ref=f7e33] [cursor=pointer]: 摄像头
+        - generic [ref=f7e34] [cursor=pointer]: 检测配置
+        - generic [ref=f7e35] [cursor=pointer]: 系统设置
+      - generic [ref=f7e37]:
+        - button "+ 添加摄像头" [ref=f7e39] [cursor=pointer]
+        - table [ref=f7e41]:
+          - rowgroup [ref=f7e42]:
+            - row [ref=f7e43]:
+              - columnheader [ref=f7e44]:
+                - checkbox [ref=f7e45]
+              - columnheader "ID" [ref=f7e46]
+              - columnheader "名称" [ref=f7e47]
+              - columnheader "源地址" [ref=f7e48]
+              - columnheader "类型" [ref=f7e49]
+              - columnheader "分辨率" [ref=f7e50]
+              - columnheader "启用" [ref=f7e51]
+              - columnheader "操作" [ref=f7e52]
+          - rowgroup [ref=f7e53]:
+            - row [ref=f7e54]:
+              - cell [ref=f7e55]:
+                - checkbox [ref=f7e56]
+              - cell "2" [ref=f7e57]
+              - cell "2" [ref=f7e58]
+              - cell "http://192.168.0.21:9991/rtp/34020000001110000001_34020000001320000002.live.mp4?originTypeStr=rtp_push&videoCodec=H265" [ref=f7e59]
+              - cell "auto" [ref=f7e60]
+              - cell "640x480" [ref=f7e61]
+              - cell "是" [ref=f7e62]
+              - cell [ref=f7e63]:
+                - button "编辑" [ref=f7e64] [cursor=pointer]
+                - button "删除" [ref=f7e65] [cursor=pointer]
+            - row [ref=f7e66]:
+              - cell [ref=f7e67]:
+                - checkbox [ref=f7e68]
+              - cell "1" [ref=f7e69]
+              - cell "1" [ref=f7e70]
+              - cell "http://localhost:18765/video2/stream" [ref=f7e71]
+              - cell "auto" [ref=f7e72]
+              - cell "640x480" [ref=f7e73]
+              - cell "是" [ref=f7e74]
+              - cell [ref=f7e75]:
+                - button "编辑" [ref=f7e76] [cursor=pointer]
+                - button "删除" [ref=f7e77] [cursor=pointer]
+            - row [ref=f7e78]:
+              - cell [ref=f7e79]:
+                - checkbox [ref=f7e80]
+              - cell "3" [ref=f7e81]
+              - cell "3" [ref=f7e82]
+              - cell "http://localhost:18765/video1/stream" [ref=f7e83]
+              - cell "auto" [ref=f7e84]
+              - cell "640x480" [ref=f7e85]
+              - cell "是" [ref=f7e86]
+              - cell [ref=f7e87]:
+                - button "编辑" [ref=f7e88] [cursor=pointer]
+                - button "删除" [ref=f7e89] [cursor=pointer]
+            - row [ref=f7e90]:
+              - cell [ref=f7e91]:
+                - checkbox [ref=f7e92]
+              - cell "4" [ref=f7e93]
+              - cell "4" [ref=f7e94]
+              - cell "http://localhost:18765/video3/stream" [ref=f7e95]
+              - cell "auto" [ref=f7e96]
+              - cell "640x480" [ref=f7e97]
+              - cell "是" [ref=f7e98]
+              - cell [ref=f7e99]:
+                - button "编辑" [ref=f7e100] [cursor=pointer]
+                - button "删除" [ref=f7e101] [cursor=pointer]
+            - row [ref=f7e102]:
+              - cell [ref=f7e103]:
+                - checkbox [ref=f7e104]
+              - cell "45" [ref=f7e105]
+              - cell "45" [ref=f7e106]
+              - cell "45" [ref=f7e107]
+              - cell "auto" [ref=f7e108]
+              - cell "640x480" [ref=f7e109]
+              - cell "是" [ref=f7e110]
+              - cell [ref=f7e111]:
+                - button "编辑" [ref=f7e112] [cursor=pointer]
+                - button "删除" [ref=f7e113] [cursor=pointer]

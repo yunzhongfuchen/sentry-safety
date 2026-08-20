@@ -65,6 +65,7 @@ async def get_detection_type(dtype: str):
         "rule": type_def.get("rule"),
         "vlm_prompt": type_def.get("vlm_prompt", ""),
         "inspection_label": type_def.get("inspection_label", type_def.get("label", dtype)),
+        "alarm_description": type_def.get("alarm_description", ""),
         "defaults": type_def.get("defaults", {}),
     }
 
@@ -92,7 +93,7 @@ async def update_detection_type(dtype: str, data: dict, request: Request):
             if "rule" in structural_update and structural_update["rule"] is not None:
                 errors = registry.validate_rule(structural_update["rule"])
                 if errors:
-                    return JSONResponse({"error": "; ".join(errors)}, status_code=400)
+                    return JSONResponse({"errors": errors}, status_code=400)
             registry.update_type(dtype, structural_update)
         if defaults_update:
             for k, v in defaults_update.items():
@@ -114,6 +115,11 @@ async def update_detection_type(dtype: str, data: dict, request: Request):
 @router.post("/detector/types")
 async def create_detection_type(data: dict):
     """新增检测类型"""
+    rule = data.get("rule")
+    if rule is not None:
+        errors = registry.validate_rule(rule)
+        if errors:
+            return JSONResponse({"errors": errors}, status_code=400)
     try:
         key = registry.add_type(data)
         type_def = registry.get(key)
@@ -126,6 +132,7 @@ async def create_detection_type(data: dict):
             "rule": type_def.get("rule"),
             "vlm_prompt": type_def.get("vlm_prompt", ""),
             "inspection_label": type_def.get("inspection_label", type_def.get("label", key)),
+            "alarm_description": type_def.get("alarm_description", ""),
             "defaults": type_def.get("defaults", {}),
         }
     except ValueError as e:
@@ -388,7 +395,7 @@ async def create_algorithm(data: dict):
     if rule is not None:
         errors = registry.validate_rule(rule)
         if errors:
-            return JSONResponse({"error": "; ".join(errors)}, status_code=400)
+            return JSONResponse({"errors": errors}, status_code=400)
     try:
         key = registry.add_type(data)
         return _algo_to_response(key, registry.get(key))
@@ -414,7 +421,7 @@ async def update_algorithm(key: str, data: dict, request: Request):
             if "rule" in structural_update and structural_update["rule"] is not None:
                 errors = registry.validate_rule(structural_update["rule"])
                 if errors:
-                    return JSONResponse({"error": "; ".join(errors)}, status_code=400)
+                    return JSONResponse({"errors": errors}, status_code=400)
             registry.update_type(key, structural_update)
         if defaults_update:
             for k, v in defaults_update.items():

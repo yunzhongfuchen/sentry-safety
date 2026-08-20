@@ -163,6 +163,7 @@ class TestCreateDetectionType:
                    "models": [{"model_key": "new", "model_confidence": 0.5}],
                    "rule": {"groups": [{"conditions": [{"left": {"model_key": "new"}, "op": "exists"}]}]}}
         mock_registry = MagicMock()
+        mock_registry.validate_rule.return_value = []
         mock_registry.add_type.return_value = "xin_lei_xing_123abc"
         mock_registry.get.return_value = {
             "label": "新类型", "color": "#123456",
@@ -181,6 +182,7 @@ class TestCreateDetectionType:
                    "models": [{"model_key": "x", "model_confidence": 0.5}],
                    "rule": {"groups": [{"conditions": [{"left": {"model_key": "x"}, "op": "exists"}]}]}}
         mock_registry = MagicMock()
+        mock_registry.validate_rule.return_value = []
         mock_registry.add_type.side_effect = ValueError("label '明火' already exists")
 
         with patch("backend.safety_detection.api.registry", mock_registry):
@@ -189,6 +191,7 @@ class TestCreateDetectionType:
 
     def test_create_missing_label_400(self, client):
         mock_registry = MagicMock()
+        mock_registry.validate_rule.return_value = []
         mock_registry.add_type.side_effect = ValueError("label is required")
 
         with patch("backend.safety_detection.api.registry", mock_registry):
@@ -199,6 +202,7 @@ class TestCreateDetectionType:
 class TestDeleteDetectionType:
     def test_delete_type_success(self, client):
         mock_registry = MagicMock()
+        mock_registry.validate_rule.return_value = []
         mock_registry.add_type.return_value = "dai_shan_chu_123abc"
         mock_registry.get.return_value = {"label": "待删除"}
 

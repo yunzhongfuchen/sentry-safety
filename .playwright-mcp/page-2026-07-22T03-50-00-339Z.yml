@@ -1,0 +1,89 @@
+- generic [ref=e2]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: S
+      - generic [ref=e7]:
+        - generic [ref=e8]: 视频诊断系统
+        - generic [ref=e9]: 安全检测平台
+    - navigation [ref=e10]:
+      - generic [ref=e11]:
+        - link "监控" [ref=e12] [cursor=pointer]:
+          - /url: /monitor
+        - link "记录" [ref=e14] [cursor=pointer]:
+          - /url: /records.html
+      - generic [ref=e16]:
+        - button "设置 ›" [expanded] [ref=e17] [cursor=pointer]:
+          - generic [ref=e18]: 设置
+          - generic [ref=e19]: ›
+        - generic [ref=e20]:
+          - link "摄像头" [ref=e21] [cursor=pointer]:
+            - /url: /settings.html?tab=cameras
+          - link "检测配置" [ref=e22] [cursor=pointer]:
+            - /url: /settings.html?tab=detection
+          - link "模型管理" [ref=e23] [cursor=pointer]:
+            - /url: /models.html
+          - link "算法管理" [ref=e24] [cursor=pointer]:
+            - /url: /algorithms.html
+          - link "系统设置" [ref=e25] [cursor=pointer]:
+            - /url: /settings.html?tab=system
+  - main [ref=e26]:
+    - generic [ref=e27]:
+      - heading "模型管理" [level=1] [ref=e28]
+      - button "上传模型" [ref=e29] [cursor=pointer]
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - generic [ref=e32]: fire_smoke
+        - generic [ref=e33]: "文件: fire_smoke.pt"
+        - generic [ref=e34]: "策略: yolo_box · 被 1 个算法引用"
+        - generic [ref=e35]: 未解析到类别
+        - generic [ref=e37]:
+          - button "编辑" [ref=e38] [cursor=pointer]
+          - button "删除" [ref=e39] [cursor=pointer]
+      - generic [ref=e40]:
+        - generic [ref=e41]: uniform
+        - generic [ref=e42]: "文件: uniform.pt"
+        - generic [ref=e43]: "策略: yolo_box · 被 1 个算法引用"
+        - generic [ref=e44]: 未解析到类别
+        - generic [ref=e46]:
+          - button "编辑" [ref=e47] [cursor=pointer]
+          - button "删除" [ref=e48] [cursor=pointer]
+      - generic [ref=e49]:
+        - generic [ref=e50]: mask
+        - generic [ref=e51]: "文件: mask.pt"
+        - generic [ref=e52]: "策略: yolo_box · 被 1 个算法引用"
+        - generic [ref=e53]: 未解析到类别
+        - generic [ref=e55]:
+          - button "编辑" [ref=e56] [cursor=pointer]
+          - button "删除" [ref=e57] [cursor=pointer]
+      - generic [ref=e58]:
+        - generic [ref=e59]: best
+        - generic [ref=e60]: "文件: best.pt"
+        - generic [ref=e61]: "策略: yolo_box · 被 1 个算法引用"
+        - generic [ref=e62]: 未解析到类别
+        - generic [ref=e64]:
+          - button "编辑" [ref=e65] [cursor=pointer]
+          - button "删除" [ref=e66] [cursor=pointer]
+      - generic [ref=e67]:
+        - generic [ref=e68]: yolov8n-pose
+        - generic [ref=e69]: "文件: yolov8n-pose.pt"
+        - generic [ref=e70]: "策略: yolo_pose · 被 1 个算法引用"
+        - generic [ref=e71]: 未解析到类别
+        - generic [ref=e73]:
+          - button "编辑" [ref=e74] [cursor=pointer]
+          - button "删除" [ref=e75] [cursor=pointer]
+      - generic [ref=e76]:
+        - generic [ref=e77]: ppe
+        - generic [ref=e78]: "文件: ppe.pt"
+        - generic [ref=e79]: "策略: yolo_box · 被 1 个算法引用"
+        - generic [ref=e80]: 未解析到类别
+        - generic [ref=e82]:
+          - button "编辑" [ref=e83] [cursor=pointer]
+          - button "删除" [ref=e84] [cursor=pointer]
+      - generic [ref=e85]:
+        - generic [ref=e86]: leakage2
+        - generic [ref=e87]: "文件: leakage2.pt"
+        - generic [ref=e88]: "策略: yolo_box · 被 1 个算法引用"
+        - generic [ref=e89]: 未解析到类别
+        - generic [ref=e91]:
+          - button "编辑" [ref=e92] [cursor=pointer]
+          - button "删除" [ref=e93] [cursor=pointer]
