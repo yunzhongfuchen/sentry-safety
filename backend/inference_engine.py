@@ -132,7 +132,8 @@ def _resolve_model_path(dtype: str, use_npu: bool) -> Optional[str]:
 
     type_def = registry.get(dtype)
     if type_def is not None:
-        filename = type_def.get("model_path")
+        models = type_def.get("models") or []
+        filename = models[0].get("model_path") if models else None
         if filename is None:
             return None
         candidates = [
@@ -153,30 +154,14 @@ def _resolve_model_path(dtype: str, use_npu: bool) -> Optional[str]:
     return None
 
 
-def _process_yolo_box(raw_boxes: list, type_def: dict) -> dict:
-    """yolo_box 后处理：按 classes 过滤框"""
-    result = {"detected": False, "boxes": [], "scores": []}
-    target_classes = type_def.get("classes")
-    for box in raw_boxes:
-        if target_classes is not None and box.get("class_id") not in target_classes:
-            continue
-        result["boxes"].append(box["xyxy"])
-        result["scores"].append(box["confidence"])
-    result["detected"] = len(result["boxes"]) > 0
-    if result["scores"]:
-        result["max_confidence"] = max(result["scores"])
-    else:
-        result["max_confidence"] = 0.0
-    return result
-
-
 def _process_yolo_pose(raw_output, type_def: dict, frame: np.ndarray) -> dict:
     """yolo_pose 后处理：姿态模型 + sleep_detect 分析"""
     result = {"detected": False, "boxes": [], "scores": [], "subjects": [], "count": 0}
     try:
         from safety_detection.sleep_detect import process_frame
         model = raw_output  # yolo_pose 时 raw_output 就是模型实例
-        subjects = process_frame(model, frame, conf=type_def.get("model_confidence", 0.1))
+        conf = (type_def.get("models") or [{}])[0].get("model_confidence", 0.1)
+        subjects = process_frame(model, frame, conf=conf)
         for s in subjects:
             result["boxes"].append(s["box"])
             result["scores"].append(s.get("sleep_confidence", 0))
@@ -197,8 +182,36 @@ def _process_yolo_pose(raw_output, type_def: dict, frame: np.ndarray) -> dict:
     return result
 
 
+def _filter_boxes_by_roi(boxes: list, roi: list, roi_invert: bool, w: int, h: int) -> list:
+    """raw box 列表按 ROI 多边形过滤（内联多边形判定，避免与 detector_core 循环引用）"""
+    if not boxes or not roi:
+        return boxes
+    # 兼容单个多边形 [[x, y], ...] 或 polygon 列表
+    if len(roi) > 0 and len(roi[0]) > 0 and isinstance(roi[0][0], (int, float)):
+        rois = [roi]
+    else:
+        rois = roi
+    polygons = [
+        np.array([(int(x * w), int(y * h)) for x, y in polygon], dtype=np.int32)
+        for polygon in rois
+    ]
+    kept = []
+    for box in boxes:
+        xyxy = box.get("xyxy")
+        if xyxy is None or len(xyxy) < 4:
+            continue
+        cx = (xyxy[0] + xyxy[2]) / 2
+        cy = (xyxy[1] + xyxy[3]) / 2
+        inside_any = any(
+            cv2.pointPolygonTest(polygon, (cx, cy), False) >= 0
+            for polygon in polygons
+        )
+        if inside_any if not roi_invert else not inside_any:
+            kept.append(box)
+    return kept
+
 POST_PROCESSORS = {
-    "yolo_box": _process_yolo_box,
+    "yolo_relation": None,  # 占位：走 detect() 内的专用分支
     "yolo_pose": _process_yolo_pose,
 }
 
@@ -240,20 +253,22 @@ class SafetyDetector:
                 if type_def is None:
                     logger.warning(f"Unknown detection type: {dtype}")
                     continue
-                model_key = type_def["model_path"]
-                if model_key in loaded_paths:
-                    continue
-                loaded_paths.add(model_key)
-                self._load_model(model_key, device)
+                for m in type_def.get("models", []):
+                    mpath = m.get("model_path")
+                    if not mpath or mpath in loaded_paths:
+                        continue
+                    loaded_paths.add(mpath)
+                    self._load_model(mpath, device)
 
     def _load_model(self, model_path: str, device: str) -> None:
         """通用模型加载：npu / gpu / cpu 三分支。model_path 为模型文件名（缓存 key）。"""
         # 按 model_path（文件名）查找使用此模型的第一个类型，用于解析实际路径
         def _first_dtype_by_path(mpath: str):
-            return next(
-                (dt for dt in registry.all_types() if (registry.get(dt) or {}).get("model_path") == mpath),
-                None,
-            )
+            for dt in registry.all_types():
+                td = registry.get(dt) or {}
+                if any(m.get("model_path") == mpath for m in td.get("models", [])):
+                    return dt
+            return None
 
         if device == "npu" and self._npu_cores > 0:
             if model_path not in self._npu_models:
@@ -374,88 +389,123 @@ class SafetyDetector:
     # 推理
     # ------------------------------------------------------------------
 
-    def _run_model(self, model_key: str, frame: np.ndarray,
-                   type_def: dict, core_id: int = 0):
-        """执行模型推理，返回原始检测结果"""
+    def _run_model(self, model_path: str, frame: np.ndarray,
+                   conf: float, is_pose: bool, core_id: int = 0):
+        """执行模型推理，返回原始检测结果（pose 返回模型实例）"""
         model = None
         use_npu = False
         with self._model_lock:
-            if model_key in self._npu_models and core_id in self._npu_models[model_key]:
-                model = self._npu_models[model_key][core_id]
+            if model_path in self._npu_models and core_id in self._npu_models[model_path]:
+                model = self._npu_models[model_path][core_id]
                 use_npu = True
-            elif model_key in self._cpu_models:
-                model = self._cpu_models[model_key]
+            elif model_path in self._cpu_models:
+                model = self._cpu_models[model_path]
 
         if model is None:
-            logger.warning(f"Model {model_key} not loaded")
-            return [] if type_def["post_process"] == "yolo_box" else model
-
-        # yolo_pose 直接返回模型实例（由 _process_yolo_pose 自行调用 process_frame）
-        if type_def["post_process"] == "yolo_pose":
+            logger.warning(f"Model {model_path} not loaded")
+            return None if is_pose else []
+        if is_pose:
             return model
-
-        # yolo_box：统一推理流程
         try:
             if use_npu:
                 input_frame = self._preprocess(frame)
                 outputs = model.inference(inputs=[input_frame])
-                conf = type_def.get("model_confidence", 0.5)
                 return self._postprocess_rknn(outputs, frame.shape[:2], conf_threshold=conf)
-            else:
-                conf = type_def.get("model_confidence", 0.5)
-                pred = model.predict(frame, conf=conf, verbose=False)
-                boxes = []
-                if pred and pred[0].boxes is not None:
-                    for b in pred[0].boxes:
-                        x1, y1, x2, y2 = map(int, b.xyxy[0])
-                        cls = int(b.cls[0])
-                        score = float(b.conf[0])
-                        boxes.append({"xyxy": [x1, y1, x2, y2], "class_id": cls, "confidence": score})
-                return boxes
+            pred = model.predict(frame, conf=conf, verbose=False)
+            boxes = []
+            if pred and pred[0].boxes is not None:
+                for b in pred[0].boxes:
+                    x1, y1, x2, y2 = map(int, b.xyxy[0])
+                    boxes.append({"xyxy": [x1, y1, x2, y2],
+                                  "class_id": int(b.cls[0]),
+                                  "confidence": float(b.conf[0])})
+            return boxes
         except Exception as e:
-            logger.error(f"Model {model_key} inference error: {e}")
+            logger.error(f"Model {model_path} inference error: {e}")
             return []
 
     def detect(self, frame: np.ndarray, detection_types: List[str],
-               core_id: int = 0) -> Dict[str, dict]:
-        """
-        对单帧执行多类型检测（注册表驱动）
+               core_id: int = 0, camera_id: str = None,
+               frame_seq: int = None, roi_map: dict = None) -> Dict[str, dict]:
+        """对单帧执行多类型检测（注册表驱动）
 
-        共享 model_key 的类型只推理一次，各自按 classes 过滤。
+        共享模型文件的算法只推理一次；camera_id+frame_seq 提供时按帧缓存 raw 结果。
+        roi_map: {dtype: (roi, roi_invert)}，relation 算法在判定前按 ROI 过滤目标框。
         """
         results: Dict[str, dict] = {}
-        processed_models = set()
+        cache = getattr(self, "_raw_cache", None)
+        if camera_id is not None and frame_seq is not None \
+                and cache is not None and cache["key"] == (camera_id, frame_seq):
+            raw_by_path: Dict[str, list] = dict(cache["value"])  # 帧未变 -> 复用上轮 raw
+        else:
+            raw_by_path = {}
+        new_infer = False
 
+        def _conf_floor(model_path: str) -> float:
+            """该模型被引用的最低 conf：模型级与所有条件侧 conf 的最小值"""
+            floor = 1.0
+            for dt in detection_types:
+                td = registry.get(dt)
+                if td is None:
+                    continue
+                path_by_key = {m.get("model_key"): m.get("model_path")
+                               for m in td.get("models", [])}
+                for m in td.get("models", []):
+                    if m.get("model_path") == model_path:
+                        floor = min(floor, m.get("model_confidence", 0.5))
+                for g in (td.get("rule") or {}).get("groups", []):
+                    for c in g.get("conditions", []):
+                        for sn in ("left", "right"):
+                            s = c.get(sn)
+                            if s and s.get("conf") is not None \
+                                    and path_by_key.get(s.get("model_key")) == model_path:
+                                floor = min(floor, s["conf"])
+            return floor
+
+        # 第一遍：收集所有到期算法引用的模型，逐模型推理（同帧去重）
         for dtype in detection_types:
             type_def = registry.get(dtype)
             if type_def is None:
                 logger.warning(f"Unknown detection type: {dtype}")
                 continue
+            is_pose = type_def.get("post_process") == "yolo_pose"
+            for m in type_def.get("models", []):
+                mpath = m.get("model_path")
+                if not mpath or mpath in raw_by_path:
+                    continue
+                raw_by_path[mpath] = self._run_model(
+                    mpath, frame, _conf_floor(mpath), is_pose, core_id)
+                new_infer = True
 
-            # model_path 是模型文件名（缓存 key），model_key 是注册表 slug（用于 get_types_by_model）
-            model_path = type_def.get("model_path")
-            model_key = type_def.get("model_key")
-            if model_path is None or model_path in processed_models:
+        # 本轮有新推理且提供了帧标识 -> 更新帧缓存
+        if new_infer and camera_id is not None and frame_seq is not None:
+            self._raw_cache = {"key": (camera_id, frame_seq), "value": dict(raw_by_path)}
+
+        # 第二遍：逐算法判定
+        from backend.safety_detection.relation_rules import evaluate_rule
+        for dtype in detection_types:
+            type_def = registry.get(dtype)
+            if type_def is None:
+                continue
+            if type_def.get("post_process") == "yolo_pose":
+                inst = next((raw_by_path[m["model_path"]] for m in type_def.get("models", [])
+                             if m.get("model_path") in raw_by_path), None)
+                results[dtype] = _process_yolo_pose(inst, type_def, frame)
                 continue
 
-            raw_output = self._run_model(model_path, frame, type_def, core_id)
-
-            # 对共享此模型的所有请求类型执行后处理
-            for related_dtype in registry.get_types_by_model(model_key):
-                if related_dtype not in detection_types:
-                    continue
-                related_def = registry.get(related_dtype)
-                strategy = related_def["post_process"]
-                processor = POST_PROCESSORS.get(strategy)
-                if processor is None:
-                    logger.warning(f"Unknown post_process strategy: {strategy}")
-                    continue
-                if strategy == "yolo_pose":
-                    results[related_dtype] = processor(raw_output, related_def, frame)
-                else:
-                    results[related_dtype] = processor(raw_output, related_def)
-
-            processed_models.add(model_path)
+            raw_by_model = {m["model_key"]: raw_by_path.get(m.get("model_path"), [])
+                            for m in type_def.get("models", [])}
+            # relation：ROI 预过滤所有目标框
+            if roi_map and dtype in roi_map:
+                roi, roi_invert = roi_map[dtype]
+                if roi:
+                    h, w = frame.shape[:2]
+                    raw_by_model = {mk: _filter_boxes_by_roi(boxes, roi, roi_invert, w, h)
+                                    for mk, boxes in raw_by_model.items()}
+            r = evaluate_rule(raw_by_model, type_def.get("rule") or {})
+            if roi_map and dtype in roi_map:
+                r["roi_applied"] = True
+            results[dtype] = r
 
         return results
 
@@ -580,12 +630,19 @@ class SafetyDetector:
         with self._model_lock:
             for dtype in registry.all_types():
                 type_def = registry.get(dtype)
-                model_key = type_def["model_path"]
-                # 检查是否已加载
-                is_loaded = model_key in self._cpu_models or model_key in self._npu_models
+                if type_def is None:
+                    continue
+                model_paths = [m.get("model_path") for m in type_def.get("models", [])]
+                is_loaded = any(
+                    mp in self._cpu_models or mp in self._npu_models
+                    for mp in model_paths if mp
+                )
                 if is_loaded:
-                    if model_key in self._cpu_models:
-                        model = self._cpu_models[model_key]
+                    loaded_path = next(
+                        mp for mp in model_paths if mp and (mp in self._cpu_models or mp in self._npu_models)
+                    )
+                    if loaded_path in self._cpu_models:
+                        model = self._cpu_models[loaded_path]
                         model_device = getattr(model, "device", None)
                         if model_device is not None:
                             device_type = str(model_device).split(":")[0]
@@ -596,7 +653,7 @@ class SafetyDetector:
                         else:
                             entry = {"type": dtype, "backend": "cpu", "device": "pytorch", "loaded": True}
                     else:
-                        core_map = self._npu_models.get(model_key, {})
+                        core_map = self._npu_models.get(loaded_path, {})
                         entry = {"type": dtype, "backend": "npu", "device": "rk3588",
                                  "cores": len(core_map), "loaded": True}
                 else:
