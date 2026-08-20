@@ -51,8 +51,8 @@
             box-shadow: var(--glass-shadow);
             padding: 24px;
             width: 90%;
-            max-width: 640px;
-            max-height: 80vh;
+            max-width: 760px;
+            max-height: 86vh;
             overflow-y: auto;
         }
         .toast {
@@ -75,8 +75,9 @@
         }
         .type-card-checkboxes {
             display: flex;
-            gap: 16px;
-            margin-bottom: 14px;
+            gap: 12px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
         }
         .type-card-checkbox {
             display: flex;
@@ -149,6 +150,63 @@
             box-sizing: border-box;
             resize: vertical;
         }
+        .model-row {
+            display: grid;
+            grid-template-columns: 1fr 120px 36px;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 10px;
+        }
+        .condition-card {
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+        .condition-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .condition-row {
+            display: grid;
+            grid-template-columns: 1fr 120px 1fr;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 8px;
+        }
+        .condition-row.count {
+            grid-template-columns: 1fr 120px 100px;
+        }
+        .side-box {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 10px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-base);
+        }
+        .side-box label {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .hint-text {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+        .or-separator {
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin: 8px 0;
+        }
+        .class-chip {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-soft);
+            color: var(--text-secondary);
+        }
     </style>
 </head>
 <body>
@@ -162,7 +220,7 @@
             <div class="type-cards-grid">
                 <div v-for="t in types" :key="t.key" class="glass-card type-card" :style="{ borderTopColor: t.color }">
                     <div class="type-card-header" :style="{ color: t.color }">{{ t.label }}</div>
-                    <div class="type-card-meta">模型: {{ modelName(t.model_key) }} · 被 {{ t.used_by_cameras || 0 }} 个摄像头使用</div>
+                    <div class="type-card-meta">模型: {{ t.models?.map(m => modelName(m.model_key)).join(' + ') || '未设置' }} · 被 {{ t.used_by_cameras || 0 }} 个摄像头使用</div>
                     <div class="type-card-meta">策略: {{ t.post_process }} · 阈值 {{ t.defaults?.threshold }} · 间隔 {{ t.defaults?.interval }}s · 冷却 {{ t.defaults?.cooldown }}s</div>
                     <div class="type-card-actions">
                         <button class="clay-button" @click="openDialog(t)">编辑</button>
@@ -183,78 +241,161 @@
                     <div class="type-card-grid">
                         <div class="type-card-field"><label>显示名称 *</label><input v-model="dialog.label" placeholder="如：明火" /></div>
                         <div class="type-card-field"><label>颜色 *</label><input type="color" v-model="dialog.color" /></div>
-                        <div class="type-card-field" colspan="2">
-                            <label>模型 *</label>
-                            <select v-model="dialog.model_key" @change="onModelChange">
+                    </div>
+                    <div class="type-card-field" style="margin-top: 10px;">
+                        <label>报警说明（留空则使用默认模板：检测到xx异常）</label>
+                        <input v-model="dialog.alarm_description" placeholder="如：发现明火，请立即处理" />
+                    </div>
+                </div>
+
+                <!-- 模型列表 -->
+                <div class="glass-card form-card">
+                    <div class="form-card-title">模型（至少一个）</div>
+                    <div v-for="(m, idx) in dialog.models" :key="idx" class="model-row">
+                        <div class="type-card-field">
+                            <label>模型</label>
+                            <select v-model="m.model_key">
                                 <option value="" disabled>请选择模型</option>
-                                <option v-for="m in models" :key="m.key" :value="m.key">{{ m.name }}（{{ m.file }}）</option>
+                                <option v-for="mm in models" :key="mm.key" :value="mm.key">{{ mm.name }}（{{ mm.file }}）</option>
                             </select>
                         </div>
-                    </div>
-                    <details style="margin-top: 12px;">
-                        <summary style="cursor: pointer; color: var(--text-muted); font-size: 13px;">更多设置</summary>
-                        <div style="margin-top: 12px;">
-                            <div class="form-card-title">运行参数默认值</div>
-                            <div class="type-card-checkboxes">
-                                <label class="type-card-checkbox"><input type="checkbox" v-model="dialog.defaults.enabled" /> 默认启用</label>
-                                <label class="type-card-checkbox"><input type="checkbox" v-model="dialog.defaults.use_vlm" /> VLM 复核</label>
-                                <label class="type-card-checkbox"><input type="checkbox" v-model="dialog.defaults.static_filter" /> 静态过滤</label>
-                            </div>
-                            <div class="type-card-grid cols-4" style="margin-bottom: 10px;">
-                                <div class="type-card-field"><label>间隔</label><input type="number" step="0.1" v-model.number="dialog.defaults.interval" /></div>
-                                <div class="type-card-field"><label>阈值</label><input type="number" step="0.05" min="0" max="1" v-model.number="dialog.defaults.threshold" /></div>
-                                <div class="type-card-field"><label>连续</label><input type="number" min="1" v-model.number="dialog.defaults.consecutive_required" /></div>
-                                <div class="type-card-field"><label>冷却</label><input type="number" min="0" v-model.number="dialog.defaults.cooldown" /></div>
-                            </div>
-                            <div class="type-card-grid">
-                                <div class="type-card-field">
-                                    <label>报警条件</label>
-                                    <select v-model="dialog.defaults.box_count_mode">
-                                        <option value="gte">目标数 ≥ a</option>
-                                        <option value="lte">目标数 ≤ b</option>
-                                        <option value="between">a ≤ 目标数 ≤ b</option>
-                                        <option value="outside">目标数 < a 或 > b</option>
-                                    </select>
-                                </div>
-                                <div class="type-card-field" v-if="dialog.defaults.box_count_mode === 'gte'">
-                                    <label>a</label><input type="number" min="0" v-model.number="dialog.defaults.box_count_a" />
-                                </div>
-                                <div class="type-card-field" v-if="dialog.defaults.box_count_mode === 'lte'">
-                                    <label>b</label><input type="number" min="0" v-model.number="dialog.defaults.box_count_a" />
-                                </div>
-                                <template v-if="dialog.defaults.box_count_mode === 'between' || dialog.defaults.box_count_mode === 'outside'">
-                                    <div class="type-card-field"><label>a</label><input type="number" min="0" v-model.number="dialog.defaults.box_count_a" /></div>
-                                    <div class="type-card-field"><label>b</label><input type="number" min="0" v-model.number="dialog.defaults.box_count_b" /></div>
-                                </template>
-                            </div>
-
-                            <div class="form-card-title" style="margin-top: 16px;">高级参数</div>
-                            <div class="type-card-grid">
-                                <div class="type-card-field"><label>模型置信度 (默认 0.5)</label><input type="number" step="0.1" v-model.number="dialog.model_confidence" /></div>
-                                <div class="type-card-field"><label>巡检显示名</label><input v-model="dialog.inspection_label" /></div>
-                            </div>
-
-                            <div class="type-card-field" style="margin-top: 12px;">
-                                <label>报警说明（留空则使用默认模板：检测到xx异常）</label>
-                                <input v-model="dialog.alarm_description" placeholder="如：发现明火，请立即处理" />
-                            </div>
-
-                            <div class="type-card-field" style="margin-top: 12px;">
-                                <label>类别选择（全不勾选 = 全部选择）</label>
-                                <div class="type-card-checkboxes" style="flex-wrap: wrap;">
-                                    <label v-for="c in availableClasses" :key="c.id" class="type-card-checkbox">
-                                        <input type="checkbox" :value="c.id" v-model="dialog.classesChecked" /> {{ c.id }}:{{ c.name }}
-                                    </label>
-                                    <span v-if="!availableClasses.length" style="font-size: 12px; color: var(--text-muted);">该模型无类别清单，保存后不过滤</span>
-                                </div>
-                            </div>
-
-                            <div class="type-card-field" style="margin-top: 12px;">
-                                <label>VLM 复核提示词（留空则使用内置模板）</label>
-                                <textarea class="vlm-prompt-input" v-model="dialog.vlm_prompt" rows="6" placeholder="自定义 VLM 复核提示词，如：你正在复核一个工业安全监控系统的..."></textarea>
-                            </div>
+                        <div class="type-card-field">
+                            <label>置信度</label>
+                            <input type="number" step="0.05" min="0" max="1" v-model.number="m.model_confidence" />
                         </div>
-                    </details>
+                        <button class="clay-button" @click="removeModel(idx)" :disabled="dialog.models.length <= 1" style="margin-bottom: 10px;">删除</button>
+                    </div>
+                    <button class="clay-button" @click="addModel" style="margin-top: 4px;">+ 添加模型</button>
+                </div>
+
+                <!-- 规则条件组 -->
+                <div class="glass-card form-card">
+                    <div class="form-card-title">触发规则（条件组之间为"或"，组内条件为"且"）</div>
+
+                    <div v-for="(g, gi) in dialog.groups" :key="gi">
+                        <div class="condition-card glass-card">
+                            <div class="condition-card-header">
+                                <span style="font-size: 13px; font-weight: 600;">条件组 {{ gi + 1 }}</span>
+                                <button class="clay-button" @click="removeGroup(gi)" :disabled="dialog.groups.length <= 1">删除组</button>
+                            </div>
+
+                            <div v-for="(c, ci) in g.conditions" :key="ci" style="margin-bottom: 12px;">
+                                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">条件 {{ ci + 1 }}</div>
+                                <div :class="['condition-row', isCountOp(c.op) ? 'count' : '']">
+                                    <div class="side-box">
+                                        <label>左侧类型</label>
+                                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                            <select v-model="c.left.model_key" style="flex: 1 1 100%; min-width: 0;">
+                                                <option value="" disabled>模型</option>
+                                                <option v-for="m in dialog.models" :key="m.model_key" :value="m.model_key">{{ modelName(m.model_key) }}</option>
+                                            </select>
+                                            <div class="type-card-checkboxes" style="margin: 4px 0 0 0;">
+                                                <label v-for="cls in classOptions(c.left.model_key)" :key="cls.id" class="type-card-checkbox">
+                                                    <input type="checkbox" :value="cls.id" v-model="c.left.classes" /> {{ cls.id }}:{{ cls.name }}
+                                                </label>
+                                                <span v-if="c.left.model_key && !classOptions(c.left.model_key).length" class="hint-text">该模型无类别清单，将匹配全部</span>
+                                            </div>
+                                            <input type="number" step="0.05" min="0" max="1" v-model.number="c.left.conf" placeholder="条件置信度（可选）" style="width: 100%;" />
+                                        </div>
+                                    </div>
+
+                                    <div class="type-card-field">
+                                        <label>算子</label>
+                                        <select v-model="c.op">
+                                            <optgroup label="关系">
+                                                <option v-for="op in relationOps" :key="op.op" :value="op.op">{{ op.label }}</option>
+                                            </optgroup>
+                                            <optgroup label="全局">
+                                                <option v-for="op in globalOps" :key="op.op" :value="op.op">{{ op.label }}</option>
+                                            </optgroup>
+                                        </select>
+                                    </div>
+
+                                    <template v-if="isRelationOp(c.op)">
+                                        <div class="side-box">
+                                            <label>右侧类型</label>
+                                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                                <select v-model="c.right.model_key" style="flex: 1 1 100%; min-width: 0;">
+                                                    <option value="" disabled>模型</option>
+                                                    <option v-for="m in dialog.models" :key="m.model_key" :value="m.model_key">{{ modelName(m.model_key) }}</option>
+                                                </select>
+                                                <div class="type-card-checkboxes" style="margin: 4px 0 0 0;">
+                                                    <label v-for="cls in classOptions(c.right.model_key)" :key="cls.id" class="type-card-checkbox">
+                                                        <input type="checkbox" :value="cls.id" v-model="c.right.classes" /> {{ cls.id }}:{{ cls.name }}
+                                                    </label>
+                                                </div>
+                                                <input type="number" step="0.05" min="0" max="1" v-model.number="c.right.conf" placeholder="条件置信度（可选）" style="width: 100%;" />
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <template v-if="isCountOp(c.op)">
+                                        <div class="type-card-field" style="display: flex; flex-direction: column; gap: 6px;">
+                                            <label>数量比较</label>
+                                            <select v-model="c.cmp">
+                                                <option v-for="cc in countCmps" :key="cc.cmp" :value="cc.cmp">{{ cc.label }}</option>
+                                            </select>
+                                            <template v-if="c.cmp === 'outside'">
+                                                <input type="number" min="0" v-model.number="c.min" placeholder="min" />
+                                                <input type="number" min="0" v-model.number="c.max" placeholder="max" />
+                                            </template>
+                                            <template v-else>
+                                                <input type="number" min="0" v-model.number="c.value" placeholder="值" />
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <div v-if="isRelationOp(c.op)" class="type-card-grid" style="margin-top: 6px;">
+                                    <div class="type-card-field" v-if="c.op === 'overlap' || c.op === 'above' || c.op === 'not_overlap'">
+                                        <label>IoU 阈值</label>
+                                        <input type="number" step="0.05" min="0" max="1" v-model.number="c.iou" />
+                                    </div>
+                                    <div class="type-card-field" v-if="c.op === 'contain' || c.op === 'not_contain'">
+                                        <label>包含比例</label>
+                                        <input type="number" step="0.05" min="0" max="1" v-model.number="c.ratio" />
+                                    </div>
+                                </div>
+
+                                <div class="hint-text" v-if="hasSameLeftInGroup(g, ci)">
+                                    提示：同组内左侧类型相同的条件将绑定同一个对象。
+                                </div>
+
+                                <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+                                    <button class="clay-button" @click="removeCondition(g, ci)" :disabled="g.conditions.length <= 1">删除条件</button>
+                                </div>
+                            </div>
+
+                            <button class="clay-button" @click="addCondition(g)">+ 添加条件</button>
+                        </div>
+                        <div v-if="gi < dialog.groups.length - 1" class="or-separator">— 或 —</div>
+                    </div>
+
+                    <button class="clay-button" @click="addGroup">+ 添加条件组</button>
+                </div>
+
+                <!-- 运行参数默认值 -->
+                <div class="glass-card form-card">
+                    <div class="form-card-title">运行参数默认值</div>
+                    <div class="type-card-checkboxes">
+                        <label class="type-card-checkbox"><input type="checkbox" v-model="dialog.defaults.enabled" /> 默认启用</label>
+                        <label class="type-card-checkbox"><input type="checkbox" v-model="dialog.defaults.use_vlm" /> VLM 复核</label>
+                        <label class="type-card-checkbox"><input type="checkbox" v-model="dialog.defaults.static_filter" /> 静态过滤</label>
+                    </div>
+                    <div class="type-card-grid cols-4">
+                        <div class="type-card-field"><label>间隔</label><input type="number" step="0.1" v-model.number="dialog.defaults.interval" /></div>
+                        <div class="type-card-field"><label>阈值</label><input type="number" step="0.05" min="0" max="1" v-model.number="dialog.defaults.threshold" /></div>
+                        <div class="type-card-field"><label>连续</label><input type="number" min="1" v-model.number="dialog.defaults.consecutive_required" /></div>
+                        <div class="type-card-field"><label>冷却</label><input type="number" min="0" v-model.number="dialog.defaults.cooldown" /></div>
+                    </div>
+                    <div class="type-card-grid" style="margin-top: 10px;">
+                        <div class="type-card-field"><label>巡检显示名</label><input v-model="dialog.inspection_label" /></div>
+                        <div class="type-card-field"><label>静态过滤阈值</label><input type="number" step="0.01" v-model.number="dialog.defaults.static_diff_threshold" /></div>
+                    </div>
+                    <div class="type-card-field" style="margin-top: 12px;">
+                        <label>VLM 复核提示词（留空则使用内置模板）</label>
+                        <textarea class="vlm-prompt-input" v-model="dialog.vlm_prompt" rows="4" placeholder="自定义 VLM 复核提示词，如：你正在复核一个工业安全监控系统的..."></textarea>
+                    </div>
                 </div>
 
                 <div style="display: flex; gap: 8px; justify-content: flex-end;">
@@ -273,7 +414,8 @@
             setup() {
                 const types = ref([]);
                 const models = ref([]);
-                const availableClasses = ref([]);
+                const operators = ref([]);
+                const countCmps = ref([]);
                 const dialog = ref(null);
                 const toast = ref(null);
                 const sidebar = ref(getSidebarContext());
@@ -297,90 +439,192 @@
                     } catch (e) { /* 模型列表失败不阻塞页面 */ }
                 }
 
+                async function loadOperators() {
+                    try {
+                        const data = await safeFetch('/algorithms/operators');
+                        operators.value = data.operators || [];
+                        countCmps.value = data.count_cmps || [];
+                    } catch (e) { showToast('加载算子元数据失败', 'error'); }
+                }
+
                 function modelName(key) {
                     const m = models.value.find(x => x.key === key);
                     return m ? m.name : (key || '未设置');
                 }
 
-                function onModelChange() {
-                    const m = models.value.find(x => x.key === dialog.value.model_key);
-                    availableClasses.value = m
-                        ? Object.entries(m.class_names || {}).map(([id, name]) => ({ id: Number(id), name }))
-                        : [];
-                    if (dialog.value) dialog.value.classesChecked = [];
+                function classOptions(modelKey) {
+                    const m = models.value.find(x => x.key === modelKey);
+                    if (!m) return [];
+                    return Object.entries(m.class_names || {}).map(([id, name]) => ({ id: Number(id), name }));
                 }
 
+                const relationOps = Vue.computed(() => (operators.value || []).filter(o => o.group === 'relation'));
+                const globalOps = Vue.computed(() => (operators.value || []).filter(o => o.group === 'global'));
+
+                function isRelationOp(op) {
+                    return (operators.value || []).some(o => o.op === op && o.group === 'relation');
+                }
+                function isCountOp(op) {
+                    return op === 'count';
+                }
+
+                function newSide() {
+                    return { model_key: '', classes: [], conf: null };
+                }
+                function newCondition() {
+                    return {
+                        left: newSide(),
+                        op: 'exists',
+                        right: newSide(),
+                        iou: 0.3,
+                        ratio: 0.5,
+                        cmp: 'eq',
+                        value: 0,
+                        min: null,
+                        max: null
+                    };
+                }
+                function newGroup() {
+                    return { conditions: [newCondition()] };
+                }
+                function newModel() {
+                    return { model_key: '', model_confidence: 0.5 };
+                }
                 function defaultDefaults() {
                     return {
                         enabled: false, interval: 1, threshold: 0.5,
                         consecutive_required: 3, cooldown: 60, use_vlm: false,
-                        min_box_count: 1, max_box_count: null,
-                        box_count_mode: 'gte', box_count_a: 1, box_count_b: null,
-                        static_filter: false
+                        static_filter: false, static_diff_threshold: 0.02
                     };
                 }
 
-                function fieldsToBoxCountMode(minCount, maxCount, mode) {
-                    return { mode: mode || 'gte', a: minCount ?? 1, b: maxCount };
+                function hasSameLeftInGroup(group, condIdx) {
+                    const c = group.conditions[condIdx];
+                    const leftKey = JSON.stringify([c.left.model_key, (c.left.classes || []).slice().sort()]);
+                    for (let i = 0; i < group.conditions.length; i++) {
+                        if (i === condIdx) continue;
+                        const other = group.conditions[i];
+                        const otherKey = JSON.stringify([other.left.model_key, (other.left.classes || []).slice().sort()]);
+                        if (leftKey === otherKey) return true;
+                    }
+                    return false;
                 }
 
-                function boxCountModeToFields(mode, a, b) {
-                    const result = { box_count_mode: mode, min_box_count: a ?? 1, max_box_count: b };
-                    return result;
+                function addModel() {
+                    dialog.value.models.push(newModel());
+                }
+                function removeModel(idx) {
+                    if (dialog.value.models.length > 1) dialog.value.models.splice(idx, 1);
+                }
+                function addGroup() {
+                    dialog.value.groups.push(newGroup());
+                }
+                function removeGroup(idx) {
+                    if (dialog.value.groups.length > 1) dialog.value.groups.splice(idx, 1);
+                }
+                function addCondition(group) {
+                    group.conditions.push(newCondition());
+                }
+                function removeCondition(group, idx) {
+                    if (group.conditions.length > 1) group.conditions.splice(idx, 1);
+                }
+
+                function cleanCondition(c) {
+                    const out = {
+                        left: { model_key: c.left.model_key, classes: (c.left.classes || []).map(Number) },
+                        op: c.op
+                    };
+                    if (c.left.conf !== null && c.left.conf !== undefined && c.left.conf !== '') out.left.conf = Number(c.left.conf);
+                    if (isRelationOp(c.op)) {
+                        out.right = { model_key: c.right.model_key, classes: (c.right.classes || []).map(Number) };
+                        if (c.right.conf !== null && c.right.conf !== undefined && c.right.conf !== '') out.right.conf = Number(c.right.conf);
+                        if (c.op === 'overlap' || c.op === 'above' || c.op === 'not_overlap') out.iou = Number(c.iou);
+                        if (c.op === 'contain' || c.op === 'not_contain') out.ratio = Number(c.ratio);
+                    }
+                    if (isCountOp(c.op)) {
+                        out.cmp = c.cmp;
+                        if (c.cmp === 'outside') {
+                            if (c.min !== null && c.min !== undefined && c.min !== '') out.min = Number(c.min);
+                            if (c.max !== null && c.max !== undefined && c.max !== '') out.max = Number(c.max);
+                        } else {
+                            out.value = Number(c.value);
+                        }
+                    }
+                    return out;
                 }
 
                 function openDialog(t = null) {
                     if (t) {
                         const copy = JSON.parse(JSON.stringify(t));
                         copy._existing = true;
-                        copy.classesChecked = (t.classes || []).slice();
+                        copy.models = (copy.models || []).map(m => ({ model_key: m.model_key || '', model_confidence: m.model_confidence ?? 0.5 }));
+                        copy.groups = (copy.rule?.groups || [newGroup()]).map(g => ({
+                            conditions: (g.conditions || []).map(c => {
+                                const nc = newCondition();
+                                nc.left = c.left ? { model_key: c.left.model_key || '', classes: (c.left.classes || []).map(Number), conf: c.left.conf ?? null } : nc.left;
+                                nc.op = c.op || 'exists';
+                                nc.right = c.right ? { model_key: c.right.model_key || '', classes: (c.right.classes || []).map(Number), conf: c.right.conf ?? null } : nc.right;
+                                nc.iou = c.iou ?? nc.iou;
+                                nc.ratio = c.ratio ?? nc.ratio;
+                                nc.cmp = c.cmp || 'eq';
+                                nc.value = c.value ?? 0;
+                                nc.min = c.min ?? null;
+                                nc.max = c.max ?? null;
+                                return nc;
+                            })
+                        }));
                         copy.defaults = Object.assign(defaultDefaults(), copy.defaults || {});
-                        const fc = fieldsToBoxCountMode(copy.defaults.min_box_count, copy.defaults.max_box_count, copy.defaults.box_count_mode);
-                        copy.defaults.box_count_mode = fc.mode;
-                        copy.defaults.box_count_a = fc.a ?? 1;
-                        copy.defaults.box_count_b = fc.b;
                         dialog.value = copy;
-                        // Populate availableClasses for the current model
-                        const savedChecked = copy.classesChecked;
-                        onModelChange();
-                        dialog.value.classesChecked = savedChecked;
                     } else {
                         dialog.value = {
-                            label: '', color: '#888888', model_key: '',
-                            classesChecked: [], model_confidence: 0.5,
-                            vlm_prompt: '', inspection_label: '', alarm_description: '', _existing: false,
-                            defaults: defaultDefaults()
+                            label: '', color: '#888888',
+                            models: [newModel()],
+                            groups: [newGroup()],
+                            defaults: defaultDefaults(),
+                            vlm_prompt: '', inspection_label: '', alarm_description: '',
+                            _existing: false
                         };
                     }
                 }
 
                 async function saveType() {
                     const d = dialog.value;
-                    if (!d.label || !d.color || !d.model_key) { showToast('请填写必填项', 'error'); return; }
+                    if (!d.label || !d.color) { showToast('请填写必填项', 'error'); return; }
+                    const modelsPayload = d.models
+                        .filter(m => m.model_key)
+                        .map(m => ({ model_key: m.model_key, model_confidence: Number(m.model_confidence) }));
+                    if (modelsPayload.length === 0) { showToast('至少需要配置一个模型', 'error'); return; }
+                    const seen = new Set();
+                    for (const m of modelsPayload) {
+                        if (seen.has(m.model_key)) { showToast(`模型 ${modelName(m.model_key)} 重复添加`, 'error'); return; }
+                        seen.add(m.model_key);
+                    }
+
+                    const groupsPayload = [];
+                    for (const g of d.groups) {
+                        const conditions = [];
+                        for (const c of g.conditions) {
+                            if (!c.left.model_key) continue;
+                            if (isRelationOp(c.op) && !c.right.model_key) continue;
+                            conditions.push(cleanCondition(c));
+                        }
+                        if (conditions.length) groupsPayload.push({ conditions });
+                    }
+                    if (groupsPayload.length === 0) { showToast('至少需要配置一个有效条件', 'error'); return; }
+
                     const payload = {
-                        label: d.label, color: d.color, model_key: d.model_key,
-                        classes: d.classesChecked && d.classesChecked.length ? d.classesChecked.map(Number) : null,
-                        model_confidence: d.model_confidence,
-                        vlm_prompt: d.vlm_prompt || '', inspection_label: d.inspection_label || d.label,
+                        label: d.label,
+                        color: d.color,
+                        models: modelsPayload,
+                        rule: { groups: groupsPayload },
+                        vlm_prompt: d.vlm_prompt || '',
+                        inspection_label: d.inspection_label || d.label,
                         alarm_description: d.alarm_description || ''
                     };
-                    const bc = boxCountModeToFields(d.defaults.box_count_mode || 'gte', d.defaults.box_count_a ?? 1, d.defaults.box_count_b);
-                    const defaultsPayload = {
-                        enabled: d.defaults.enabled,
-                        interval: d.defaults.interval,
-                        threshold: d.defaults.threshold,
-                        consecutive_required: d.defaults.consecutive_required,
-                        cooldown: d.defaults.cooldown,
-                        use_vlm: d.defaults.use_vlm,
-                        min_box_count: bc.min_box_count,
-                        max_box_count: bc.max_box_count,
-                        box_count_mode: bc.box_count_mode,
-                        static_filter: d.defaults.static_filter
-                    };
                     if (d._existing) {
-                        Object.assign(payload, defaultsPayload);
+                        Object.assign(payload, { ...defaultDefaults(), ...d.defaults });
                     } else {
-                        payload.defaults = defaultsPayload;
+                        payload.defaults = { ...defaultDefaults(), ...d.defaults };
                     }
                     try {
                         const url = d._existing ? `/algorithms/${d.key}` : '/algorithms';
@@ -395,7 +639,8 @@
                             loadTypes();
                         } else {
                             const err = await res.json();
-                            showToast(err.error || '保存失败', 'error');
+                            const msg = (err.errors || [err.error]).filter(Boolean).join('; ') || '保存失败';
+                            showToast(msg, 'error');
                         }
                     } catch (e) { showToast('保存失败', 'error'); }
                 }
@@ -419,11 +664,18 @@
                 onMounted(() => {
                     const root = document.getElementById('sidebar-root');
                     if (root) renderSidebar(root, sidebar.value);
-                    loadTypes();
                     loadModels();
+                    loadOperators();
+                    loadTypes();
                 });
 
-                return { types, models, availableClasses, dialog, toast, sidebar, openDialog, saveType, deleteType, modelName, onModelChange };
+                return {
+                    types, models, operators, countCmps, dialog, toast, sidebar,
+                    openDialog, saveType, deleteType, modelName, classOptions,
+                    relationOps, globalOps, isRelationOp, isCountOp,
+                    addModel, removeModel, addGroup, removeGroup, addCondition, removeCondition,
+                    hasSameLeftInGroup
+                };
             }
         }).mount('#app');
     </script>
