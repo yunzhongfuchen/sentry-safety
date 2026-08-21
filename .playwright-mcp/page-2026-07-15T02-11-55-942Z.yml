@@ -1,0 +1,100 @@
+- generic [ref=e2]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: S
+      - generic [ref=e7]:
+        - generic [ref=e8]: 视频诊断系统
+        - generic [ref=e9]: 安全检测平台
+    - navigation [ref=e10]:
+      - generic [ref=e11]:
+        - link "监控" [ref=e12] [cursor=pointer]:
+          - /url: /monitor
+        - link "记录" [ref=e14] [cursor=pointer]:
+          - /url: /records.html
+      - generic [ref=e16]:
+        - button "设置 ›" [expanded] [ref=e17] [cursor=pointer]:
+          - generic [ref=e18]: 设置
+          - generic [ref=e19]: ›
+        - generic [ref=e20]:
+          - link "摄像头" [ref=e21] [cursor=pointer]:
+            - /url: /settings.html?tab=cameras
+          - link "检测配置" [ref=e22] [cursor=pointer]:
+            - /url: /settings.html?tab=detection
+          - link "类型管理" [ref=e23] [cursor=pointer]:
+            - /url: /types.html
+          - link "系统设置" [ref=e24] [cursor=pointer]:
+            - /url: /settings.html?tab=system
+  - main [ref=e25]:
+    - generic [ref=e26]:
+      - heading "检测类型管理" [level=1] [ref=e27]
+      - button "新增类型" [ref=e28] [cursor=pointer]
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e31]: 明火
+        - generic [ref=e32]: "模型: fire_smoke.pt"
+        - generic [ref=e33]: "策略: yolo_box"
+        - generic [ref=e34]:
+          - button "编辑" [active] [ref=e35] [cursor=pointer]
+          - button "删除" [ref=e36] [cursor=pointer]
+          - button "上传模型" [ref=e37] [cursor=pointer]
+      - generic [ref=e38]:
+        - generic [ref=e39]: 烟雾
+        - generic [ref=e40]: "模型: fire_smoke.pt"
+        - generic [ref=e41]: "策略: yolo_box"
+        - generic [ref=e42]:
+          - button "编辑" [ref=e43] [cursor=pointer]
+          - button "删除" [ref=e44] [cursor=pointer]
+          - button "上传模型" [ref=e45] [cursor=pointer]
+      - generic [ref=e46]:
+        - generic [ref=e47]: 工服
+        - generic [ref=e48]: "模型: uniform.pt"
+        - generic [ref=e49]: "策略: yolo_box"
+        - generic [ref=e50]:
+          - button "编辑" [ref=e51] [cursor=pointer]
+          - button "删除" [ref=e52] [cursor=pointer]
+          - button "上传模型" [ref=e53] [cursor=pointer]
+      - generic [ref=e54]:
+        - generic [ref=e55]: 口罩
+        - generic [ref=e56]: "模型: mask.pt"
+        - generic [ref=e57]: "策略: yolo_box"
+        - generic [ref=e58]:
+          - button "编辑" [ref=e59] [cursor=pointer]
+          - button "删除" [ref=e60] [cursor=pointer]
+          - button "上传模型" [ref=e61] [cursor=pointer]
+      - generic [ref=e62]:
+        - generic [ref=e63]: 吸烟
+        - generic [ref=e64]: "模型: cigarette.pt"
+        - generic [ref=e65]: "策略: yolo_box"
+        - generic [ref=e66]:
+          - button "编辑" [ref=e67] [cursor=pointer]
+          - button "删除" [ref=e68] [cursor=pointer]
+          - button "上传模型" [ref=e69] [cursor=pointer]
+      - generic [ref=e70]:
+        - generic [ref=e71]: 睡岗
+        - generic [ref=e72]: "模型: yolov8n-pose.pt"
+        - generic [ref=e73]: "策略: yolo_pose"
+        - generic [ref=e74]:
+          - button "编辑" [ref=e75] [cursor=pointer]
+          - button "删除" [ref=e76] [cursor=pointer]
+          - button "上传模型" [ref=e77] [cursor=pointer]
+  - generic [ref=e79]:
+    - heading "编辑类型" [level=3] [ref=e80]
+    - generic [ref=e81]:
+      - generic [ref=e82]: 显示名称 *
+      - textbox "如：明火" [ref=e83]: 明火
+    - generic [ref=e84]:
+      - generic [ref=e85]: 颜色 *
+      - textbox [ref=e86]: "#ef4444"
+    - generic [ref=e87]:
+      - generic [ref=e88]: CPU 模型路径
+      - textbox "如：fire_smoke.pt" [ref=e89]: fire_smoke.pt
+    - generic [ref=e90]:
+      - generic [ref=e91]: 后处理策略 *
+      - combobox [ref=e92]:
+        - option "yolo_box" [selected]
+        - option "yolo_pose"
+    - group [ref=e93]:
+      - generic "高级设置" [ref=e94] [cursor=pointer]
+    - generic [ref=e95]:
+      - button "取消" [ref=e96] [cursor=pointer]
+      - button "保存" [ref=e97] [cursor=pointer]

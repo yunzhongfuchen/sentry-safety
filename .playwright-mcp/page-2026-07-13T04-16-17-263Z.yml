@@ -1,0 +1,158 @@
+- generic [ref=e2]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: S
+      - generic [ref=e7]:
+        - generic [ref=e8]: 视频诊断系统
+        - generic [ref=e9]: 安全检测平台
+    - navigation [ref=e10]:
+      - generic [ref=e11]:
+        - link "监控" [ref=e12] [cursor=pointer]:
+          - /url: /monitor
+          - generic [ref=e13]: 监控
+        - link "记录" [ref=e14] [cursor=pointer]:
+          - /url: /records.html
+          - generic [ref=e15]: 记录
+      - generic [ref=e16]:
+        - button "设置 ›" [expanded] [ref=e17] [cursor=pointer]:
+          - generic [ref=e18]: 设置
+          - generic [ref=e19]: ›
+        - generic [ref=e20]:
+          - link "摄像头" [ref=e21] [cursor=pointer]:
+            - /url: /settings.html?tab=cameras
+          - link "检测配置" [ref=e22] [cursor=pointer]:
+            - /url: /settings.html?tab=detection
+          - link "系统设置" [ref=e23] [cursor=pointer]:
+            - /url: /settings.html?tab=system
+  - main [ref=e24]:
+    - generic [ref=e26]:
+      - generic [ref=e27]: S
+      - generic [ref=e28]: 设置
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - generic [ref=e32] [cursor=pointer]: 摄像头
+        - generic [ref=e33] [cursor=pointer]: 检测配置
+        - generic [ref=e34] [cursor=pointer]: 系统设置
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - generic [ref=e38]:
+            - generic [ref=e39]: 运行信息
+            - generic [ref=e40]:
+              - generic [ref=e41]: 当前检测设备
+              - textbox [disabled] [ref=e42]: GPU
+            - generic [ref=e43]:
+              - generic [ref=e44]: 运行模式
+              - textbox [disabled] [ref=e45]: GPU
+            - generic [ref=e46]:
+              - generic [ref=e47]: 视频解码后端
+              - textbox [disabled] [ref=e48]: none
+          - generic [ref=e49]:
+            - generic [ref=e50]: GPU 动态调度器
+            - generic [ref=e51]:
+              - generic [ref=e52]: 启用 GPU 调度器
+              - combobox [ref=e53]:
+                - option "是" [selected]
+                - option "否"
+            - generic [ref=e54]:
+              - generic [ref=e55]: 并行队列数 (0=自动)
+              - spinbutton [ref=e56]: "0"
+            - generic [ref=e57]:
+              - generic [ref=e58]: 调度周期 (s)
+              - spinbutton [ref=e59]: "0.5"
+            - generic [ref=e60]:
+              - generic [ref=e61]: FP16 半精度推理
+              - combobox [ref=e62]:
+                - option "是"
+                - option "否" [selected]
+          - generic [ref=e63]:
+            - generic [ref=e64]: 存储与清理
+            - generic [ref=e65]:
+              - generic [ref=e66]: 最大记录数
+              - spinbutton [ref=e67]: "100000"
+            - generic [ref=e68]:
+              - generic [ref=e69]: 存储上限 (MB, 0=无限制)
+              - spinbutton [ref=e70]: "500"
+            - generic [ref=e71]:
+              - generic [ref=e72]: 内存阈值 (%)
+              - spinbutton [ref=e73]: "80"
+            - generic [ref=e74]:
+              - generic [ref=e75]: 紧急清理比例 (0-1)
+              - spinbutton [ref=e76]: "0.2"
+          - generic [ref=e77]:
+            - generic [ref=e78]: 图像质量
+            - generic [ref=e79]:
+              - generic [ref=e80]: 快照质量 (1-100)
+              - spinbutton [ref=e81]: "75"
+            - generic [ref=e82]:
+              - generic [ref=e83]: 帧质量 (1-100)
+              - spinbutton [ref=e84]: "60"
+            - generic [ref=e85]:
+              - generic [ref=e86]: 保存图像时叠加时间戳
+              - checkbox [checked] [ref=e87]
+        - button "保存系统设置" [ref=e88] [cursor=pointer]
+        - generic [ref=e89]: 已加载模型
+        - generic [ref=e90]:
+          - generic [ref=e91]:
+            - generic [ref=e92]: fire
+            - generic [ref=e93]: cpu / pytorch
+          - generic [ref=e94]: 已加载
+        - generic [ref=e95]:
+          - generic [ref=e96]:
+            - generic [ref=e97]: mask
+            - generic [ref=e98]: cpu / pytorch
+          - generic [ref=e99]: 已加载
+        - generic [ref=e100]: 系统操作
+        - button "重启检测服务" [ref=e101] [cursor=pointer]
+        - paragraph [ref=e102]: 重启将重新加载所有模型和摄像头配置
+        - generic [ref=e103]: 实时日志
+        - generic [ref=e104]:
+          - generic [ref=e105]: "12:10:00Camera 1: fire detected, level=small_model_alarm"
+          - generic [ref=e106]: 12:10:00Saved 5 window frames for 1_fire_1783915800606
+          - generic [ref=e107]: "12:10:33Camera 4: mask detected, level=small_model_alarm"
+          - generic [ref=e108]: 12:10:33Saved 121 window frames for 4_mask_1783915833711
+          - generic [ref=e109]: "12:10:35Camera 1: smoke detected, level=small_model_alarm"
+          - generic [ref=e110]: 12:10:35Saved 5 window frames for 1_smoke_1783915835504
+          - generic [ref=e111]: "12:10:51Camera 3: smoke detected, level=small_model_alarm"
+          - generic [ref=e112]: 12:10:51Saved 5 window frames for 3_smoke_1783915851770
+          - generic [ref=e113]: 12:11:08Global settings updated
+          - generic [ref=e114]: "12:11:09Camera 1: fire detected, level=small_model_alarm"
+          - generic [ref=e115]: 12:11:09Saved 5 window frames for 1_fire_1783915869958
+          - generic [ref=e116]: "12:11:34Camera 4: mask detected, level=small_model_alarm"
+          - generic [ref=e117]: 12:11:34Saved 120 window frames for 4_mask_1783915894079
+          - generic [ref=e118]: "12:11:43Camera 1: smoke detected, level=small_model_alarm"
+          - generic [ref=e119]: 12:11:43Saved 5 window frames for 1_smoke_1783915903072
+          - generic [ref=e120]: "12:11:52Camera 3: fire detected, level=small_model_alarm"
+          - generic [ref=e121]: "12:11:52Camera 3: smoke detected, level=small_model_alarm"
+          - generic [ref=e122]: 12:11:52Saved 5 window frames for 3_fire_1783915912106
+          - generic [ref=e123]: 12:11:52Saved 5 window frames for 3_smoke_1783915912112
+          - generic [ref=e124]: "12:12:20Camera 1: fire detected, level=small_model_alarm"
+          - generic [ref=e125]: 12:12:20Saved 5 window frames for 1_fire_1783915940721
+          - generic [ref=e126]: "12:12:34Camera 4: mask detected, level=small_model_alarm"
+          - generic [ref=e127]: 12:12:34Saved 119 window frames for 4_mask_1783915954261
+          - generic [ref=e128]: "12:12:43Camera 1: smoke detected, level=small_model_alarm"
+          - generic [ref=e129]: 12:12:43Saved 5 window frames for 1_smoke_1783915963300
+          - generic [ref=e130]: "12:12:56Camera 3: smoke detected, level=small_model_alarm"
+          - generic [ref=e131]: 12:12:56Saved 5 window frames for 3_smoke_1783915976841
+          - generic [ref=e132]: "12:13:31Camera 1: fire detected, level=small_model_alarm"
+          - generic [ref=e133]: 12:13:31Saved 5 window frames for 1_fire_1783916011483
+          - generic [ref=e134]: "12:13:34Camera 4: mask detected, level=small_model_alarm"
+          - generic [ref=e135]: 12:13:34Saved 118 window frames for 4_mask_1783916014494
+          - generic [ref=e136]: "12:13:43Camera 1: smoke detected, level=small_model_alarm"
+          - generic [ref=e137]: 12:13:43Saved 5 window frames for 1_smoke_1783916023532
+          - generic [ref=e138]: "12:13:57Camera 3: smoke detected, level=small_model_alarm"
+          - generic [ref=e139]: 12:13:57Saved 5 window frames for 3_smoke_1783916037098
+          - generic [ref=e140]: 12:14:24Global settings updated
+          - generic [ref=e141]: "12:14:34Camera 4: mask detected, level=small_model_alarm"
+          - generic [ref=e142]: 12:14:35Saved 119 window frames for 4_mask_1783916074775
+          - generic [ref=e143]: "12:14:49Camera 1: smoke detected, level=small_model_alarm"
+          - generic [ref=e144]: 12:14:49Saved 5 window frames for 1_smoke_1783916089810
+          - generic [ref=e145]: "12:14:57Camera 3: smoke detected, level=small_model_alarm"
+          - generic [ref=e146]: 12:14:57Saved 5 window frames for 3_smoke_1783916097335
+          - generic [ref=e147]: "12:15:16Camera 1: fire detected, level=small_model_alarm"
+          - generic [ref=e148]: 12:15:16Saved 5 window frames for 1_fire_1783916116890
+          - generic [ref=e149]: "12:15:34Camera 4: mask detected, level=small_model_alarm"
+          - generic [ref=e150]: 12:15:35Saved 121 window frames for 4_mask_1783916134992
+          - generic [ref=e151]: "12:15:49Camera 1: smoke detected, level=small_model_alarm"
+          - generic [ref=e152]: 12:15:49Saved 5 window frames for 1_smoke_1783916149980
+          - generic [ref=e153]: "12:15:57Camera 3: smoke detected, level=small_model_alarm"
+          - generic [ref=e154]: 12:15:57Saved 5 window frames for 3_smoke_1783916157507

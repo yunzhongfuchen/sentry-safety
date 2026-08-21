@@ -50,7 +50,7 @@ class TestResolveModelPath:
         # _resolve_model_path 应搜索到 tmp_path 下的文件
         import backend.inference_engine as ie_mod
         monkeypatch.setattr(ie_mod, "WEIGHTS_DIR", tmp_path)
-        result = _resolve_model_path("fire", use_npu=False)
+        result = _resolve_model_path("fire", "fire_smoke.pt", use_npu=False)
         assert result is not None
         assert "fire_smoke" in result
 
@@ -61,9 +61,52 @@ class TestResolveModelPath:
         model_file.touch()
         import backend.inference_engine as ie_mod
         monkeypatch.setattr(ie_mod, "WEIGHTS_DIR", tmp_path)
-        result = _resolve_model_path("fire", use_npu=True)
+        result = _resolve_model_path("fire", "fire_smoke.pt", use_npu=True)
         assert result is not None
         assert "fire_smoke.pt" in result
+
+    def test_resolve_picks_requested_model_path(self, fake_registry, tmp_path, monkeypatch):
+        """同一 dtype 含多个 model_path 时按传入的 model_path 精确解析"""
+        from backend.inference_engine import _resolve_model_path
+        import backend.inference_engine as ie_mod
+
+        class _FakeReg:
+            def get(self, dtype):
+                if dtype == "multi":
+                    return {
+                        "models": [
+                            {"model_path": "a.pt"},
+                            {"model_path": "b.pt"},
+                        ]
+                    }
+                return fake_registry.get(dtype)
+
+        monkeypatch.setattr(ie_mod, "registry", _FakeReg())
+        monkeypatch.setattr(ie_mod, "WEIGHTS_DIR", tmp_path)
+
+        (tmp_path / "a.pt").touch()
+        (tmp_path / "b.pt").touch()
+
+        assert _resolve_model_path("multi", "a.pt") == str(tmp_path / "a.pt")
+        assert _resolve_model_path("multi", "b.pt") == str(tmp_path / "b.pt")
+
+    def test_resolve_rejects_unowned_model_path(self, fake_registry, tmp_path, monkeypatch):
+        """请求不属于该 dtype 的 model_path 时返回 None"""
+        from backend.inference_engine import _resolve_model_path
+        import backend.inference_engine as ie_mod
+
+        class _FakeReg:
+            def get(self, dtype):
+                if dtype == "multi":
+                    return {"models": [{"model_path": "a.pt"}]}
+                return fake_registry.get(dtype)
+
+        monkeypatch.setattr(ie_mod, "registry", _FakeReg())
+        monkeypatch.setattr(ie_mod, "WEIGHTS_DIR", tmp_path)
+        (tmp_path / "a.pt").touch()
+        (tmp_path / "b.pt").touch()
+
+        assert _resolve_model_path("multi", "b.pt") is None
 
     def test_resolve_returns_none_for_missing(self, fake_registry, tmp_path, monkeypatch):
         """模型文件不存在时返回 None"""
@@ -71,7 +114,7 @@ class TestResolveModelPath:
         import backend.inference_engine as ie_mod
         monkeypatch.setattr(ie_mod, "WEIGHTS_DIR", tmp_path / "weights")
         monkeypatch.setattr(ie_mod, "PROJECT_ROOT", tmp_path)
-        result = _resolve_model_path("fire", use_npu=False)
+        result = _resolve_model_path("fire", "fire_smoke.pt", use_npu=False)
         # 文件不存在于任何候选路径，应返回 None
         assert result is None
 
@@ -90,7 +133,7 @@ class TestEnsureModelsLoaded:
             type(detector), "_load_model", mock_load_model
         )
         detector.ensure_models_loaded(["fire", "smoke"])
-        # fire_smoke.pt 对应的 model_key 只出现一次
+        # fire_smoke.pt 对应的 model_path 只出现一次
         assert len(load_calls) == 1
 
     def test_different_models_loaded_separately(self, detector, fake_registry, monkeypatch):
@@ -104,7 +147,7 @@ class TestEnsureModelsLoaded:
             type(detector), "_load_model", mock_load_model
         )
         detector.ensure_models_loaded(["fire", "mask", "sleep"])
-        # fire_smoke.pt, mask.pt, yolov8n-pose.pt → 3 次
+        # fire_smoke.pt, mask.pt, yolov8n-pose.pt -> 3 次
         assert len(load_calls) == 3
 
 
@@ -118,7 +161,7 @@ class TestDetectDispatch:
         # mock _run_model 返回空 boxes
         monkeypatch.setattr(
             type(detector), "_run_model",
-            lambda self_, model_key, frame_, type_def, core_id: []
+            lambda self_, model_path, frame_, conf, is_pose, core_id: []
         )
 
         results = detector.detect(frame, ["fire", "smoke", "mask"])
@@ -135,8 +178,8 @@ class TestDetectDispatch:
         """共享模型只推理一次"""
         run_calls = []
 
-        def mock_run_model(self_, model_key, frame_, type_def, core_id):
-            run_calls.append(model_key)
+        def mock_run_model(self_, model_path, frame_, conf, is_pose, core_id):
+            run_calls.append(model_path)
             return []
 
         monkeypatch.setattr(type(detector), "_run_model", mock_run_model)
@@ -145,8 +188,38 @@ class TestDetectDispatch:
         # fire_smoke.pt 只运行一次
         assert len(run_calls) == 1
 
-    def test_detect_yolo_box_filters_by_class(self, detector, fake_registry, monkeypatch):
-        """yolo_box 策略按 classes 过滤"""
+    def test_detect_relation_filters_by_class(self, detector, fake_registry, monkeypatch):
+        """yolo_relation 策略按规则 classes 过滤，返回的 boxes 仅含规则指定类别"""
+        import copy
+        from backend import inference_engine as ie_mod
+
+        # 临时把 fire/smoke 规则改成 overlap 自身，使 evaluate_rule 返回匹配框，便于断言过滤
+        original_get = fake_registry.get
+        fire_key = original_get("fire")["models"][0]["model_key"]
+        smoke_key = original_get("smoke")["models"][0]["model_key"]
+
+        def patched_get(dtype):
+            td = original_get(dtype)
+            if dtype == "fire":
+                td = copy.deepcopy(td)
+                td["rule"] = {"groups": [{"conditions": [
+                    {"left": {"model_key": fire_key, "classes": [0]},
+                     "op": "overlap",
+                     "right": {"model_key": fire_key, "classes": [0]},
+                     "iou": 0.001}
+                ]}]}
+            elif dtype == "smoke":
+                td = copy.deepcopy(td)
+                td["rule"] = {"groups": [{"conditions": [
+                    {"left": {"model_key": smoke_key, "classes": [1]},
+                     "op": "overlap",
+                     "right": {"model_key": smoke_key, "classes": [1]},
+                     "iou": 0.001}
+                ]}]}
+            return td
+
+        monkeypatch.setattr(ie_mod.registry, "get", patched_get)
+
         mock_boxes = [
             {"xyxy": [10, 10, 50, 50], "class_id": 0, "confidence": 0.9},  # fire
             {"xyxy": [60, 60, 100, 100], "class_id": 1, "confidence": 0.8},  # smoke
@@ -154,19 +227,17 @@ class TestDetectDispatch:
 
         monkeypatch.setattr(
             type(detector), "_run_model",
-            lambda self_, model_key, frame_, type_def, core_id: mock_boxes
+            lambda self_, model_path, frame_, conf, is_pose, core_id: mock_boxes
         )
 
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         results = detector.detect(frame, ["fire", "smoke"])
 
         assert results["fire"]["detected"] is True
-        assert len(results["fire"]["boxes"]) == 1
-        assert results["fire"]["boxes"][0] == [10, 10, 50, 50]
-
         assert results["smoke"]["detected"] is True
-        assert len(results["smoke"]["boxes"]) == 1
-        assert results["smoke"]["boxes"][0] == [60, 60, 100, 100]
+        # 仅保留对应类别的框
+        assert results["fire"]["boxes"] == [[10, 10, 50, 50]]
+        assert results["smoke"]["boxes"] == [[60, 60, 100, 100]]
 
 
 class TestGetModelStatus:
@@ -183,38 +254,3 @@ class TestGetModelStatus:
         status = detector.get_model_status()
         for s in status:
             assert s["loaded"] is False
-
-
-class TestProcessYoloBox:
-    """_process_yolo_box 后处理函数"""
-
-    def test_filters_by_classes(self, fake_registry):
-        from backend.inference_engine import _process_yolo_box
-        raw_boxes = [
-            {"xyxy": [10, 10, 50, 50], "class_id": 0, "confidence": 0.9},
-            {"xyxy": [60, 60, 100, 100], "class_id": 1, "confidence": 0.8},
-            {"xyxy": [110, 110, 150, 150], "class_id": 2, "confidence": 0.7},
-        ]
-        type_def = {"classes": [0, 2], "post_process": "yolo_box"}
-        result = _process_yolo_box(raw_boxes, type_def)
-        assert result["detected"] is True
-        assert len(result["boxes"]) == 2
-        assert len(result["scores"]) == 2
-
-    def test_no_classes_filter(self, fake_registry):
-        """classes=None 时不过滤"""
-        from backend.inference_engine import _process_yolo_box
-        raw_boxes = [
-            {"xyxy": [10, 10, 50, 50], "class_id": 0, "confidence": 0.9},
-        ]
-        type_def = {"classes": None, "post_process": "yolo_box"}
-        result = _process_yolo_box(raw_boxes, type_def)
-        assert result["detected"] is True
-        assert len(result["boxes"]) == 1
-
-    def test_empty_boxes(self, fake_registry):
-        from backend.inference_engine import _process_yolo_box
-        result = _process_yolo_box([], {"classes": [0], "post_process": "yolo_box"})
-        assert result["detected"] is False
-        assert result["boxes"] == []
-        assert result["scores"] == []

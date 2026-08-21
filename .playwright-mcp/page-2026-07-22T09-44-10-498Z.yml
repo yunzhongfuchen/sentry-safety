@@ -1,0 +1,44 @@
+- generic [ref=f1e2]:
+  - complementary [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - generic [ref=f1e6]: S
+      - generic [ref=f1e7]:
+        - generic [ref=f1e8]: 视频诊断系统
+        - generic [ref=f1e9]: 安全检测平台
+    - navigation [ref=f1e10]:
+      - generic [ref=f1e11]:
+        - link "监控" [ref=f1e12] [cursor=pointer]:
+          - /url: /monitor
+        - link "记录" [ref=f1e14] [cursor=pointer]:
+          - /url: /records.html
+        - link "摄像头" [ref=f1e16] [cursor=pointer]:
+          - /url: /settings.html?tab=cameras
+        - link "模型管理" [ref=f1e18] [cursor=pointer]:
+          - /url: /models.html
+        - link "算法管理" [ref=f1e20] [cursor=pointer]:
+          - /url: /algorithms.html
+        - link "系统设置" [ref=f1e22] [cursor=pointer]:
+          - /url: /settings.html?tab=system
+  - main [ref=f1e24]:
+    - generic [ref=f1e26]:
+      - generic [ref=f1e27]: S
+      - generic [ref=f1e28]: 设置
+    - generic [ref=f1e30]:
+      - generic [ref=f1e31]:
+        - generic [ref=f1e32] [cursor=pointer]: 摄像头
+        - generic [ref=f1e33] [cursor=pointer]: 系统设置
+      - generic [ref=f1e35]:
+        - button "+ 添加摄像头" [ref=f1e37] [cursor=pointer]
+        - table [ref=f1e39]:
+          - rowgroup [ref=f1e40]:
+            - row [ref=f1e41]:
+              - columnheader [ref=f1e42]:
+                - checkbox [ref=f1e43]
+              - columnheader "ID" [ref=f1e44]
+              - columnheader "名称" [ref=f1e45]
+              - columnheader "源地址" [ref=f1e46]
+              - columnheader "类型" [ref=f1e47]
+              - columnheader "分辨率" [ref=f1e48]
+              - columnheader "启用" [ref=f1e49]
+              - columnheader "操作" [ref=f1e50]
+          - rowgroup

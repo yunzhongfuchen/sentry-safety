@@ -1,0 +1,150 @@
+- generic [ref=f3e2]:
+  - complementary [ref=f3e4]:
+    - generic [ref=f3e5]:
+      - generic [ref=f3e6]: S
+      - generic [ref=f3e7]:
+        - generic [ref=f3e8]: 视频诊断系统
+        - generic [ref=f3e9]: 安全检测平台
+    - navigation [ref=f3e10]:
+      - generic [ref=f3e11]:
+        - link "监控" [ref=f3e12] [cursor=pointer]:
+          - /url: /monitor
+        - link "记录" [ref=f3e14] [cursor=pointer]:
+          - /url: /records.html
+      - generic [ref=f3e16]:
+        - button "设置 ›" [expanded] [ref=f3e17] [cursor=pointer]:
+          - generic [ref=f3e18]: 设置
+          - generic [ref=f3e19]: ›
+        - generic [ref=f3e20]:
+          - link "摄像头" [ref=f3e21] [cursor=pointer]:
+            - /url: /settings.html?tab=cameras
+          - link "检测配置" [ref=f3e22] [cursor=pointer]:
+            - /url: /settings.html?tab=detection
+          - link "类型管理" [ref=f3e23] [cursor=pointer]:
+            - /url: /types.html
+          - link "系统设置" [ref=f3e24] [cursor=pointer]:
+            - /url: /settings.html?tab=system
+  - main [ref=f3e25]:
+    - generic [ref=f3e26]:
+      - heading "检测类型管理" [level=1] [ref=f3e27]
+      - button "新增类型" [ref=f3e28] [cursor=pointer]
+    - generic [ref=f3e29]:
+      - generic [ref=f3e30]:
+        - generic [ref=f3e31]: 明火
+        - generic [ref=f3e32]: "模型: fire_smoke.pt"
+        - generic [ref=f3e33]: "策略: yolo_box"
+        - generic [ref=f3e34]:
+          - button "编辑" [ref=f3e35] [cursor=pointer]
+          - button "删除" [ref=f3e36] [cursor=pointer]
+          - button "上传模型" [ref=f3e37] [cursor=pointer]
+      - generic [ref=f3e38]:
+        - generic [ref=f3e39]: 烟雾
+        - generic [ref=f3e40]: "模型: fire_smoke.pt"
+        - generic [ref=f3e41]: "策略: yolo_box"
+        - generic [ref=f3e42]:
+          - button "编辑" [ref=f3e43] [cursor=pointer]
+          - button "删除" [ref=f3e44] [cursor=pointer]
+          - button "上传模型" [ref=f3e45] [cursor=pointer]
+      - generic [ref=f3e46]:
+        - generic [ref=f3e47]: 工服
+        - generic [ref=f3e48]: "模型: uniform.pt"
+        - generic [ref=f3e49]: "策略: yolo_box"
+        - generic [ref=f3e50]:
+          - button "编辑" [ref=f3e51] [cursor=pointer]
+          - button "删除" [ref=f3e52] [cursor=pointer]
+          - button "上传模型" [ref=f3e53] [cursor=pointer]
+      - generic [ref=f3e54]:
+        - generic [ref=f3e55]: 口罩
+        - generic [ref=f3e56]: "模型: mask.pt"
+        - generic [ref=f3e57]: "策略: yolo_box"
+        - generic [ref=f3e58]:
+          - button "编辑" [ref=f3e59] [cursor=pointer]
+          - button "删除" [ref=f3e60] [cursor=pointer]
+          - button "上传模型" [ref=f3e61] [cursor=pointer]
+      - generic [ref=f3e62]:
+        - generic [ref=f3e63]: 吸烟
+        - generic [ref=f3e64]: "模型: cigarette.pt"
+        - generic [ref=f3e65]: "策略: yolo_box"
+        - generic [ref=f3e66]:
+          - button "编辑" [ref=f3e67] [cursor=pointer]
+          - button "删除" [ref=f3e68] [cursor=pointer]
+          - button "上传模型" [ref=f3e69] [cursor=pointer]
+      - generic [ref=f3e70]:
+        - generic [ref=f3e71]: 睡岗
+        - generic [ref=f3e72]: "模型: yolov8n-pose.pt"
+        - generic [ref=f3e73]: "策略: yolo_pose"
+        - generic [ref=f3e74]:
+          - button "编辑" [ref=f3e75] [cursor=pointer]
+          - button "删除" [ref=f3e76] [cursor=pointer]
+          - button "上传模型" [ref=f3e77] [cursor=pointer]
+  - generic [ref=f3e79]:
+    - heading "编辑类型" [level=3] [ref=f3e80]
+    - generic [ref=f3e81]:
+      - generic [ref=f3e82]: 基本信息
+      - generic [ref=f3e83]:
+        - generic [ref=f3e84]:
+          - generic [ref=f3e85]: 显示名称 *
+          - textbox "如：明火" [ref=f3e86]: 明火
+        - generic [ref=f3e87]:
+          - generic [ref=f3e88]: 颜色 *
+          - textbox [ref=f3e89]: "#973b3b"
+        - generic [ref=f3e90]:
+          - generic [ref=f3e91]: 模型路径
+          - textbox "如：fire_smoke.pt / fire_smoke.rknn" [ref=f3e92]: fire_smoke.pt
+        - generic [ref=f3e93]:
+          - generic [ref=f3e94]: 后处理策略 *
+          - combobox [ref=f3e95]:
+            - option "yolo_box" [selected]
+            - option "yolo_pose"
+      - group [ref=f3e96]:
+        - generic "更多设置" [active] [ref=f3e97] [cursor=pointer]
+        - generic [ref=f3e101]:
+          - generic [ref=f3e102]: 运行参数默认值
+          - generic [ref=f3e103]:
+            - generic [ref=f3e104] [cursor=pointer]:
+              - checkbox "默认启用" [ref=f3e105]
+              - text: 默认启用
+            - generic [ref=f3e106] [cursor=pointer]:
+              - checkbox "VLM 复核" [ref=f3e107]
+              - text: VLM 复核
+          - generic [ref=f3e108]:
+            - generic [ref=f3e109]:
+              - generic [ref=f3e110]: 间隔
+              - spinbutton [ref=f3e111]: "2"
+            - generic [ref=f3e112]:
+              - generic [ref=f3e113]: 阈值
+              - spinbutton [ref=f3e114]: "0.6"
+            - generic [ref=f3e115]:
+              - generic [ref=f3e116]: 连续
+              - spinbutton [ref=f3e117]: "3"
+            - generic [ref=f3e118]:
+              - generic [ref=f3e119]: 冷却
+              - spinbutton [ref=f3e120]: "60"
+          - generic [ref=f3e121]:
+            - generic [ref=f3e122]:
+              - generic [ref=f3e123]: 人数条件
+              - combobox [ref=f3e124]:
+                - option "目标数 ≥ a" [selected]
+                - option "目标数 ≤ b"
+                - option "a ≤ 目标数 ≤ b"
+                - option "目标数 < a 或 > b"
+            - generic [ref=f3e125]:
+              - generic [ref=f3e126]: a
+              - spinbutton [ref=f3e127]: "1"
+          - generic [ref=f3e128]: 高级参数
+          - generic [ref=f3e129]:
+            - generic [ref=f3e130]:
+              - generic [ref=f3e131]: 模型置信度 (默认 0.5)
+              - spinbutton [ref=f3e132]: "0.5"
+            - generic [ref=f3e133]:
+              - generic [ref=f3e134]: 类别过滤
+              - textbox "如：0,1" [ref=f3e135]: "0"
+            - generic [ref=f3e136]:
+              - generic [ref=f3e137]: 巡检显示名
+              - textbox [ref=f3e138]: 明火
+          - generic [ref=f3e139]:
+            - generic [ref=f3e140]: VLM 复核提示词（留空则使用内置模板）
+            - textbox "自定义 VLM 复核提示词，如：你正在复核一个工业安全监控系统的..." [ref=f3e141]: "你正在复核一个工业安全监控系统的火焰检测结果。 请仔细查看图片，判断画面中是否真的有明火。 注意排除以下误判情况： - 红色灯光、红色物体反光 - 夕阳、晚霞 - 橙色安全帽或衣服 请以 JSON 格式返回： {\"confirmed\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"判断理由\"}"
+    - generic [ref=f3e98]:
+      - button "取消" [ref=f3e99] [cursor=pointer]
+      - button "保存" [ref=f3e100] [cursor=pointer]

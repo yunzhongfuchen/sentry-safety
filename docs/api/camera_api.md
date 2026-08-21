@@ -65,11 +65,25 @@ POST /cameras/add
 }
 ```
 
-失败：
+失败（`camera_id` 已存在，HTTP 400）：
 
 ```json
 {
   "error": "Camera ID already exists"
+}
+```
+
+失败（缺少必填字段，HTTP 400）：
+
+```json
+{
+  "error": "camera_id is required"
+}
+```
+
+```json
+{
+  "error": "source is required"
 }
 ```
 
@@ -134,7 +148,15 @@ POST /cameras/{camera_id}/config
 }
 ```
 
-失败：
+失败（摄像头不存在，HTTP 404）：
+
+```json
+{
+  "error": "Camera not found"
+}
+```
+
+失败（服务未初始化，HTTP 500）：
 
 ```json
 {
@@ -273,6 +295,19 @@ DELETE /cameras/{camera_id}
 | `POST /cameras/{camera_id}/source`       | 只切换视频源                 |
 | `POST /cameras/batch-config`             | 批量修改多个摄像头的检测类型 |
 | `POST /cameras/{camera_id}/reset-config` | 恢复单个摄像头到全局默认配置 |
+
+错误约定：
+
+- `enable` / `disable` / `source` / `reset-config`：摄像头不存在返回 HTTP 404 `{"error": "Camera not found"}`；`source` 缺少 `source` 字段返回 HTTP 400 `{"error": "source is required"}`，切换失败返回 HTTP 400 `{"error": "Failed to switch source"}`。
+- `batch-config` 请求体：`{"camera_ids": [...], "detection_types": {...}}`，响应中 `updated` 为实际更新的摄像头，`not_found` 为不存在的摄像头：
+
+```json
+{
+  "success": true,
+  "updated": ["cam_01"],
+  "not_found": ["cam_99"]
+}
+```
 
 ---
 

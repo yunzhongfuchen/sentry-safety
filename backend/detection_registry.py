@@ -43,9 +43,6 @@ UNIVERSAL_DEFAULTS: dict[str, Any] = {
     "consecutive_required": 3,
     "cooldown": 60,
     "use_vlm": False,
-    "min_box_count": 1,
-    "max_box_count": None,
-    "box_count_mode": None,
     "static_filter": False,
     "static_diff_threshold": 0.02,
 }
@@ -115,10 +112,11 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "fire": {
         "label": "明火",
         "color": "#ef4444",
-        "model_path": "fire_smoke.pt",
-        "post_process": "yolo_box",
-        "classes": [0],
-        "model_confidence": 0.5,
+        "post_process": "yolo_relation",
+        "models": [{"model_key": "fire_smoke", "model_path": "fire_smoke.pt",
+                    "model_confidence": 0.5}],
+        "rule": {"groups": [{"conditions": [
+            {"left": {"model_key": "fire_smoke", "classes": [0]}, "op": "exists"}]}]},
         "vlm_prompt": FIRE_REVIEW_PROMPT,
         "inspection_label": "明火",
         "defaults": {
@@ -128,9 +126,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "consecutive_required": 3,
             "cooldown": 60,
             "use_vlm": False,
-            "min_box_count": 1,
-            "max_box_count": None,
-            "box_count_mode": None,
             "static_filter": True,
             "static_diff_threshold": 0.02,
         },
@@ -138,10 +133,11 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "smoke": {
         "label": "烟雾",
         "color": "#f97316",
-        "model_path": "fire_smoke.pt",
-        "post_process": "yolo_box",
-        "classes": [1],
-        "model_confidence": 0.5,
+        "post_process": "yolo_relation",
+        "models": [{"model_key": "fire_smoke", "model_path": "fire_smoke.pt",
+                    "model_confidence": 0.5}],
+        "rule": {"groups": [{"conditions": [
+            {"left": {"model_key": "fire_smoke", "classes": [1]}, "op": "exists"}]}]},
         "vlm_prompt": SMOKE_REVIEW_PROMPT,
         "inspection_label": "烟雾",
         "defaults": {
@@ -151,9 +147,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "consecutive_required": 3,
             "cooldown": 60,
             "use_vlm": False,
-            "min_box_count": 1,
-            "max_box_count": None,
-            "box_count_mode": None,
             "static_filter": True,
             "static_diff_threshold": 0.02,
         },
@@ -161,10 +154,11 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "uniform": {
         "label": "工服",
         "color": "#22c55e",
-        "model_path": "uniform.pt",
-        "post_process": "yolo_box",
-        "classes": [1],
-        "model_confidence": 0.5,
+        "post_process": "yolo_relation",
+        "models": [{"model_key": "uniform", "model_path": "uniform.pt",
+                    "model_confidence": 0.5}],
+        "rule": {"groups": [{"conditions": [
+            {"left": {"model_key": "uniform", "classes": [1]}, "op": "exists"}]}]},
         "vlm_prompt": UNIFORM_REVIEW_PROMPT,
         "inspection_label": "未穿工服",
         "defaults": {
@@ -174,9 +168,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "consecutive_required": 3,
             "cooldown": 60,
             "use_vlm": False,
-            "min_box_count": 1,
-            "max_box_count": None,
-            "box_count_mode": None,
             "static_filter": False,
             "static_diff_threshold": 0.02,
         },
@@ -184,10 +175,11 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "mask": {
         "label": "口罩",
         "color": "#0ea5e9",
-        "model_path": "mask.pt",
-        "post_process": "yolo_box",
-        "classes": [1],
-        "model_confidence": 0.5,
+        "post_process": "yolo_relation",
+        "models": [{"model_key": "mask", "model_path": "mask.pt",
+                    "model_confidence": 0.5}],
+        "rule": {"groups": [{"conditions": [
+            {"left": {"model_key": "mask", "classes": [1]}, "op": "exists"}]}]},
         "vlm_prompt": MASK_REVIEW_PROMPT,
         "inspection_label": "未戴口罩",
         "defaults": {
@@ -197,9 +189,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "consecutive_required": 3,
             "cooldown": 60,
             "use_vlm": False,
-            "min_box_count": 1,
-            "max_box_count": None,
-            "box_count_mode": None,
             "static_filter": False,
             "static_diff_threshold": 0.02,
         },
@@ -207,10 +196,11 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "cigarette": {
         "label": "吸烟",
         "color": "#a855f7",
-        "model_path": "cigarette.pt",
-        "post_process": "yolo_box",
-        "classes": [0],
-        "model_confidence": 0.5,
+        "post_process": "yolo_relation",
+        "models": [{"model_key": "cigarette", "model_path": "cigarette.pt",
+                    "model_confidence": 0.5}],
+        "rule": {"groups": [{"conditions": [
+            {"left": {"model_key": "cigarette", "classes": [0]}, "op": "exists"}]}]},
         "vlm_prompt": CIGARETTE_REVIEW_PROMPT,
         "inspection_label": "吸烟",
         "defaults": {
@@ -220,9 +210,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "consecutive_required": 3,
             "cooldown": 60,
             "use_vlm": False,
-            "min_box_count": 1,
-            "max_box_count": None,
-            "box_count_mode": None,
             "static_filter": False,
             "static_diff_threshold": 0.02,
         },
@@ -230,10 +217,10 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
     "sleep": {
         "label": "睡岗",
         "color": "#eab308",
-        "model_path": "yolov8n-pose.pt",
         "post_process": "yolo_pose",
-        "classes": None,
-        "model_confidence": 0.1,
+        "models": [{"model_key": "yolov8n-pose", "model_path": "yolov8n-pose.pt",
+                    "model_confidence": 0.1}],
+        "rule": None,
         "vlm_prompt": SLEEP_REVIEW_PROMPT,
         "inspection_label": "睡岗/打盹",
         "defaults": {
@@ -243,9 +230,6 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
             "consecutive_required": 3,
             "cooldown": 60,
             "use_vlm": False,
-            "min_box_count": 1,
-            "max_box_count": None,
-            "box_count_mode": None,
             "static_filter": False,
             "static_diff_threshold": 0.02,
         },
@@ -253,22 +237,61 @@ DEFAULT_DETECTION_TYPE_REGISTRY: dict[str, dict[str, Any]] = {
 }
 
 
+def _register_model_for_path(mp: str, post_process: str, key_by_path: dict) -> str:
+    """按模型文件名注册（去重），返回实际 model_key。
+
+    模型级 post_process 只描述原始输出解码方式：检测模型一律 yolo_box，
+    yolo_relation 是算法级概念，不写入模型条目。
+    """
+    if mp not in key_by_path:
+        key_by_path[mp] = model_registry.add_model(
+            file=mp,
+            name=Path(mp).stem,
+            post_process="yolo_pose" if post_process == "yolo_pose" else "yolo_box",
+            class_names={},
+        )
+    return key_by_path[mp]
+
+
 def _migrate_type_dicts(stored: dict) -> dict:
-    """类型 dict（model_path 版）→ 算法 dict（model_key 版），按 model_path 去重注册模型"""
+    """类型 dict → 算法 dict，注册模型并回填 model_key。
+
+    新结构（models[]）：从 models[].model_path 取文件名注册，把 add_model 实际
+    生成的 key 回写到 models[].model_key，并按映射替换 rule 条件里引用的占位 key。
+    老结构（顶层 model_path）：保持顶层 model_key 写法，交由 _migrate_algorithms_v2 升级。
+    """
     key_by_path: dict[str, str] = {}
-    for td in stored.values():
-        mp = td.get("model_path")
-        if mp and mp not in key_by_path:
-            key_by_path[mp] = model_registry.add_model(
-                file=mp,
-                name=Path(mp).stem,
-                post_process=td.get("post_process", "yolo_box"),
-                class_names={},
-            )
     algorithms = {}
     for dtype, td in stored.items():
         algo = {k: v for k, v in td.items() if k != "model_path"}
-        algo["model_key"] = key_by_path.get(td.get("model_path"))
+        if td.get("models"):
+            key_map: dict[str, str] = {}
+            models = []
+            for m in algo["models"]:
+                m = dict(m)
+                mp = m.pop("model_path", None)
+                old_key = m.get("model_key")
+                new_key = (_register_model_for_path(
+                    mp, td.get("post_process", "yolo_box"), key_by_path)
+                    if mp else old_key)
+                if old_key and new_key:
+                    key_map[old_key] = new_key
+                m["model_key"] = new_key
+                models.append(m)
+            algo["models"] = models
+            rule = algo.get("rule")
+            if rule and key_map:
+                for g in rule.get("groups", []):
+                    for c in g.get("conditions", []):
+                        for side_name in ("left", "right"):
+                            side = c.get(side_name)
+                            if side and side.get("model_key") in key_map:
+                                side["model_key"] = key_map[side["model_key"]]
+        else:
+            mp = td.get("model_path")
+            algo["model_key"] = (
+                _register_model_for_path(mp, td.get("post_process", "yolo_box"), key_by_path)
+                if mp else None)
         algorithms[dtype] = algo
     return algorithms
 
@@ -300,6 +323,52 @@ def migrate_legacy_registry() -> bool:
     return True
 
 
+def _migrate_algorithms_v2() -> None:
+    """algorithms.json 老结构(顶层 model_key/classes/model_confidence) → models[]+rule 新结构。
+
+    老 defaults 中的 box_count 设置折算为数量条件拼进第一组；迁移后写回文件。
+    """
+    if not ALGORITHMS_FILE.exists():
+        return
+    try:
+        with open(ALGORITHMS_FILE, "r", encoding="utf-8") as f:
+            stored = json.load(f)
+    except json.JSONDecodeError:
+        return  # 文件损坏，交由 load() 的重生成逻辑处理
+    if not stored or "models" in next(iter(stored.values())):
+        return  # 已是新结构
+    migrated = {}
+    for key, td in stored.items():
+        td = dict(td)
+        mkey = td.pop("model_key", None)
+        classes = td.pop("classes", None)
+        conf = td.pop("model_confidence", 0.5)
+        defaults = td.get("defaults", {})
+        mn = defaults.pop("min_box_count", None)
+        mx = defaults.pop("max_box_count", None)
+        mode = defaults.pop("box_count_mode", None)
+        conditions = []
+        if td.get("post_process") != "yolo_pose":
+            conditions.append({"left": {"model_key": mkey, "classes": classes}, "op": "exists"})
+            # 老 box_count → 数量条件（默认 min=1 已被 exists 覆盖，跳过）
+            side = {"model_key": mkey, "classes": classes}
+            if mode == "outside":
+                conditions.append({"left": side, "op": "count", "cmp": "outside", "min": mn, "max": mx})
+            else:
+                if mn is not None and mn > 1:
+                    conditions.append({"left": side, "op": "count", "cmp": "ge", "value": mn})
+                if mx is not None:
+                    conditions.append({"left": side, "op": "count", "cmp": "le", "value": mx})
+        td["models"] = [{"model_key": mkey, "model_confidence": conf}] if mkey else []
+        td["rule"] = {"groups": [{"conditions": conditions}]} if conditions else None
+        if td.get("post_process") == "yolo_box":
+            td["post_process"] = "yolo_relation"
+        migrated[key] = td
+    with open(ALGORITHMS_FILE, "w", encoding="utf-8") as f:
+        json.dump(migrated, f, ensure_ascii=False, indent=2)
+    logger.info(f"Migrated {len(migrated)} algorithms to v2 (models+rule)")
+
+
 class DetectionTypeRegistry:
     """检测类型注册表，全局单例"""
 
@@ -309,6 +378,7 @@ class DetectionTypeRegistry:
     def load(self) -> None:
         """加载注册表：文件存在则读取并补全缺失字段，不存在则从默认值生成"""
         migrate_legacy_registry()
+        _migrate_algorithms_v2()
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
         if ALGORITHMS_FILE.exists():
@@ -339,13 +409,13 @@ class DetectionTypeRegistry:
             self._types = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
             self._save(self._types)
 
-        # 动态注入 model_path（由 model_key 解析），并清理已废弃字段
+        # 给 models 每项注入 model_path（由 model_key 解析），并清理已废弃字段
         for td in self._types.values():
             td.pop("icon", None)
             td.pop("vlm_prompt_key", None)
-            mkey = td.get("model_key")
-            model = model_registry.get(mkey) if mkey else None
-            td["model_path"] = model["file"] if model else td.get("model_path")
+            for m in td.get("models", []):
+                model = model_registry.get(m.get("model_key") or "")
+                m["model_path"] = model["file"] if model else None
 
         logger.info(f"Detection registry loaded: {list(self._types.keys())}")
 
@@ -358,9 +428,10 @@ class DetectionTypeRegistry:
         td = self._types.get(dtype)
         if td is None:
             return None
-        result = dict(td)
-        model = model_registry.get(td.get("model_key") or "")
-        result["model_path"] = model["file"] if model else None
+        result = copy.deepcopy(td)  # 深拷贝避免注入 model_path 污染缓存
+        for m in result.get("models", []):
+            model = model_registry.get(m.get("model_key") or "")
+            m["model_path"] = model["file"] if model else None
         return result
 
     def all_types(self) -> list[str]:
@@ -368,10 +439,22 @@ class DetectionTypeRegistry:
 
     def get_types_by_model(self, model_key: str) -> list[str]:
         """按 model_key 找类型（推理去重用）"""
-        return [dt for dt, td in self._types.items() if td.get("model_key") == model_key]
+        return [dt for dt, td in self._types.items()
+                if any(m.get("model_key") == model_key for m in td.get("models", []))]
 
     def get_model_keys_in_use(self) -> set[str]:
-        return {td.get("model_key") for td in self._types.values() if td.get("model_key")}
+        return {m.get("model_key") for td in self._types.values()
+                for m in td.get("models", []) if m.get("model_key")}
+
+    def get_model_usage_counts(self) -> dict[str, int]:
+        """每个模型被多少个算法引用（模型管理页 used_by 展示用）"""
+        counts: dict[str, int] = {}
+        for td in self._types.values():
+            for m in td.get("models", []):
+                mk = m.get("model_key")
+                if mk:
+                    counts[mk] = counts.get(mk, 0) + 1
+        return counts
 
     def get_color_bgr(self, dtype: str) -> tuple[int, int, int]:
         td = self._types.get(dtype)
@@ -397,30 +480,72 @@ class DetectionTypeRegistry:
         return result
 
     def validate(self) -> list[str]:
-        """校验注册表（模型文件是否存在等），返回警告列表"""
+        """校验注册表（模型文件是否存在、规则结构是否合法等），返回警告列表"""
         warnings = []
         for dtype, td in self._types.items():
-            mkey = td.get("model_key")
-            if mkey and not model_registry.file_exists(mkey):
-                warnings.append(f"{dtype}: model '{mkey}' file not found in weights/")
-            if td.get("post_process") not in ("yolo_box", "yolo_pose"):
+            for m in td.get("models", []):
+                mkey = m.get("model_key")
+                if mkey and not model_registry.file_exists(mkey):
+                    warnings.append(f"{dtype}: model '{mkey}' file not found in weights/")
+            if td.get("post_process") not in ("yolo_relation", "yolo_pose"):
                 warnings.append(f"{dtype}: unknown post_process '{td.get('post_process')}'")
+            if td.get("rule"):
+                for err in self.validate_rule(td["rule"]):
+                    warnings.append(f"{dtype}: {err}")
         return warnings
+
+    def validate_rule(self, rule: dict) -> list[str]:
+        """校验规则结构，返回错误列表（空=合法）"""
+        from backend.safety_detection.relation_rules import ALL_OPS, RELATION_OPS
+        errors = []
+        groups = (rule or {}).get("groups")
+        if not groups:
+            errors.append("rule.groups 不能为空")
+            return errors
+        for gi, g in enumerate(groups):
+            for ci, c in enumerate(g.get("conditions", [])):
+                where = f"组{gi+1}条件{ci+1}"
+                op = c.get("op")
+                if op not in ALL_OPS:
+                    errors.append(f"{where}: 未知算子 {op}")
+                    continue
+                for side_name in ("left", "right"):
+                    side = c.get(side_name)
+                    if side_name == "right" and op not in RELATION_OPS:
+                        continue
+                    if not side or not side.get("model_key"):
+                        errors.append(f"{where}: {side_name} 缺少 model_key")
+                        continue
+                    if model_registry.get(side["model_key"]) is None:
+                        errors.append(f"{where}: 未知模型 {side['model_key']}")
+                        continue
+                    names = model_registry.get(side["model_key"]).get("class_names") or {}
+                    for cls in side.get("classes") or []:
+                        if names and str(cls) not in names:
+                            errors.append(f"{where}: 类别 {cls} 不在模型类别表中")
+                if op == "count" and c.get("cmp") not in ("gt", "ge", "lt", "le", "eq", "ne", "outside"):
+                    errors.append(f"{where}: 未知数量比较符 {c.get('cmp')}")
+        return errors
 
     def to_api_list(self) -> list[dict]:
         """返回前端 API 格式的类型列表"""
         result = []
         for key in self._types:
             td = self.get(key)
+            models = []
+            for m in td.get("models", []):
+                entry = dict(m)
+                model = model_registry.get(m.get("model_key") or "")
+                entry["model_name"] = model.get("name") if model else None
+                entry["class_names"] = model.get("class_names", {}) if model else {}
+                models.append(entry)
             result.append({
                 "key": key,
                 "label": td.get("label", key),
                 "color": td.get("color", "#888888"),
-                "model_key": td.get("model_key"),
-                "model_path": td.get("model_path"),
-                "post_process": td.get("post_process", "yolo_box"),
-                "classes": td.get("classes"),
-                "model_confidence": td.get("model_confidence", 0.5),
+                "post_process": td.get("post_process", "yolo_relation"),
+                "models": models,
+                "rule": td.get("rule"),
                 "vlm_prompt": td.get("vlm_prompt", ""),
                 "inspection_label": td.get("inspection_label", td.get("label", key)),
                 "alarm_description": td.get("alarm_description", ""),
@@ -441,6 +566,27 @@ class DetectionTypeRegistry:
                 td["defaults"][key] = val
         self._save(self._types)
 
+    def _normalize_models(self, models: list) -> tuple[list, str]:
+        """校验并规范化 models 数组，返回 (models, post_process)。
+
+        post_process 由模型决定：任一模型是 yolo_pose 则整体 yolo_pose（仅允许单模型），
+        否则 yolo_relation。
+        """
+        if not models:
+            raise ValueError("models is required")
+        norm = []
+        for m in models:
+            mkey = m.get("model_key")
+            if model_registry.get(mkey or "") is None:
+                raise ValueError(f"Unknown model: {mkey}")
+            norm.append({"model_key": mkey,
+                         "model_confidence": m.get("model_confidence", 0.5)})
+        has_pose = any(model_registry.get(m["model_key"]).get("post_process") == "yolo_pose"
+                       for m in norm)
+        if has_pose and len(norm) > 1:
+            raise ValueError("yolo_pose 算法只允许单个模型")
+        return norm, ("yolo_pose" if has_pose else "yolo_relation")
+
     def add_type(self, type_def: dict) -> str:
         """新增算法，自动生成唯一 key，返回 key"""
         label = type_def.get("label", "").strip()
@@ -449,10 +595,12 @@ class DetectionTypeRegistry:
         for existing in self._types.values():
             if existing.get("label") == label:
                 raise ValueError(f"label '{label}' already exists")
-        mkey = type_def.get("model_key")
-        model = model_registry.get(mkey or "")
-        if model is None:
-            raise ValueError(f"Unknown model: {mkey}")
+        models, post_process = self._normalize_models(type_def.get("models"))
+        rule = type_def.get("rule")
+        if post_process == "yolo_relation":
+            errors = self.validate_rule(rule)
+            if errors:
+                raise ValueError("; ".join(errors))
         base = label.lower().replace(" ", "_")
         key = f"{base}_{uuid.uuid4().hex[:6]}"
         while key in self._types:
@@ -462,10 +610,9 @@ class DetectionTypeRegistry:
         self._types[key] = {
             "label": label,
             "color": type_def.get("color", "#888888"),
-            "model_key": mkey,
-            "post_process": model.get("post_process", "yolo_box"),
-            "classes": type_def.get("classes"),
-            "model_confidence": type_def.get("model_confidence", 0.5),
+            "post_process": post_process,
+            "models": models,
+            "rule": rule,
             "vlm_prompt": type_def.get("vlm_prompt", ""),
             "inspection_label": type_def.get("inspection_label", label),
             "alarm_description": type_def.get("alarm_description", ""),
@@ -487,12 +634,20 @@ class DetectionTypeRegistry:
                 if k != dtype and existing.get("label") == new_label:
                     raise ValueError(f"label '{new_label}' already exists")
             td["label"] = new_label
-        if "model_key" in updates:
-            if model_registry.get(updates["model_key"] or "") is None:
-                raise ValueError(f"Unknown model: {updates['model_key']}")
-            td["model_key"] = updates["model_key"]
-            td["post_process"] = model_registry.get(updates["model_key"]).get("post_process", "yolo_box")
-        for field in ("color", "classes", "model_confidence", "vlm_prompt", "inspection_label", "alarm_description"):
+        if "models" in updates:
+            models, post_process = self._normalize_models(updates["models"])
+            td["models"] = models
+            td["post_process"] = post_process
+        if "rule" in updates:
+            rule = updates["rule"]
+            if rule is None and td.get("post_process") == "yolo_pose":
+                td["rule"] = None
+            else:
+                errors = self.validate_rule(rule)
+                if errors:
+                    raise ValueError("; ".join(errors))
+                td["rule"] = rule
+        for field in ("color", "vlm_prompt", "inspection_label", "alarm_description"):
             if field in updates:
                 td[field] = updates[field]
         self._save(self._types)

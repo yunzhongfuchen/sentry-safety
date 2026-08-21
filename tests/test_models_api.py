@@ -25,7 +25,7 @@ class TestListModels:
              "file_size": 100, "uploaded_at": "2026-07-21"}
         ]
         mock_reg = MagicMock()
-        mock_reg.get_model_keys_in_use.return_value = {"leak"}
+        mock_reg.get_model_usage_counts.return_value = {"leak": 1}
         with patch("backend.safety_detection.api.model_registry", mock_mr), \
              patch("backend.safety_detection.api.registry", mock_reg):
             resp = client.get("/models")
@@ -34,13 +34,29 @@ class TestListModels:
             assert m["key"] == "leak"
             assert m["used_by"] == 1
 
+    def test_used_by_counts_multiple_referencing_algorithms(self, client):
+        """模型被多个算法引用时 used_by 返回真实数量而非布尔 1"""
+        mock_mr = MagicMock()
+        mock_mr.to_api_list.return_value = [
+            {"key": "ppe", "name": "PPE", "file": "ppe.pt",
+             "post_process": "yolo_box", "class_names": {}, "file_size": 1,
+             "uploaded_at": "2026-08-06"}
+        ]
+        mock_reg = MagicMock()
+        mock_reg.get_model_usage_counts.return_value = {"ppe": 3}
+        with patch("backend.safety_detection.api.model_registry", mock_mr), \
+             patch("backend.safety_detection.api.registry", mock_reg):
+            resp = client.get("/models")
+            assert resp.status_code == 200
+            assert resp.json()["models"][0]["used_by"] == 3
+
 
 class TestUploadModel:
     def test_upload_pt_parses_metadata(self, client):
         mock_mr = MagicMock()
         mock_mr.save_model_file.return_value = MagicMock(name="leak.pt", stem="leak", suffix=".pt")
         mock_mr.add_model.return_value = "leak"
-        mock_mr.get.return_value = {"post_process": "yolo_box", "class_names": {"0": "leak"}}
+        mock_mr.get.return_value = {"post_process": "yolo_relation", "class_names": {"0": "leak"}}
         with patch("backend.safety_detection.api.model_registry", mock_mr), \
              patch("backend.safety_detection.api.parse_model_metadata",
                    return_value={"post_process": "yolo_box", "class_names": {"0": "leak"}}):

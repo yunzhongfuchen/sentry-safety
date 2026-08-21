@@ -230,6 +230,7 @@ class DecodeScheduler:
             state.last_decode_time = due_time
             state.error_count = 0
             state.current_frame = frame
+            state.frame_seq += 1
             state.last_frame_time = current_time
             state.frame_count += 1
 

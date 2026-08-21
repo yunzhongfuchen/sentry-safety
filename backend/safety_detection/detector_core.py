@@ -84,9 +84,6 @@ class TypeSchedule:
     externally_managed: bool = False
     roi: list = None
     roi_invert: bool = False
-    min_box_count: int = None
-    max_box_count: int = None
-    box_count_mode: str | None = None  # gte | lte | between | outside
     # 静态目标过滤：连续 N 帧框区域内容几乎无变化时判为误判（红灯/电子屏等静态光源）
     static_filter: bool = False
     static_diff_threshold: float = 0.02
@@ -96,7 +93,7 @@ class TypeSchedule:
 
 
 # ----------------------------------------------------------------------
-# ROI / box_count 过滤
+# ROI 过滤
 # ----------------------------------------------------------------------
 
 def filter_by_roi(result: dict, roi: list, roi_invert: bool,
@@ -139,36 +136,11 @@ def filter_by_roi(result: dict, roi: list, roi_invert: bool,
         "boxes": filtered_boxes,
         "scores": filtered_scores,
         "detected": len(filtered_boxes) > 0,
+        "max_confidence": max(filtered_scores) if filtered_scores else 0.0,
     }
     if subjects:
         out["subjects"] = filtered_subjects
     return out
-
-
-def check_box_count(result: dict, min_box_count: int = None,
-                    max_box_count: int = None, box_count_mode: str | None = None) -> dict:
-    """按框数量阈值判断检测结果，支持离岗（max=0）、人数超限和 outside 区间外模式"""
-    box_count = len(result.get("boxes", []))
-
-    if box_count_mode == "outside":
-        # 目标数 < a 或 > b 时报警
-        if min_box_count is not None and box_count < min_box_count:
-            return {**result, "detected": True}
-        if max_box_count is not None and box_count > max_box_count:
-            return {**result, "detected": True}
-        return {**result, "detected": False}
-
-    # 原有逻辑（gte / lte / between）
-    if min_box_count is not None and box_count < min_box_count:
-        return {**result, "detected": False}
-
-    if max_box_count is not None:
-        if box_count > max_box_count:
-            return {**result, "detected": False}
-        # 在 max_box_count 范围内（含 0 框）视为检测到
-        return {**result, "detected": True}
-
-    return result
 
 
 # ----------------------------------------------------------------------
@@ -420,9 +392,6 @@ class MultiDetector:
             use_vlm=merged.get("use_vlm", False),
             roi=merged.get("roi"),
             roi_invert=merged.get("roi_invert", False),
-            min_box_count=merged.get("min_box_count"),
-            max_box_count=merged.get("max_box_count"),
-            box_count_mode=merged.get("box_count_mode"),
             static_filter=merged.get("static_filter", False),
             static_diff_threshold=merged.get("static_diff_threshold", 0.02),
         )
@@ -554,6 +523,7 @@ class MultiDetector:
         frame = self.camera_manager.get_latest_frame(camera_id)
         if frame is None:
             return
+        frame_seq = self.camera_manager.get_frame_seq(camera_id)
 
         now = time.time()
         due_types = self._get_due_types(camera_id, now)
@@ -561,9 +531,18 @@ class MultiDetector:
 
         if due_types:
             detect_start = time.time()
+            roi_map = {}
+            with self._lock:
+                for dt in due_types:
+                    s = self._schedules.get(camera_id, {}).get(dt)
+                    if s and s.roi:
+                        roi_map[dt] = (s.roi, s.roi_invert)
             # 执行检测
             try:
-                results = self.safety_detector.detect(frame, due_types, core_id=core_id)
+                results = self.safety_detector.detect(
+                    frame, due_types, core_id=core_id,
+                    camera_id=camera_id, frame_seq=frame_seq, roi_map=roi_map,
+                )
             except Exception as e:
                 logger.error(f"Safety detection error for {camera_id}: {e}")
                 results = {}
@@ -575,8 +554,7 @@ class MultiDetector:
                 for dtype, res in results.items():
                     box_count = len(res.get("boxes", []))
                     detected = res.get("detected", False)
-                    scores = res.get("scores", [])
-                    max_conf = max(scores) if scores else 0.0
+                    max_conf = res.get("max_confidence", 0.0)
                     summary.append(f"{dtype}({'Y' if detected else 'N'}:{box_count},conf={max_conf:.2f})")
                 logger.info(f"Detection {camera_id}: {' | '.join(summary)} ({detect_elapsed:.2f}s)")
             else:
@@ -640,37 +618,15 @@ class MultiDetector:
         self, camera_id: str, dtype: str, frame: np.ndarray,
         result: dict, schedule: TypeSchedule
     ) -> None:
-        # ROI 过滤
-        if schedule.roi:
+        # ROI 过滤（relation 结果已在 detect 内按 roi_map 过滤，跳过二次过滤）
+        if schedule.roi and not result.get("roi_applied"):
             h, w = frame.shape[:2]
             result = filter_by_roi(result, schedule.roi, schedule.roi_invert, w, h)
 
-        # box_count 判断
-        if schedule.min_box_count is not None or schedule.max_box_count is not None:
-            result = check_box_count(result, schedule.min_box_count, schedule.max_box_count, schedule.box_count_mode)
-
         detected = result.get("detected", False)
-        max_conf = max(result.get("scores", [0]) or [0])
-        box_count = len(result.get("boxes", []))
+        max_conf = result.get("max_confidence", 0.0)
 
-        # 对 max_box_count 模式（如离岗：0人报警），0 个框也算检测到，跳过 threshold
-        has_max_box_trigger = (
-            schedule.max_box_count is not None
-            and box_count <= schedule.max_box_count
-            and detected
-        )
-
-        # outside 模式下，框数量超出 [min, max] 区间即触发，跳过 threshold
-        has_outside_trigger = (
-            schedule.box_count_mode == "outside"
-            and detected
-            and (
-                (schedule.min_box_count is not None and box_count < schedule.min_box_count)
-                or (schedule.max_box_count is not None and box_count > schedule.max_box_count)
-            )
-        )
-
-        if not detected or (max_conf < schedule.threshold and not has_max_box_trigger and not has_outside_trigger):
+        if not detected or max_conf < schedule.threshold:
             if not detected and result.get("boxes"):
                 logger.warning(f"{camera_id} {dtype} has boxes but detected=False, resetting count")
             elif detected and max_conf < schedule.threshold:
@@ -712,7 +668,7 @@ class MultiDetector:
             return
 
         # 静态过滤：连续帧框区域内容全部几乎无变化 → 判为静态误判，重置不告警
-        if schedule.static_filter:
+        if schedule.static_filter and result.get("boxes"):
             regions = getattr(self, "_static_regions", {}).get(camera_id, {}).get(dtype, [])
             if check_static_filter(regions, schedule.static_diff_threshold):
                 logger.info(f"{camera_id} {dtype} static filter: box region unchanged across {len(regions)} frames, likely static false positive (red light/screen), resetting")

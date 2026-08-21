@@ -38,9 +38,6 @@ DEFAULTS = {
     "cooldown": 120.0,
     "consecutive_required": 4,
     "use_vlm": True,
-    "min_box_count": 2,
-    "max_box_count": None,
-    "box_count_mode": "gte",
     "static_filter": True,
     "static_diff_threshold": 0.05,
 }
@@ -76,9 +73,6 @@ def test_register_camera_uses_registry_defaults(fake_registry):
     assert s.cooldown == 120.0
     assert s.consecutive_required == 4
     assert s.use_vlm is True
-    assert s.min_box_count == 2
-    assert s.max_box_count is None
-    assert s.box_count_mode == "gte"
     assert s.static_filter is True
     assert s.static_diff_threshold == 0.05
     assert s.roi == ROI

@@ -1,0 +1,158 @@
+- generic [ref=f3e2]:
+  - complementary [ref=f3e4]:
+    - generic [ref=f3e5]:
+      - generic [ref=f3e6]: S
+      - generic [ref=f3e7]:
+        - generic [ref=f3e8]: 视频诊断系统
+        - generic [ref=f3e9]: 安全检测平台
+    - navigation [ref=f3e10]:
+      - generic [ref=f3e11]:
+        - link "监控" [ref=f3e12] [cursor=pointer]:
+          - /url: /monitor
+        - link "记录" [ref=f3e14] [cursor=pointer]:
+          - /url: /records.html
+      - generic [ref=f3e16]:
+        - button "设置 ›" [expanded] [ref=f3e17] [cursor=pointer]:
+          - generic [ref=f3e18]: 设置
+          - generic [ref=f3e19]: ›
+        - generic [ref=f3e20]:
+          - link "摄像头" [ref=f3e21] [cursor=pointer]:
+            - /url: /settings.html?tab=cameras
+          - link "检测配置" [ref=f3e22] [cursor=pointer]:
+            - /url: /settings.html?tab=detection
+          - link "模型管理" [ref=f3e23] [cursor=pointer]:
+            - /url: /models.html
+          - link "算法管理" [ref=f3e24] [cursor=pointer]:
+            - /url: /algorithms.html
+          - link "系统设置" [ref=f3e25] [cursor=pointer]:
+            - /url: /settings.html?tab=system
+  - main [ref=f3e26]:
+    - generic [ref=f3e28]:
+      - generic [ref=f3e29]: S
+      - generic [ref=f3e30]: 设置
+    - generic [ref=f3e32]:
+      - generic [ref=f3e33]:
+        - generic [ref=f3e34] [cursor=pointer]: 摄像头
+        - generic [ref=f3e35] [cursor=pointer]: 系统设置
+      - generic [ref=f3e37]:
+        - button "+ 添加摄像头" [ref=f3e39] [cursor=pointer]
+        - table [ref=f3e41]:
+          - rowgroup [ref=f3e42]:
+            - row [ref=f3e43]:
+              - columnheader [ref=f3e44]:
+                - checkbox [ref=f3e45]
+              - columnheader "ID" [ref=f3e46]
+              - columnheader "名称" [ref=f3e47]
+              - columnheader "源地址" [ref=f3e48]
+              - columnheader "类型" [ref=f3e49]
+              - columnheader "分辨率" [ref=f3e50]
+              - columnheader "启用" [ref=f3e51]
+              - columnheader "操作" [ref=f3e52]
+          - rowgroup [ref=f3e53]:
+            - row [ref=f3e54]:
+              - cell [ref=f3e55]:
+                - checkbox [ref=f3e56]
+              - cell "1" [ref=f3e57]
+              - cell "1" [ref=f3e58]
+              - cell "http://localhost:18765/video3/stream" [ref=f3e59]
+              - cell "auto" [ref=f3e60]
+              - cell "640x480" [ref=f3e61]
+              - cell "是" [ref=f3e62]
+              - cell [ref=f3e63]:
+                - button "编辑" [active] [ref=f3e64] [cursor=pointer]
+                - button "删除" [ref=f3e65] [cursor=pointer]
+            - row [ref=f3e66]:
+              - cell [ref=f3e67]:
+                - checkbox [ref=f3e68]
+              - cell "2" [ref=f3e69]
+              - cell "2" [ref=f3e70]
+              - cell "http://localhost:18765/video2/stream" [ref=f3e71]
+              - cell "auto" [ref=f3e72]
+              - cell "640x480" [ref=f3e73]
+              - cell "是" [ref=f3e74]
+              - cell [ref=f3e75]:
+                - button "编辑" [ref=f3e76] [cursor=pointer]
+                - button "删除" [ref=f3e77] [cursor=pointer]
+  - generic [ref=f3e79]:
+    - generic [ref=f3e80]:
+      - heading "编辑摄像头" [level=3] [ref=f3e81]
+      - button "×" [ref=f3e82] [cursor=pointer]
+    - generic [ref=f3e83]:
+      - generic [ref=f3e84]:
+        - generic [ref=f3e85]:
+          - generic [ref=f3e86]: 摄像头 ID
+          - textbox [disabled] [ref=f3e87]: "1"
+        - generic [ref=f3e88]:
+          - generic [ref=f3e89]: 名称
+          - textbox [ref=f3e90]: "1"
+        - generic [ref=f3e91]:
+          - generic [ref=f3e92]: 源地址
+          - textbox "rtsp://... 或 http://..." [ref=f3e93]: http://localhost:18765/video3/stream
+        - generic [ref=f3e94]:
+          - generic [ref=f3e95]: 源类型
+          - combobox [ref=f3e96]:
+            - option "自动" [selected]
+            - option "RTSP"
+            - option "摄像头"
+        - generic [ref=f3e97]:
+          - generic [ref=f3e98]: 宽
+          - spinbutton [ref=f3e99]: "640"
+        - generic [ref=f3e100]:
+          - generic [ref=f3e101]: 高
+          - spinbutton [ref=f3e102]: "480"
+        - generic [ref=f3e103]:
+          - generic [ref=f3e104]: 启用摄像头
+          - combobox [ref=f3e105]:
+            - option "启用" [selected]
+            - option "禁用"
+      - generic [ref=f3e106]: 检测类型配置
+      - generic [ref=f3e107]:
+        - generic [ref=f3e108] [cursor=pointer]:
+          - generic [ref=f3e109]: 明火
+          - generic [ref=f3e111]:
+            - checkbox "启用" [ref=f3e112]
+            - text: 启用
+        - generic [ref=f3e113] [cursor=pointer]:
+          - generic [ref=f3e114]: 烟雾
+          - generic [ref=f3e116]:
+            - checkbox "启用" [ref=f3e117]
+            - text: 启用
+        - generic [ref=f3e118] [cursor=pointer]:
+          - generic [ref=f3e119]: 工服
+          - generic [ref=f3e121]:
+            - checkbox "启用" [ref=f3e122]
+            - text: 启用
+        - generic [ref=f3e123] [cursor=pointer]:
+          - generic [ref=f3e124]: 口罩
+          - generic [ref=f3e126]:
+            - checkbox "启用" [ref=f3e127]
+            - text: 启用
+        - generic [ref=f3e128] [cursor=pointer]:
+          - generic [ref=f3e129]: 吸烟
+          - generic [ref=f3e131]:
+            - checkbox "启用" [ref=f3e132]
+            - text: 启用
+        - generic [ref=f3e133] [cursor=pointer]:
+          - generic [ref=f3e134]: 睡岗
+          - generic [ref=f3e136]:
+            - checkbox "启用" [ref=f3e137]
+            - text: 启用
+        - generic [ref=f3e138] [cursor=pointer]:
+          - generic [ref=f3e139]: 安全帽
+          - generic [ref=f3e141]:
+            - checkbox "启用" [ref=f3e142]
+            - text: 启用
+        - generic [ref=f3e143] [cursor=pointer]:
+          - generic [ref=f3e144]: 漏液
+          - generic [ref=f3e146]:
+            - checkbox "启用" [checked] [ref=f3e147]
+            - text: 启用
+        - generic [ref=f3e148] [cursor=pointer]:
+          - generic [ref=f3e149]: 反光背心
+          - generic [ref=f3e151]:
+            - checkbox "启用" [ref=f3e152]
+            - text: 启用
+    - generic [ref=f3e153]:
+      - button "取消" [ref=f3e154] [cursor=pointer]
+      - button "恢复默认" [ref=f3e155] [cursor=pointer]
+      - button "保存" [ref=f3e156] [cursor=pointer]

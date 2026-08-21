@@ -1,0 +1,50 @@
+- generic [ref=f4e2]:
+  - complementary [ref=f4e4]:
+    - generic [ref=f4e5]:
+      - generic [ref=f4e6]: S
+      - generic [ref=f4e7]:
+        - generic [ref=f4e8]: 视频诊断系统
+        - generic [ref=f4e9]: 安全检测平台
+    - navigation [ref=f4e10]:
+      - generic [ref=f4e11]:
+        - link "监控" [ref=f4e12] [cursor=pointer]:
+          - /url: /monitor
+        - link "记录" [ref=f4e14] [cursor=pointer]:
+          - /url: /records.html
+      - generic [ref=f4e16]:
+        - button "设置 ›" [expanded] [ref=f4e17] [cursor=pointer]:
+          - generic [ref=f4e18]: 设置
+          - generic [ref=f4e19]: ›
+        - generic [ref=f4e20]:
+          - link "摄像头" [ref=f4e21] [cursor=pointer]:
+            - /url: /settings.html?tab=cameras
+          - link "检测配置" [ref=f4e22] [cursor=pointer]:
+            - /url: /settings.html?tab=detection
+          - link "类型管理" [ref=f4e23] [cursor=pointer]:
+            - /url: /types.html
+          - link "系统设置" [ref=f4e24] [cursor=pointer]:
+            - /url: /settings.html?tab=system
+  - main [ref=f4e25]:
+    - generic [ref=f4e27]:
+      - generic [ref=f4e28]: S
+      - generic [ref=f4e29]: 设置
+    - generic [ref=f4e31]:
+      - generic [ref=f4e32]:
+        - generic [ref=f4e33] [cursor=pointer]: 摄像头
+        - generic [ref=f4e34] [cursor=pointer]: 检测配置
+        - generic [ref=f4e35] [cursor=pointer]: 系统设置
+      - generic [ref=f4e37]:
+        - button "+ 添加摄像头" [ref=f4e39] [cursor=pointer]
+        - table [ref=f4e41]:
+          - rowgroup [ref=f4e42]:
+            - row [ref=f4e43]:
+              - columnheader [ref=f4e44]:
+                - checkbox [ref=f4e45]
+              - columnheader "ID" [ref=f4e46]
+              - columnheader "名称" [ref=f4e47]
+              - columnheader "源地址" [ref=f4e48]
+              - columnheader "类型" [ref=f4e49]
+              - columnheader "分辨率" [ref=f4e50]
+              - columnheader "启用" [ref=f4e51]
+              - columnheader "操作" [ref=f4e52]
+          - rowgroup
