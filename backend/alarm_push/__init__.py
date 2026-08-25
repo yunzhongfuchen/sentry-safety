@@ -1,11 +1,9 @@
-"""报警推送模块：通道抽象 + 管理器
-
-新增推送通道（飞书/钉钉等）只需：
-1. 新建文件继承 AlarmPushChannel，实现 send_created / send_reviewed
-2. 在 main_multi.init_components 中根据配置追加到 PushManager 的 channels
+"""
+报警推送模块（向后兼容重定向至 backend.integrations）
 """
 
-from backend.alarm_push.base import AlarmPushChannel
-from backend.alarm_push.manager import PushManager
+from backend.integrations.base import AlarmPushChannel
+from backend.integrations.manager import IntegrationManager as PushManager
+from backend.integrations.guojing.channel import GuojingWebhookChannel as WebhookChannel
 
-__all__ = ["AlarmPushChannel", "PushManager"]
+__all__ = ["AlarmPushChannel", "PushManager", "WebhookChannel"]

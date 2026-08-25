@@ -68,8 +68,8 @@ try:
     from safety_detection.api import router as safety_router
     from alarm_state import create_record, apply_vlm_review, confirm_alarm, confirm_false_positive
     from backend.frame_utils import draw_timestamp_on_frame
-    from backend.alarm_push import PushManager
-    from backend.alarm_push.webhook import WebhookChannel
+    from backend.integrations import init_integration_manager, integrations_router
+    from backend.integrations.manager import IntegrationManager
 except ImportError as e:
     logger.error(f"Import error: {e}")
     raise
@@ -90,8 +90,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 挂载安全检测业务路由
+# 挂载安全检测业务路由与外部系统对接集成接口
 app.include_router(safety_router)
+app.include_router(integrations_router)
 
 # ── 全局组件 ──
 camera_manager: Optional[CameraManager] = None
@@ -103,8 +104,8 @@ stream_server = get_stream_server()
 _global_settings: dict = {}
 gpu_scheduler = None
 _save_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
-# 报警推送管理器（init_components 中根据配置构建，无启用通道时 push 为空操作）
-push_manager: Optional[PushManager] = None
+# 外部系统集成推送管理器（init_components 中根据配置构建）
+push_manager: Optional[IntegrationManager] = None
 
 # 状态管理
 _status_lock = threading.Lock()
@@ -315,13 +316,8 @@ def init_components():
     _global_settings = app_config.load_global_settings()
     log_message(f"Global settings loaded")
 
-    # 1.1 构建报警推送通道（后续新增飞书/钉钉在此追加）
-    push_channels = []
-    webhook_url = _global_settings.get("alarm_push_webhook_url", "").strip()
-    if webhook_url:
-        push_channels.append(WebhookChannel(webhook_url, log=log_message))
-        log_message(f"Alarm push webhook enabled: {webhook_url}")
-    push_manager = PushManager(push_channels)
+    # 1.1 初始化外部系统集成推送管理器（国经/飞书/钉钉等按配置装载）
+    push_manager = init_integration_manager(_global_settings, log=log_message)
 
     # 2. 初始化摄像头管理器
     camera_manager = CameraManager()

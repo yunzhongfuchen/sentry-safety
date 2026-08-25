@@ -6,9 +6,9 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from backend.alarm_push.base import AlarmPushChannel
-from backend.alarm_push.webhook import WebhookChannel
-from backend.alarm_push.manager import PushManager
+from backend.integrations.base import AlarmPushChannel
+from backend.integrations.guojing.channel import GuojingWebhookChannel as WebhookChannel
+from backend.integrations.manager import IntegrationManager as PushManager
 
 
 def _make_record(**overrides):
@@ -36,7 +36,7 @@ class TestBuildEvent:
     def test_created_event_structure(self):
         """created 报文：信封 + 全量 data + 图片"""
         record = _make_record()
-        with patch("backend.alarm_push.webhook.registry") as mock_reg:
+        with patch("backend.integrations.guojing.channel.registry") as mock_reg:
             mock_reg.get.return_value = {"label": "明火"}
             ch = WebhookChannel("http://x/y")
             payload = ch.build_event("alarm.created", record, "SNAP", ["F1", "F2"])
@@ -60,7 +60,7 @@ class TestBuildEvent:
             reason="[VLM 确认] 真的有明火",
             vlm_review={"confirmed": True, "confidence": 0.92, "reason": "真的有明火"},
         )
-        with patch("backend.alarm_push.webhook.registry") as mock_reg:
+        with patch("backend.integrations.guojing.channel.registry") as mock_reg:
             mock_reg.get.return_value = {"label": "明火"}
             ch = WebhookChannel("http://x/y")
             payload = ch.build_event("alarm.reviewed", record, None, [])
@@ -79,8 +79,8 @@ class TestWebhookSend:
 
     def test_send_success_returns_true(self):
         ch = WebhookChannel("http://x/y")
-        with patch("backend.alarm_push.webhook.requests.post") as mock_post, \
-             patch("backend.alarm_push.webhook.registry") as mock_reg:
+        with patch("backend.integrations.guojing.channel.requests.post") as mock_post, \
+             patch("backend.integrations.guojing.channel.registry") as mock_reg:
             mock_reg.get.return_value = {"label": "明火"}
             resp = MagicMock(status_code=200)
             resp.json.return_value = {"code": 0}
@@ -95,8 +95,8 @@ class TestWebhookSend:
     def test_send_http_200_but_code_nonzero_is_failure(self):
         """HTTP 200 但 body code != 0 视为失败（按文档约定）"""
         ch = WebhookChannel("http://x/y")
-        with patch("backend.alarm_push.webhook.requests.post") as mock_post, \
-             patch("backend.alarm_push.webhook.registry") as mock_reg:
+        with patch("backend.integrations.guojing.channel.requests.post") as mock_post, \
+             patch("backend.integrations.guojing.channel.registry") as mock_reg:
             mock_reg.get.return_value = {"label": "明火"}
             resp = MagicMock(status_code=200)
             resp.json.return_value = {"code": 500}
@@ -107,8 +107,8 @@ class TestWebhookSend:
 
     def test_send_http_error_returns_false_no_raise(self):
         ch = WebhookChannel("http://x/y")
-        with patch("backend.alarm_push.webhook.requests.post") as mock_post, \
-             patch("backend.alarm_push.webhook.registry") as mock_reg:
+        with patch("backend.integrations.guojing.channel.requests.post") as mock_post, \
+             patch("backend.integrations.guojing.channel.registry") as mock_reg:
             mock_reg.get.return_value = {"label": "明火"}
             mock_post.return_value = MagicMock(status_code=500)
             ok = ch.send_created(_make_record(), None, [])
@@ -116,8 +116,8 @@ class TestWebhookSend:
 
     def test_send_network_error_returns_false_no_raise(self):
         ch = WebhookChannel("http://x/y")
-        with patch("backend.alarm_push.webhook.requests.post") as mock_post, \
-             patch("backend.alarm_push.webhook.registry") as mock_reg:
+        with patch("backend.integrations.guojing.channel.requests.post") as mock_post, \
+             patch("backend.integrations.guojing.channel.registry") as mock_reg:
             mock_reg.get.return_value = {"label": "明火"}
             mock_post.side_effect = ConnectionError("refused")
             ok = ch.send_created(_make_record(), None, [])
@@ -127,8 +127,8 @@ class TestWebhookSend:
         """成功/失败都通过注入的 log 回调记录，带 event_id"""
         logs = []
         ch = WebhookChannel("http://x/y", log=lambda msg, level="info": logs.append((level, msg)))
-        with patch("backend.alarm_push.webhook.requests.post") as mock_post, \
-             patch("backend.alarm_push.webhook.registry") as mock_reg:
+        with patch("backend.integrations.guojing.channel.requests.post") as mock_post, \
+             patch("backend.integrations.guojing.channel.registry") as mock_reg:
             mock_reg.get.return_value = {"label": "明火"}
             ok_resp = MagicMock(status_code=200)
             ok_resp.json.return_value = {"code": 0}

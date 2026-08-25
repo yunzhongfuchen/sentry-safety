@@ -55,6 +55,7 @@ uploads/
 # Playwright page snapshots left in repo root
 /camera-dialog-*.yml
 /snapshot-*.yml
+/*.pdf
 
 # Runtime PID files
 *.pid
