@@ -319,6 +319,20 @@ class SerialStrategy(DetectionStrategy):
                 time.sleep(0.02)
 
 
+def select_detection_strategy(strategy_setting: str, npu_cores: int) -> DetectionStrategy:
+    """根据全局设置与核心数选择调度策略。
+
+    auto: 核心数 >= 2 用 CorePinnedStrategy，否则 SerialStrategy；
+    parallel / serial: 强制指定策略（1G 显存等受限设备可强制串行）。
+    """
+    setting = (strategy_setting or "auto").strip().lower()
+    if setting == "serial":
+        return SerialStrategy()
+    if setting == "parallel":
+        return CorePinnedStrategy()
+    return CorePinnedStrategy() if npu_cores >= 2 else SerialStrategy()
+
+
 # ----------------------------------------------------------------------
 # MultiDetector
 # ----------------------------------------------------------------------

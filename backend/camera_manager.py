@@ -41,8 +41,8 @@ class CameraConfig:
     name: str = ""  # 摄像头显示名称
     enabled: bool = True
     # 视频流配置
-    width: int = 640
-    height: int = 480
+    width: Optional[int] = None
+    height: Optional[int] = None
     fps: int = 15
     buffer_size: int = 1
     # 视频源类型
@@ -781,8 +781,9 @@ class CameraManager:
         cap.set(cv2.CAP_PROP_BUFFERSIZE, state.config.buffer_size)
         cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
         cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
+        if state.config.width is not None and state.config.height is not None:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, state.config.width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, state.config.height)
         cap.set(cv2.CAP_PROP_FPS, state.config.fps)
 
         with self._lock:

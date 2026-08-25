@@ -57,7 +57,7 @@ logger.setLevel(logging.INFO)
 try:
     from camera_manager import CameraManager, CameraConfig
     from inference_engine import SafetyDetector, detect_best_device
-    from safety_detection.detector_core import MultiDetector, CorePinnedStrategy, SerialStrategy
+    from safety_detection.detector_core import MultiDetector, CorePinnedStrategy, SerialStrategy, select_detection_strategy
     from vlm_queue import VLMQueue
     from vlm_inspector import VLMInspector
     from understander import VideoUnderstander
@@ -340,8 +340,8 @@ def init_components():
             source=cam_data["source"],
             name=cam_data.get("name", ""),
             enabled=cam_data.get("enabled", True),
-            width=cam_data.get("width", 640),
-            height=cam_data.get("height", 480),
+            width=_parse_optional_int(cam_data.get("width")),
+            height=_parse_optional_int(cam_data.get("height")),
             fps=cam_data.get("fps", 15),
             source_type=cam_data.get("source_type", "auto"),
             detection_types=cam_data.get("detection_types"),
@@ -380,13 +380,11 @@ def init_components():
         max_concurrent=_global_settings.get("vlm_max_concurrent", 3),
     )
 
-    # 6. 选择调度策略
-    if npu_cores >= 2:
-        strategy = CorePinnedStrategy()
-        log_message("Using CorePinnedStrategy")
-    else:
-        strategy = SerialStrategy()
-        log_message("Using SerialStrategy")
+    # 6. 选择调度策略（auto=按核数，parallel=CorePinned，serial=Serial）
+    strategy = select_detection_strategy(
+        _global_settings.get("detection_strategy", "auto"), npu_cores
+    )
+    log_message(f"Using {type(strategy).__name__}")
 
     # 7. 初始化 MultiDetector
 
@@ -954,8 +952,8 @@ async def get_settings():
     settings = app_config.load_global_settings()
     camera_globals = app_config.load_camera_globals()
     settings["default_detection_types"] = app_config.get_default_type_config()
-    settings["default_camera_width"] = camera_globals.get("width", 640)
-    settings["default_camera_height"] = camera_globals.get("height", 480)
+    settings["default_camera_width"] = camera_globals.get("width")
+    settings["default_camera_height"] = camera_globals.get("height")
     settings["default_camera_fps"] = camera_globals.get("fps", 15)
     return settings
 
@@ -976,7 +974,11 @@ async def update_settings(data: dict):
         camera_globals_update = {}
         for key in ("default_camera_width", "default_camera_height", "default_camera_fps"):
             if key in data:
-                camera_globals_update[key.replace("default_camera_", "")] = data.pop(key)
+                raw = data.pop(key)
+                if key == "default_camera_fps":
+                    camera_globals_update[key.replace("default_camera_", "")] = int(raw)
+                else:
+                    camera_globals_update[key.replace("default_camera_", "")] = _parse_optional_int(raw)
 
         # 保存摄像头全局默认参数
         if camera_globals_update:
@@ -1147,6 +1149,13 @@ def sanitize_camera_algorithms(raw: dict) -> dict:
     }
 
 
+def _parse_optional_int(value) -> Optional[int]:
+    """把前端传来的空字符串/None转成None，否则转int。"""
+    if value is None or value == "":
+        return None
+    return int(value)
+
+
 @app.post("/cameras/{camera_id}/config")
 async def update_camera_config(camera_id: str, data: dict):
     """动态修改单路摄像头配置（检测类型 + 名称/源/分辨率等）"""
@@ -1174,9 +1183,9 @@ async def update_camera_config(camera_id: str, data: dict):
         if "source" in data and "source_type" in data:
             camera_manager.set_camera_source(camera_id, data["source"], data["source_type"])
         if "width" in data:
-            cfg.width = int(data["width"])
+            cfg.width = _parse_optional_int(data["width"])
         if "height" in data:
-            cfg.height = int(data["height"])
+            cfg.height = _parse_optional_int(data["height"])
         if "enabled" in data:
             cfg.enabled = bool(data["enabled"])
             if cfg.enabled:
@@ -1199,9 +1208,9 @@ async def update_camera_config(camera_id: str, data: dict):
             if "source_type" in data:
                 cam["source_type"] = data["source_type"]
             if "width" in data:
-                cam["width"] = int(data["width"])
+                cam["width"] = _parse_optional_int(data["width"])
             if "height" in data:
-                cam["height"] = int(data["height"])
+                cam["height"] = _parse_optional_int(data["height"])
             if "enabled" in data:
                 cam["enabled"] = bool(data["enabled"])
             if has_types:
@@ -1276,8 +1285,8 @@ async def reset_camera_config(camera_id: str):
         "source_type": target_cam.get("source_type", "auto"),
     }
     # 其他参数全部用全局默认值覆盖
-    restored["width"] = camera_globals.get("width", 640)
-    restored["height"] = camera_globals.get("height", 480)
+    restored["width"] = camera_globals.get("width")
+    restored["height"] = camera_globals.get("height")
     restored["fps"] = camera_globals.get("fps", 15)
     restored["algorithms"] = sanitize_camera_algorithms({
         dtype: registry.get_defaults(dtype) for dtype in registry.all_types()
@@ -1717,12 +1726,15 @@ class SelectedCameraDisplay:
             return True
 
     def _scale_for_display(self, frame: np.ndarray, camera_id: str) -> np.ndarray:
-        """按摄像头配置的最大分辨率等比例缩放，降低推流编码压力（不改变检测分辨率）。"""
+        """按摄像头配置的最大分辨率等比例缩放，降低推流编码压力（不改变检测分辨率）。
+        width/height 为空时使用原始分辨率。"""
         state = self.camera_manager._cameras.get(camera_id)
         if state is None:
             return frame
-        max_w = getattr(state.config, "width", 640)
-        max_h = getattr(state.config, "height", 480)
+        max_w = getattr(state.config, "width", None)
+        max_h = getattr(state.config, "height", None)
+        if max_w is None or max_h is None:
+            return frame
         src_h, src_w = frame.shape[:2]
         if src_w <= max_w and src_h <= max_h:
             return frame

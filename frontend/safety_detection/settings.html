@@ -194,7 +194,7 @@
                                         <td>{{ cam.name || '-' }}</td>
                                         <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ cam.source }}</td>
                                         <td>{{ cam.source_type || 'auto' }}</td>
-                                        <td>{{ cam.width }}x{{ cam.height }}</td>
+                                        <td>{{ (cam.width && cam.height) ? `${cam.width}x${cam.height}` : '原始' }}</td>
                                         <td>
                                             <span :style="{ color: cam.enabled !== false ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }">
                                                 {{ cam.enabled !== false ? '是' : '否' }}
@@ -222,6 +222,15 @@
 
                             <div class="glass-card">
                                 <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 14px;">GPU 动态调度器</div>
+                                <div class="gc-form-field">
+                                    <label>调度方式</label>
+                                    <select class="clay-select" v-model="settings.detection_strategy">
+                                        <option value="auto">自动（按核心数）</option>
+                                        <option value="parallel">并行</option>
+                                        <option value="serial">串行</option>
+                                    </select>
+                                    <p v-if="settingsInitial && settings.detection_strategy !== (settingsInitial?.detection_strategy ?? 'auto')" style="margin-top: 6px; font-size: 13px; color: var(--warning);">调度方式切换后需重启检测服务生效</p>
+                                </div>
                                 <div class="gc-form-field">
                                     <label>启用 GPU 调度器</label>
                                     <select class="clay-select" v-model="settings.use_gpu_scheduler">
@@ -439,6 +448,7 @@
                     }]
                 });
                 const toast = ref(null);
+                const settingsInitial = ref(null);
                 const logs = ref([]);
                 const systemMode = ref('');
                 const detectionTypes = ref([]);
@@ -476,6 +486,7 @@
                     try {
                         const data = await safeFetch('/settings');
                         settings.value = data;
+                        settingsInitial.value = JSON.parse(JSON.stringify(data));
                         const defs = defaultDetectionTypes();
                         const merged = {};
                         for (const key of Object.keys(defs)) {
@@ -483,6 +494,7 @@
                         }
                         settings.value.default_detection_types = merged;
                         if (settings.value.use_gpu_scheduler === undefined) settings.value.use_gpu_scheduler = false;
+                        if (settings.value.detection_strategy === undefined) settings.value.detection_strategy = 'auto';
                         if (settings.value.gpu_scheduler_num_queues === undefined) settings.value.gpu_scheduler_num_queues = 0;
                         if (settings.value.gpu_scheduler_interval === undefined) settings.value.gpu_scheduler_interval = 0.5;
                         if (settings.value.gpu_scheduler_half === undefined) settings.value.gpu_scheduler_half = false;
@@ -553,6 +565,7 @@
                             snapshot_quality: settings.value.snapshot_quality,
                             frame_quality: settings.value.frame_quality,
                             save_image_timestamp: settings.value.save_image_timestamp,
+                            detection_strategy: settings.value.detection_strategy,
                             use_gpu_scheduler: settings.value.use_gpu_scheduler,
                             gpu_scheduler_num_queues: settings.value.gpu_scheduler_num_queues,
                             gpu_scheduler_interval: settings.value.gpu_scheduler_interval,
@@ -563,7 +576,13 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
                         });
-                        showToast(res.ok ? '保存成功' : '保存失败', res.ok ? 'success' : 'error');
+                        if (res.ok) {
+                            const strategyChanged = settings.value.detection_strategy !== (settingsInitial?.detection_strategy ?? 'auto');
+                            showToast(strategyChanged ? '保存成功，调度方式需重启生效' : '保存成功',
+                                      strategyChanged ? 'warning' : 'success');
+                        } else {
+                            showToast('保存失败', 'error');
+                        }
                     } catch (e) { showToast('保存失败', 'error'); }
                 }
 
@@ -592,7 +611,7 @@
                     } else {
                         cameraDialog.value = {
                             camera_id: '', name: '', source: '', source_type: 'auto',
-                            width: 640, height: 480, enabled: true,
+                            width: '', height: '', enabled: true,
                             detection_types: {}
                         };
                     }
@@ -646,11 +665,12 @@
                     }
                     try {
                         const url = d._existing ? `/cameras/${d.camera_id}/config` : '/cameras/add';
+                        const normalize = v => (v === '' || v == null || Number.isNaN(v)) ? null : Number(v);
                         const payload = d._existing ? {
                             name: d.name, source: d.source, source_type: d.source_type,
-                            width: d.width, height: d.height, enabled: d.enabled,
+                            width: normalize(d.width), height: normalize(d.height), enabled: d.enabled,
                             detection_types
-                        } : { ...d, detection_types };
+                        } : { ...d, width: normalize(d.width), height: normalize(d.height), detection_types };
                         const res = await fetch(url, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -672,7 +692,9 @@
 
                 const roiFallbackStyle = computed(() => {
                     if (!cameraDialog.value) return {};
-                    const ratio = cameraDialog.value.height / Math.max(cameraDialog.value.width, 1);
+                    const w = Number(cameraDialog.value.width) || 16;
+                    const h = Number(cameraDialog.value.height) || 9;
+                    const ratio = h / Math.max(w, 1);
                     return { width: '100%', paddingBottom: `${ratio * 100}%` };
                 });
 
@@ -893,7 +915,7 @@
 
                 return {
                     tab, sidebar, cameras, settings, models, detectorInfo, selectedCameras,
-                    cameraDialog, roiDialog, roiCanvas, toast, logs, systemMode, detectionTypes,
+                    cameraDialog, roiDialog, roiCanvas, toast, settingsInitial, logs, systemMode, detectionTypes,
                     selectedAlgorithmKey, roiState, currentRegion, availableAlgorithms, addedAlgorithms, roiDialogLabel, roiFallbackStyle,
                     loadCameras, loadSettings, loadModels,
                     saveVlmSettings, saveDefaultTypes, saveSystemSettings,

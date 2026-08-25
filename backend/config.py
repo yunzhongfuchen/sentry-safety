@@ -75,8 +75,8 @@ API_PORT = int(os.getenv("API_PORT", "8000"))
 MAX_CONCURRENT_ANALYSIS = int(os.getenv("MAX_CONCURRENT_ANALYSIS", "3"))
 
 # 摄像头默认配置
-DEFAULT_CAMERA_WIDTH = int(os.getenv("DEFAULT_CAMERA_WIDTH", "640"))
-DEFAULT_CAMERA_HEIGHT = int(os.getenv("DEFAULT_CAMERA_HEIGHT", "480"))
+DEFAULT_CAMERA_WIDTH = int(os.getenv("DEFAULT_CAMERA_WIDTH")) if os.getenv("DEFAULT_CAMERA_WIDTH") else None
+DEFAULT_CAMERA_HEIGHT = int(os.getenv("DEFAULT_CAMERA_HEIGHT")) if os.getenv("DEFAULT_CAMERA_HEIGHT") else None
 DEFAULT_CAMERA_FPS = int(os.getenv("DEFAULT_CAMERA_FPS", "15"))
 
 # ==================== 日志配置 ====================
@@ -145,6 +145,8 @@ def get_default_global_settings() -> dict:
         "gpu_scheduler_num_queues": 0,
         "gpu_scheduler_interval": 0.5,
         "gpu_scheduler_half": False,
+        # 检测调度方式: auto | parallel | serial（auto=按核数自动，parallel=CorePinned，serial=Serial）
+        "detection_strategy": "auto",
         "display_detection_types": ddt,
         "display_detection_interval": 1.0,
         "save_image_timestamp": True,
@@ -171,6 +173,7 @@ except Exception:
         "gpu_scheduler_num_queues": 0,
         "gpu_scheduler_interval": 0.5,
         "gpu_scheduler_half": False,
+        "detection_strategy": "auto",
         "display_detection_types": {"fire": True, "smoke": True, "uniform": True, "mask": True, "cigarette": True, "sleep": True},
         "display_detection_interval": 1.0,
         "save_image_timestamp": True,
@@ -180,16 +183,16 @@ except Exception:
 # ==================== 默认摄像头参数（全局模板） ====================
 try:
     DEFAULT_CAMERA_GLOBALS = {
-        "width": 640,
-        "height": 480,
+        "width": None,
+        "height": None,
         "fps": 15,
         "source_type": "auto",
         "detection_types": get_default_type_config(),
     }
 except Exception:
     DEFAULT_CAMERA_GLOBALS = {
-        "width": 640,
-        "height": 480,
+        "width": None,
+        "height": None,
         "fps": 15,
         "source_type": "auto",
         "detection_types": dict(DEFAULT_TYPE_CONFIG),

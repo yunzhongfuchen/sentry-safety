@@ -200,9 +200,9 @@ class DecodeScheduler:
 
         # 等比例缩放（在锁外执行，减少锁竞争）
         src_h, src_w = frame.shape[:2]
-        max_w = getattr(state.config, "width", 640)
-        max_h = getattr(state.config, "height", 480)
-        if src_w > max_w or src_h > max_h:
+        max_w = getattr(state.config, "width", None)
+        max_h = getattr(state.config, "height", None)
+        if max_w is not None and max_h is not None and (src_w > max_w or src_h > max_h):
             scale = min(max_w / src_w, max_h / src_h)
             new_w = int(src_w * scale)
             new_h = int(src_h * scale)
