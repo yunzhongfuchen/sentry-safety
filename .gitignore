@@ -9,25 +9,23 @@ __pycache__/
 *.so
 .venv/
 venv/
+.pytest_cache/
 
 # Environment variables
 .env
 
 # Data & logs (runtime generated)
-data/*.json
-data/*.txt
-data/frames/*.jpg
-data/frames/*.png
-data/confined_frames/
-data/recordings/
+data/
 logs/
 *.log
 
 # Runtime configs (editable at runtime, not versioned)
 config/*.json
+config/*.bak
+config/*.pre-migration-bak
 
 # Uploaded videos (large binaries)
-uploads/videos/
+uploads/
 
 # Models (large binaries, can be downloaded)
 *.pt
@@ -48,3 +46,22 @@ uploads/videos/
 
 # Git worktrees
 .worktrees/
+
+# Local tool caches / generated artifacts
+.codegraph/
+.playwright-mcp/
+.VSCodeCounter/
+
+# Playwright page snapshots left in repo root
+/camera-dialog-*.yml
+/snapshot-*.yml
+
+# Runtime PID files
+*.pid
+
+# Build output
+dist/
+
+# Local delivery / third-party SDK source
+交大交付/
+sophon-stream-master/

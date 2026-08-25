@@ -63,6 +63,7 @@ apt-get install -y -qq \
     ffmpeg \
     libgstreamer1.0-dev \
     libgstreamer-plugins-base1.0-dev \
+    fonts-noto-cjk \
     > /dev/null 2>&1
 
 info "系统依赖安装完成 ✓"
@@ -85,6 +86,8 @@ cp -r "$SCRIPT_DIR/backend"   "$INSTALL_DIR/"
 cp -r "$SCRIPT_DIR/frontend"  "$INSTALL_DIR/"
 cp -r "$SCRIPT_DIR/config"    "$INSTALL_DIR/"
 cp -r "$SCRIPT_DIR/models"    "$INSTALL_DIR/"
+[[ -d "$SCRIPT_DIR/weights" ]] && cp -r "$SCRIPT_DIR/weights" "$INSTALL_DIR/"
+[[ -d "$SCRIPT_DIR/fonts" ]] && cp -r "$SCRIPT_DIR/fonts" "$INSTALL_DIR/"
 cp    "$SCRIPT_DIR/start.sh"  "$INSTALL_DIR/"
 cp    "$SCRIPT_DIR/requirements.txt" "$INSTALL_DIR/"
 
