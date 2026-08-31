@@ -13,8 +13,32 @@
         .model-card { padding: 16px; }
         .model-card-header { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
         .model-card-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-        .model-card-classes { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
-        .class-chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--bg-elevated); color: var(--text-secondary); font-family: var(--font-mono); }
+        .model-card-classes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 8px 0;
+            max-height: 46px;
+            overflow: hidden;
+            position: relative;
+            line-height: 1;
+        }
+        .class-chip {
+            font-size: 11px;
+            line-height: 17px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+            white-space: nowrap;
+        }
+        .class-chip.more-indicator {
+            background: var(--bg-soft);
+            color: var(--text-muted);
+            font-weight: 600;
+            padding: 2px 6px;
+        }
         .meta-label-file { color: #0d9488; font-weight: 600; }
         .meta-label-post { color: var(--warning); font-weight: 600; }
         .used-count { color: #7c3aed; font-weight: 700; }
@@ -69,8 +93,8 @@
                     <div class="model-card-header">{{ m.name }}</div>
                     <div class="model-card-meta"><span class="meta-label-file">文件:</span> {{ m.file }}<span v-if="m.file_size">（{{ (m.file_size / 1048576).toFixed(1) }} MB）</span></div>
                     <div class="model-card-meta"><span class="meta-label-post">策略:</span> {{ m.post_process }} · 被 <span class="used-count">{{ m.used_by }}</span> 个算法引用</div>
-                    <div class="model-card-classes">
-                        <span v-for="(name, id) in m.class_names" :key="id" class="class-chip">{{ id }}:{{ name }}</span>
+                    <div class="model-card-classes" :title="getClassesTooltip(m)">
+                        <span v-for="(name, id) in (m.class_names || {})" :key="id" class="class-chip">{{ id }}:{{ name }}</span>
                         <span v-if="!Object.keys(m.class_names || {}).length" class="hint">未解析到类别</span>
                     </div>
                     <div class="model-card-actions">
@@ -265,13 +289,19 @@
                     finally { replacing.value = false; }
                 }
 
+                function getClassesTooltip(m) {
+                    const entries = Object.entries(m.class_names || {});
+                    if (!entries.length) return '未解析到类别';
+                    return `共 ${entries.length} 个类别：\n` + entries.map(([id, name]) => `${id}: ${name}`).join('\n');
+                }
+
                 onMounted(() => {
                     const root = document.getElementById('sidebar-root');
                     if (root) renderSidebar(root, sidebar.value);
                     loadModels();
                 });
 
-                return { models, uploadDialog, uploadName, uploading, editDialog, replaceDialog, replacing, toast, sidebar, doUpload, onUploadFileChange, openEdit, saveEdit, deleteModel, openReplace, doReplace, onReplaceFileChange };
+                return { models, uploadDialog, uploadName, uploading, editDialog, replaceDialog, replacing, toast, sidebar, doUpload, onUploadFileChange, openEdit, saveEdit, deleteModel, openReplace, doReplace, onReplaceFileChange, getClassesTooltip };
             }
         }).mount('#app');
     </script>

@@ -41,10 +41,21 @@ def test_contain_and_not_contain():
 
 def test_exists_absent_count():
     raw = {"m": [_box(0, 0, 10, 10, 8, 0.9), _box(20, 0, 30, 10, 8, 0.8)]}
-    assert evaluate_rule(raw, _rule({"left": _side(8), "op": "exists"}))["detected"] is True
+    r_exists = evaluate_rule(raw, _rule({"left": _side(8), "op": "exists"}))
+    assert r_exists["detected"] is True
+    assert r_exists["boxes"] == [[0, 0, 10, 10], [20, 0, 30, 10]]
+    assert r_exists["scores"] == [0.9, 0.8]
+    assert abs(r_exists["max_confidence"] - 0.9) < 1e-6
+
     assert evaluate_rule(raw, _rule({"left": _side(7), "op": "absent"}))["detected"] is True
     assert evaluate_rule(raw, _rule({"left": _side(8), "op": "absent"}))["detected"] is False
-    assert evaluate_rule(raw, _rule({"left": _side(8), "op": "count", "cmp": "ge", "value": 2}))["detected"] is True
+
+    r_count = evaluate_rule(raw, _rule({"left": _side(8), "op": "count", "cmp": "ge", "value": 2}))
+    assert r_count["detected"] is True
+    assert r_count["boxes"] == [[0, 0, 10, 10], [20, 0, 30, 10]]
+    assert r_count["scores"] == [0.9, 0.8]
+    assert abs(r_count["max_confidence"] - 0.9) < 1e-6
+
     assert evaluate_rule(raw, _rule({"left": _side(8), "op": "count", "cmp": "lt", "value": 2}))["detected"] is False
     assert evaluate_rule(raw, _rule({"left": _side(8), "op": "count", "cmp": "outside", "min": 1, "max": 5}))["detected"] is False
     assert evaluate_rule(raw, _rule({"left": _side(8), "op": "count", "cmp": "outside", "min": 3, "max": 5}))["detected"] is True

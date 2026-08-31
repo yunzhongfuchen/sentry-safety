@@ -17,12 +17,12 @@ if [[ -f /tmp/sentry_main.pid ]]; then
     rm -f /tmp/sentry_main.pid
 fi
 
-# 按端口 8000 查找并强制清理残留进程
-PIDS=$(lsof -t -i :8000 2>/dev/null)
+# 按端口 8111 查找并强制清理残留进程
+PIDS=$(lsof -t -i :8111 2>/dev/null)
 if [[ -n "$PIDS" ]]; then
-    echo "[INFO] 发现端口 8000 残留进程: $PIDS"
+    echo "[INFO] 发现端口 8111 残留进程: $PIDS"
     kill -9 $PIDS 2>/dev/null
-    echo "[OK] 已强制清理端口 8000 残留进程"
+    echo "[OK] 已强制清理端口 8111 残留进程"
     STOPPED=true
 fi
 

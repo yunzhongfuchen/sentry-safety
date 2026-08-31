@@ -124,19 +124,27 @@ _MAX_SOLUTIONS = 50  # 多左侧组回溯上限，防笛卡尔积爆炸
 
 
 def _eval_group(conditions, raw_by_model):
-    """命中返回 [(left_box, score), ...]，未命中返回 None；纯全局命中返回 []"""
+    """命中返回 [(left_box, score), ...]，未命中返回 None；纯全局命中且无框返回 []"""
     obj_conds = []
+    global_boxes = {}  # id(box) -> (box, score)
     for c in conditions:
         if c["op"] in GLOBAL_OPS:
-            n = len(_side_boxes(c["left"], raw_by_model))
+            side_b = _side_boxes(c["left"], raw_by_model)
+            n = len(side_b)
             op = c["op"]
             hit = (n >= 1) if op == "exists" else (n == 0) if op == "absent" else _count_hit(n, c)
             if not hit:
                 return None
+            if op in ("exists", "count"):
+                for b in side_b:
+                    bid = id(b)
+                    score = b.get("confidence", 1.0)
+                    if bid not in global_boxes or global_boxes[bid][1] < score:
+                        global_boxes[bid] = (b, score)
         else:
             obj_conds.append(c)
     if not obj_conds:
-        return []
+        return list(global_boxes.values())
 
     left_keys = []
     for c in obj_conds:

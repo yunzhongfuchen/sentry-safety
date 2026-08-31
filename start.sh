@@ -38,7 +38,7 @@ mkdir -p data/frames logs
 # 选择启动模式
 MODE="${SENTRY_MODE:-multi}"
 HOST="${API_HOST:-0.0.0.0}"
-PORT="${API_PORT:-8000}"
+PORT="${API_PORT:-8111}"
 
 echo "=========================================="
 echo " Sentry 受限空间安全哨兵"

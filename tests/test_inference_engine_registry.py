@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 @pytest.fixture
 def fake_registry(tmp_path, monkeypatch):
-    """创建一个指向 tmp_path 的测试注册表"""
+    """创建一个指向 tmp_path 的测试注册表（播种 6 种内置算法）"""
     import backend.model_registry as model_mod
     import backend.detection_registry as reg_mod
 
@@ -23,6 +23,13 @@ def fake_registry(tmp_path, monkeypatch):
     monkeypatch.setattr(reg_mod, "REGISTRY_FILE", tmp_path / "detection_types.json")
     monkeypatch.setattr(reg_mod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
     monkeypatch.setattr(reg_mod, "PROJECT_ROOT", tmp_path)
+
+    # 播种模型和算法
+    model_mod.model_registry._models = {}
+    seeded = reg_mod._migrate_type_dicts(reg_mod.DEFAULT_DETECTION_TYPE_REGISTRY)
+    (tmp_path / "algorithms.json").write_text(
+        json.dumps(seeded, ensure_ascii=False), encoding="utf-8"
+    )
 
     # 先加载 model_registry,再加载 detection_registry
     model_mod.model_registry.load()

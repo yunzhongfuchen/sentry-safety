@@ -147,6 +147,7 @@ class GPUDynamicScheduler(threading.Thread):
         half: bool = False,
         warmup: bool = True,
         cooldown_checker: Optional[Callable[[str, str, float], bool]] = None,
+        due_checker: Optional[Callable[[str, str, float], bool]] = None,
     ):
         super().__init__(daemon=True)
         self.camera_manager = camera_manager
@@ -156,10 +157,12 @@ class GPUDynamicScheduler(threading.Thread):
         self.half = half
         self.warmup = warmup
         self.cooldown_checker = cooldown_checker
+        self.due_checker = due_checker
         self.running = True
         self._busy = False
-        # (camera_id, detection_type) -> last_infer_timestamp
+        # (camera_id, detection_type) -> last_infer_timestamp / last_frame_seq
         self.last_infer: Dict[Tuple[str, str], float] = {}
+        self.last_frame_seq: Dict[Tuple[str, str], int] = {}
 
         # 加载所有模型
         self.detectors: Dict[str, ModelDetector] = {}
@@ -262,15 +265,23 @@ class GPUDynamicScheduler(threading.Thread):
                 if not enabled:
                     continue
 
-                interval = (
-                    cfg.get("interval", 1.0)
-                    if isinstance(cfg, dict)
-                    else getattr(cfg, "interval", 1.0)
-                )
                 key = (cam_id, dtype)
-                last = self.last_infer.get(key, 0.0)
-                if now - last < interval:
-                    continue
+                if self.due_checker is not None:
+                    if not self.due_checker(cam_id, dtype, now):
+                        continue
+                    if hasattr(self.camera_manager, "get_frame_seq"):
+                        frame_seq = self.camera_manager.get_frame_seq(cam_id)
+                        if self.last_frame_seq.get(key) == frame_seq:
+                            continue
+                else:
+                    interval = (
+                        cfg.get("interval", 1.0)
+                        if isinstance(cfg, dict)
+                        else getattr(cfg, "interval", 1.0)
+                    )
+                    last = self.last_infer.get(key, 0.0)
+                    if now - last < interval:
+                        continue
                 if self.cooldown_checker is not None and self.cooldown_checker(cam_id, dtype, now):
                     continue
                 tasks.setdefault(dtype, []).append((cam_id, frame.copy()))
@@ -332,6 +343,8 @@ class GPUDynamicScheduler(threading.Thread):
                             collected_keys.append((cam_id, dtype))
                     for key in collected_keys:
                         self.last_infer[key] = completed_at
+                        if hasattr(self.camera_manager, "get_frame_seq"):
+                            self.last_frame_seq[key] = self.camera_manager.get_frame_seq(key[0])
             finally:
                 self._busy = False
 

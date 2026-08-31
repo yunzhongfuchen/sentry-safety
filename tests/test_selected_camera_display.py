@@ -430,3 +430,45 @@ def test_active_reader_session_reconnects_after_read_failure():
         display._reader_session(1, "cam_01")
 
     assert np.array_equal(display._latest_frame, second_frame)
+
+
+def test_display_loop_draws_timestamp_only_when_enabled():
+    """时间戳开关为 True 时绘制时间戳，为 False 时跳过绘制。"""
+    camera_manager = MagicMock()
+    state = MagicMock()
+    state.config.width = 640
+    state.config.height = 480
+    camera_manager._cameras = {"cam_01": state}
+    stream_server = MagicMock()
+    display = SelectedCameraDisplay(
+        camera_manager, stream_server, npu_cores=0, device="cpu", draw_timestamp=True
+    )
+    display._running = True
+    display._selected_camera_id = "cam_01"
+    display._active_session_id = 1
+    display._frame_session_id = 1
+    display._latest_frame = np.zeros((8, 8, 3), dtype=np.uint8)
+    display._frame_timestamp = 123456.0
+
+    loop_count = [0]
+
+    def stop_after_one_loop(_seconds):
+        loop_count[0] += 1
+        if loop_count[0] >= 1:
+            display._running = False
+
+    with patch("backend.main_multi.time.sleep", side_effect=stop_after_one_loop):
+        with patch.object(display, "_draw_timestamp", wraps=display._draw_timestamp) as mock_draw:
+            display._display_loop()
+            assert mock_draw.call_count >= 1
+
+    # 关闭时间戳
+    display._running = True
+    display.set_display_config(draw_timestamp=False)
+    loop_count[0] = 0
+
+    with patch("backend.main_multi.time.sleep", side_effect=stop_after_one_loop):
+        with patch.object(display, "_draw_timestamp", wraps=display._draw_timestamp) as mock_draw:
+            display._display_loop()
+            assert mock_draw.call_count == 0
+

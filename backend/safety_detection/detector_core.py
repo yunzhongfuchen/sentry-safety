@@ -76,6 +76,8 @@ class TypeSchedule:
     interval: float
     threshold: float
     cooldown: float
+    verification_frame_count: int = 1
+    verification_frame_interval: float = 1.0
     consecutive_required: int = 1
     consecutive_count: int = 0
     last_run: float = 0.0
@@ -84,11 +86,19 @@ class TypeSchedule:
     externally_managed: bool = False
     roi: list = None
     roi_invert: bool = False
-    # 静态目标过滤：连续 N 帧框区域内容几乎无变化时判为误判（红灯/电子屏等静态光源）
+    # 静态目标过滤：同一检测轮内的采样帧区域几乎无变化时判为误判
     static_filter: bool = False
     static_diff_threshold: float = 0.02
+    # 当前检测轮的采样状态；成功完成一轮后才增加 consecutive_count
+    sampling_active: bool = False
+    sampled_frame_count: int = 0
+    last_sample_time: float = 0.0
+    last_sample_seq: int = -1
+    task_regions: List[np.ndarray] = None
 
     def is_due(self, now: float) -> bool:
+        if self.sampling_active:
+            return now - self.last_sample_time >= self.verification_frame_interval
         return now - self.last_run >= self.interval
 
 
@@ -402,7 +412,9 @@ class MultiDetector:
             interval=merged.get("interval", 1.0),
             threshold=merged.get("threshold", 0.5),
             cooldown=merged.get("cooldown", 60.0),
-            consecutive_required=merged.get("consecutive_required", 3),
+            verification_frame_count=max(1, int(merged.get("verification_frame_count", 1))),
+            verification_frame_interval=max(0.0, float(merged.get("verification_frame_interval", 1.0))),
+            consecutive_required=max(1, int(merged.get("consecutive_required", 3))),
             use_vlm=merged.get("use_vlm", False),
             roi=merged.get("roi"),
             roi_invert=merged.get("roi_invert", False),
@@ -541,6 +553,13 @@ class MultiDetector:
 
         now = time.time()
         due_types = self._get_due_types(camera_id, now)
+        with self._lock:
+            schedules = self._schedules.get(camera_id, {})
+            due_types = [
+                dtype for dtype in due_types
+                if schedules.get(dtype) is not None
+                and schedules[dtype].last_sample_seq != frame_seq
+            ]
         results = {}
 
         if due_types:
@@ -587,15 +606,10 @@ class MultiDetector:
                     if dtype not in schedules:
                         continue
                     schedule = schedules[dtype]
-                    # 如果检测耗时超过该类型的 interval，用完成时间作为 last_run，
-                    # 避免检测还没做完下一轮又到期，导致 CPU/GPU 100% 占满卡死
-                    if detect_elapsed >= schedule.interval:
-                        schedule.last_run = time.time()
-                    else:
-                        schedule.last_run = now
+                    schedule.last_sample_seq = frame_seq
                     result = results.get(dtype, {"detected": False})
 
-                    self._handle_standard_detection(camera_id, dtype, frame, result, schedule)
+                    self._handle_standard_detection(camera_id, dtype, frame, result, schedule, now=now)
 
         # 注：视频流渲染已拆分到独立 overlay 线程，此处不再送流
 
@@ -620,6 +634,12 @@ class MultiDetector:
                 due.append(dtype)
             return due
 
+    def is_type_due(self, camera_id: str, dtype: str, now: float) -> bool:
+        """外部调度器查询某类型当前是否需要采样。"""
+        with self._lock:
+            schedule = self._schedules.get(camera_id, {}).get(dtype)
+            return bool(schedule and schedule.is_due(now))
+
     def is_in_cooldown(self, camera_id: str, dtype: str, now: float) -> bool:
         with self._lock:
             return self._is_in_cooldown_unlocked(camera_id, dtype, now)
@@ -628,10 +648,23 @@ class MultiDetector:
     # 标准检测处理（fire / smoke / mask / cigarette）
     # ------------------------------------------------------------------
 
+    def _reset_detection_progress(
+        self, camera_id: str, dtype: str, schedule: TypeSchedule
+    ) -> None:
+        """清空当前采样轮和此前连续命中轮的证据。"""
+        schedule.consecutive_count = 0
+        schedule.sampling_active = False
+        schedule.sampled_frame_count = 0
+        schedule.last_sample_time = 0.0
+        schedule.task_regions = []
+        if self.camera_manager is not None:
+            self.camera_manager.clear_detection_frames(camera_id, dtype)
+
     def _handle_standard_detection(
         self, camera_id: str, dtype: str, frame: np.ndarray,
-        result: dict, schedule: TypeSchedule
+        result: dict, schedule: TypeSchedule, now: float = None
     ) -> None:
+        now = time.time() if now is None else now
         # ROI 过滤（relation 结果已在 detect 内按 roi_map 过滤，跳过二次过滤）
         if schedule.roi and not result.get("roi_applied"):
             h, w = frame.shape[:2]
@@ -642,66 +675,80 @@ class MultiDetector:
 
         if not detected or max_conf < schedule.threshold:
             if not detected and result.get("boxes"):
-                logger.warning(f"{camera_id} {dtype} has boxes but detected=False, resetting count")
+                logger.warning(f"{camera_id} {dtype} has boxes but detected=False, resetting progress")
             elif detected and max_conf < schedule.threshold:
                 logger.info(f"{camera_id} {dtype} blocked by threshold: conf={max_conf:.2f} < threshold={schedule.threshold}")
-            if self.camera_manager is not None:
-                self.camera_manager.clear_detection_frames(camera_id, dtype)
-            schedule.consecutive_count = 0
-            getattr(self, "_static_regions", {}).get(camera_id, {}).pop(dtype, None)
+            self._reset_detection_progress(camera_id, dtype, schedule)
+            schedule.last_run = now
             return
 
-        schedule.consecutive_count += 1
-        logger.info(f"{camera_id} {dtype} consecutive={schedule.consecutive_count}/{schedule.consecutive_required} conf={max_conf:.2f}")
+        if not schedule.sampling_active:
+            schedule.sampling_active = True
+            schedule.sampled_frame_count = 0
+            schedule.task_regions = []
 
-        # 静态过滤：缓存本次命中的框区域图（取最高置信度框）
+        schedule.sampled_frame_count += 1
+        schedule.last_sample_time = now
+        logger.info(
+            f"{camera_id} {dtype} sample={schedule.sampled_frame_count}/"
+            f"{schedule.verification_frame_count} conf={max_conf:.2f}"
+        )
+
+        # 静态过滤只比较同一检测轮内的采样帧（取最高置信度框区域）
         if schedule.static_filter and result.get("boxes"):
             scores = result.get("scores", [])
             best_idx = scores.index(max(scores)) if scores else 0
             region = _extract_box_region(frame, result["boxes"][best_idx])
             if region is not None:
-                getattr(self, "_static_regions", {}).setdefault(camera_id, {}).setdefault(dtype, []).append(region)
-                # 只保留最近 consecutive_required 帧，避免内存膨胀
-                getattr(self, "_static_regions", {})[camera_id][dtype] = getattr(self, "_static_regions", {})[camera_id][dtype][-schedule.consecutive_required:]
+                schedule.task_regions.append(region)
 
-        # 编码并写入检测帧缓存
+        # 命中采样帧先进入证据缓存；本轮或后续轮失败时统一清空
         if self.camera_manager is not None:
-            ts = time.time()
             settings = config.load_global_settings()
             jpeg_bytes = encode_frame_to_jpg(
                 frame,
                 quality=settings.get("frame_quality", 60),
                 draw_ts=settings.get("save_image_timestamp", True),
-                timestamp=ts,
+                timestamp=now,
             )
+            max_frames = schedule.verification_frame_count * schedule.consecutive_required
             self.camera_manager.add_detection_frame(
-                camera_id, dtype, ts, jpeg_bytes, maxlen=schedule.consecutive_required
+                camera_id, dtype, now, jpeg_bytes, maxlen=max_frames
             )
+
+        if schedule.sampled_frame_count < schedule.verification_frame_count:
+            return
+
+        # 同一轮的全部采样帧都命中后执行静态过滤
+        if schedule.static_filter and check_static_filter(
+            schedule.task_regions, schedule.static_diff_threshold
+        ):
+            logger.info(
+                f"{camera_id} {dtype} static filter: box region unchanged across "
+                f"{len(schedule.task_regions)} samples, resetting progress"
+            )
+            self._reset_detection_progress(camera_id, dtype, schedule)
+            schedule.last_run = now
+            return
+
+        schedule.sampling_active = False
+        schedule.sampled_frame_count = 0
+        schedule.last_sample_time = 0.0
+        schedule.task_regions = []
+        schedule.last_run = now
+        schedule.consecutive_count += 1
+        logger.info(
+            f"{camera_id} {dtype} round={schedule.consecutive_count}/"
+            f"{schedule.consecutive_required} conf={max_conf:.2f}"
+        )
 
         if schedule.consecutive_count < schedule.consecutive_required:
             return
 
-        # 静态过滤：连续帧框区域内容全部几乎无变化 → 判为静态误判，重置不告警
-        if schedule.static_filter and result.get("boxes"):
-            regions = getattr(self, "_static_regions", {}).get(camera_id, {}).get(dtype, [])
-            if check_static_filter(regions, schedule.static_diff_threshold):
-                logger.info(f"{camera_id} {dtype} static filter: box region unchanged across {len(regions)} frames, likely static false positive (red light/screen), resetting")
-                schedule.consecutive_count = 0
-                getattr(self, "_static_regions", {}).get(camera_id, {}).pop(dtype, None)
-                if self.camera_manager is not None:
-                    self.camera_manager.clear_detection_frames(camera_id, dtype)
-                return
-
-        now = time.time()
-        # 冷却检查已前置到 _get_due_types
-
-        # 达到阈值，触发告警流程
+        # 达到连续命中轮数，触发告警流程
         logger.info(f"{camera_id} {dtype} TRIGGERING alarm (conf={max_conf:.2f})")
         self._cooldowns[camera_id][dtype] = now
-        # 重置连续计数：否则冷却结束后第一次命中会立即再次触发，
-        # 且此时帧缓存只有 1 帧，导致告警记录的帧序列只有一帧
         schedule.consecutive_count = 0
-        getattr(self, "_static_regions", {}).get(camera_id, {}).pop(dtype, None)
 
         # 把 level 和 reason 写入 result，供 trigger_callback 创建记录时使用
         result["level"] = "small_model_alarm"

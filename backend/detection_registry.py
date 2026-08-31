@@ -40,6 +40,8 @@ UNIVERSAL_DEFAULTS: dict[str, Any] = {
     "enabled": False,
     "interval": 1,
     "threshold": 0.5,
+    "verification_frame_count": 1,
+    "verification_frame_interval": 1.0,
     "consecutive_required": 3,
     "cooldown": 60,
     "use_vlm": False,
@@ -299,26 +301,20 @@ def _migrate_type_dicts(stored: dict) -> dict:
 def migrate_legacy_registry() -> bool:
     """旧 detection_types.json → models.json + algorithms.json（旧文件改名 .bak）。
 
-    algorithms.json 已存在则跳过；无旧文件时从内置默认类型迁移（全新安装播种）。
+    仅当存在旧 detection_types.json 且 algorithms.json 不存在时执行迁移。
     """
-    if ALGORITHMS_FILE.exists():
+    if ALGORITHMS_FILE.exists() or not REGISTRY_FILE.exists():
         return False
-    rename_legacy = False
-    if REGISTRY_FILE.exists():
-        try:
-            with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
-                stored = json.load(f)
-        except json.JSONDecodeError:
-            return False
-        rename_legacy = True
-    else:
-        stored = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
+    try:
+        with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
+            stored = json.load(f)
+    except json.JSONDecodeError:
+        return False
     algorithms = _migrate_type_dicts(stored)
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(ALGORITHMS_FILE, "w", encoding="utf-8") as f:
         json.dump(algorithms, f, ensure_ascii=False, indent=2)
-    if rename_legacy:
-        REGISTRY_FILE.rename(REGISTRY_FILE.with_suffix(".json.bak"))
+    REGISTRY_FILE.rename(REGISTRY_FILE.with_suffix(".json.bak"))
     logger.info(f"Migrated {len(algorithms)} types to algorithms, models seeded")
     return True
 
@@ -376,7 +372,7 @@ class DetectionTypeRegistry:
         self._types: dict[str, dict[str, Any]] = {}
 
     def load(self) -> None:
-        """加载注册表：文件存在则读取并补全缺失字段，不存在则从默认值生成"""
+        """加载注册表：文件存在则读取，不存在则初始化为空"""
         migrate_legacy_registry()
         _migrate_algorithms_v2()
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -386,27 +382,17 @@ class DetectionTypeRegistry:
                 with open(ALGORITHMS_FILE, "r", encoding="utf-8") as f:
                     stored = json.load(f)
             except json.JSONDecodeError:
-                logger.warning("Registry file corrupted, regenerating from defaults")
-                self._types = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
-                self._save(self._types)
-                logger.info(f"Detection registry loaded: {list(self._types.keys())}")
-                return
-            merged = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
-            for dtype, type_def in stored.items():
-                if dtype in merged:
-                    merged[dtype].update(type_def)
-                    base_defaults = DEFAULT_DETECTION_TYPE_REGISTRY[dtype]["defaults"]
-                else:
-                    merged[dtype] = type_def
-                    base_defaults = UNIVERSAL_DEFAULTS
-                merged[dtype].setdefault("defaults", {})
-                for key, val in base_defaults.items():
-                    merged[dtype]["defaults"].setdefault(key, val)
-            if merged != stored:
-                self._save(merged)
-            self._types = merged
+                logger.warning("Registry file corrupted, initializing empty")
+                stored = {}
+                self._save(stored)
+            # 补全每种算法 defaults 中的通用字段缺省值
+            for td in stored.values():
+                td.setdefault("defaults", {})
+                for key, val in UNIVERSAL_DEFAULTS.items():
+                    td["defaults"].setdefault(key, val)
+            self._types = stored
         else:
-            self._types = copy.deepcopy(DEFAULT_DETECTION_TYPE_REGISTRY)
+            self._types = {}
             self._save(self._types)
 
         # 给 models 每项注入 model_path（由 model_key 解析），并清理已废弃字段
@@ -558,9 +544,7 @@ class DetectionTypeRegistry:
         td = self._types.get(dtype)
         if td is None:
             return
-        allowed = set(DEFAULT_DETECTION_TYPE_REGISTRY.get(dtype, {}).get("defaults", {}).keys())
-        if not allowed:
-            allowed = set(td["defaults"].keys())
+        allowed = set(UNIVERSAL_DEFAULTS.keys()) | set(td.get("defaults", {}).keys())
         for key, val in new_defaults.items():
             if key in allowed:
                 td["defaults"][key] = val

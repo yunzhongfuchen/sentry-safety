@@ -68,7 +68,7 @@ CAMERAS_ENV = os.getenv("CAMERAS", "")
 
 # ==================== 服务配置 ====================
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
-API_PORT = int(os.getenv("API_PORT", "8000"))
+API_PORT = int(os.getenv("API_PORT", "8111"))
 
 # ==================== 多摄像头配置 ====================
 # 最大并发分析数

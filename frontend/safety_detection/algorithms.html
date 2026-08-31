@@ -79,19 +79,81 @@
             margin-bottom: 10px;
             flex-wrap: wrap;
         }
-        .type-card-checkbox {
+        .classes-select-box {
+            width: 100%;
+            background: var(--bg-base);
+            border-radius: var(--radius-sm);
+            box-shadow: var(--clay-shadow-inset);
+            padding: 8px 10px;
+            box-sizing: border-box;
+            margin: 4px 0;
+        }
+        .classes-box-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            font-size: 11px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--glass-edge);
+            padding-bottom: 4px;
+        }
+        .classes-box-links {
+            display: flex;
+            gap: 8px;
+        }
+        .classes-box-link {
+            color: var(--accent);
+            cursor: pointer;
+            text-decoration: none;
+            user-select: none;
+        }
+        .classes-box-link:hover {
+            text-decoration: underline;
+        }
+        .side-box .classes-scroll-list {
+            max-height: 130px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 6px 8px;
+            padding-right: 2px;
+        }
+        .side-box .type-card-checkbox {
             display: flex;
             align-items: center;
             gap: 6px;
-            font-size: 13px;
+            font-size: 12px;
             color: var(--text-secondary);
             cursor: pointer;
+            user-select: none;
+            width: 100%;
+            min-width: 0;
+            margin: 0;
+            padding: 0;
         }
-        .type-card-checkbox input {
-            width: 16px;
-            height: 16px;
+        .side-box .type-card-checkbox input[type="checkbox"] {
+            width: 15px !important;
+            height: 15px !important;
+            min-width: 15px !important;
+            max-width: 15px !important;
             accent-color: var(--accent);
             cursor: pointer;
+            flex-shrink: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            border-radius: 3px !important;
+        }
+        .side-box .type-card-checkbox span.cls-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            min-width: 0;
+            line-height: 1.3;
         }
         .type-card-grid {
             display: grid;
@@ -195,7 +257,7 @@
             border-radius: var(--radius-sm);
             border: 1px solid var(--glass-edge);
         }
-        .side-box input,
+        .side-box input:not([type="checkbox"]),
         .side-box select {
             border: none;
             background: var(--bg-base);
@@ -245,7 +307,7 @@
                 <div v-for="t in types" :key="t.key" class="glass-card type-card" :style="{ borderTopColor: t.color }">
                     <div class="type-card-header" :style="{ color: t.color }">{{ t.label }}</div>
                     <div class="type-card-meta">模型: {{ t.models?.map(m => m.model_key).join(' + ') || '未设置' }} · 被 {{ t.used_by_cameras || 0 }} 个摄像头使用</div>
-                    <div class="type-card-meta">策略: {{ t.post_process }} · 阈值 {{ t.defaults?.threshold }} · 间隔 {{ t.defaults?.interval }}s · 冷却 {{ t.defaults?.cooldown }}s</div>
+                    <div class="type-card-meta">策略: {{ t.post_process }} · 阈值 {{ t.defaults?.threshold }} · 轮间隔 {{ t.defaults?.interval }}s · 单轮 {{ t.defaults?.verification_frame_count || 1 }} 帧 · 连续 {{ t.defaults?.consecutive_required }} 轮 · 冷却 {{ t.defaults?.cooldown }}s</div>
                     <div class="type-card-actions">
                         <button class="clay-button" @click="openDialog(t)">编辑</button>
                         <button class="clay-button" @click="deleteType(t)">删除</button>
@@ -313,12 +375,22 @@
                                                 <option value="" disabled>模型</option>
                                                 <option v-for="m in dialog.models" :key="m.model_key" :value="m.model_key">{{ modelName(m.model_key) }}</option>
                                             </select>
-                                            <div class="type-card-checkboxes" style="margin: 4px 0 0 0;">
-                                                <label v-for="cls in classOptions(c.left.model_key)" :key="cls.id" class="type-card-checkbox">
-                                                    <input type="checkbox" :value="cls.id" v-model="c.left.classes" /> {{ cls.id }}:{{ cls.name }}
-                                                </label>
-                                                <span v-if="c.left.model_key && !classOptions(c.left.model_key).length" class="hint-text">该模型无类别清单，将匹配全部</span>
+                                            <div v-if="classOptions(c.left.model_key).length" class="classes-select-box">
+                                                <div class="classes-box-toolbar">
+                                                    <span>类别（{{ (c.left.classes || []).length }}/{{ classOptions(c.left.model_key).length }}）</span>
+                                                    <div class="classes-box-links">
+                                                        <span class="classes-box-link" @click="selectAllClasses(c.left)">全选</span>
+                                                        <span class="classes-box-link" @click="clearClasses(c.left)">清空</span>
+                                                    </div>
+                                                </div>
+                                                <div class="classes-scroll-list">
+                                                    <label v-for="cls in classOptions(c.left.model_key)" :key="cls.id" class="type-card-checkbox" :title="cls.id + ':' + cls.name">
+                                                        <input type="checkbox" :value="cls.id" v-model="c.left.classes" />
+                                                        <span class="cls-name">{{ cls.id }}:{{ cls.name }}</span>
+                                                    </label>
+                                                </div>
                                             </div>
+                                            <span v-else-if="c.left.model_key" class="hint-text" style="width: 100%;">该模型无类别清单，将匹配全部</span>
                                             <input type="number" step="0.05" min="0" max="1" v-model.number="c.left.conf" placeholder="条件置信度（可选）" style="width: 100%;" />
                                         </div>
                                     </div>
@@ -343,11 +415,22 @@
                                                     <option value="" disabled>模型</option>
                                                     <option v-for="m in dialog.models" :key="m.model_key" :value="m.model_key">{{ modelName(m.model_key) }}</option>
                                                 </select>
-                                                <div class="type-card-checkboxes" style="margin: 4px 0 0 0;">
-                                                    <label v-for="cls in classOptions(c.right.model_key)" :key="cls.id" class="type-card-checkbox">
-                                                        <input type="checkbox" :value="cls.id" v-model="c.right.classes" /> {{ cls.id }}:{{ cls.name }}
-                                                    </label>
+                                                <div v-if="classOptions(c.right.model_key).length" class="classes-select-box">
+                                                    <div class="classes-box-toolbar">
+                                                        <span>类别（{{ (c.right.classes || []).length }}/{{ classOptions(c.right.model_key).length }}）</span>
+                                                        <div class="classes-box-links">
+                                                            <span class="classes-box-link" @click="selectAllClasses(c.right)">全选</span>
+                                                            <span class="classes-box-link" @click="clearClasses(c.right)">清空</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="classes-scroll-list">
+                                                        <label v-for="cls in classOptions(c.right.model_key)" :key="cls.id" class="type-card-checkbox" :title="cls.id + ':' + cls.name">
+                                                            <input type="checkbox" :value="cls.id" v-model="c.right.classes" />
+                                                            <span class="cls-name">{{ cls.id }}:{{ cls.name }}</span>
+                                                        </label>
+                                                    </div>
                                                 </div>
+                                                <span v-else-if="c.right.model_key" class="hint-text" style="width: 100%;">该模型无类别清单，将匹配全部</span>
                                                 <input type="number" step="0.05" min="0" max="1" v-model.number="c.right.conf" placeholder="条件置信度（可选）" style="width: 100%;" />
                                             </div>
                                         </div>
@@ -407,10 +490,12 @@
                         <label class="type-card-checkbox"><input type="checkbox" v-model="dialog.defaults.static_filter" /> 静态过滤</label>
                     </div>
                     <div class="type-card-grid cols-4">
-                        <div class="type-card-field"><label>间隔</label><input type="number" step="0.1" v-model.number="dialog.defaults.interval" /></div>
+                        <div class="type-card-field"><label>检测轮间隔（秒）</label><input type="number" step="0.1" min="0" v-model.number="dialog.defaults.interval" /></div>
+                        <div class="type-card-field"><label>单轮采样帧数</label><input type="number" min="1" step="1" v-model.number="dialog.defaults.verification_frame_count" /></div>
+                        <div class="type-card-field"><label>帧间采样间隔（秒）</label><input type="number" min="0" step="0.1" v-model.number="dialog.defaults.verification_frame_interval" /></div>
+                        <div class="type-card-field"><label>连续命中轮数</label><input type="number" min="1" step="1" v-model.number="dialog.defaults.consecutive_required" /></div>
                         <div class="type-card-field"><label>阈值</label><input type="number" step="0.05" min="0" max="1" v-model.number="dialog.defaults.threshold" /></div>
-                        <div class="type-card-field"><label>连续</label><input type="number" min="1" v-model.number="dialog.defaults.consecutive_required" /></div>
-                        <div class="type-card-field"><label>冷却</label><input type="number" min="0" v-model.number="dialog.defaults.cooldown" /></div>
+                        <div class="type-card-field"><label>告警冷却时间（秒）</label><input type="number" min="0" v-model.number="dialog.defaults.cooldown" /></div>
                     </div>
                     <div class="type-card-grid" style="margin-top: 10px;">
                         <div class="type-card-field"><label>巡检显示名</label><input v-model="dialog.inspection_label" /></div>
@@ -521,6 +606,7 @@
                 function defaultDefaults() {
                     return {
                         enabled: false, interval: 1, threshold: 0.5,
+                        verification_frame_count: 1, verification_frame_interval: 1,
                         consecutive_required: 3, cooldown: 60, use_vlm: false,
                         static_filter: false, static_diff_threshold: 0.02
                     };
@@ -706,6 +792,17 @@
                     } catch (e) { showToast('删除失败', 'error'); }
                 }
 
+                function selectAllClasses(side) {
+                    if (!side || !side.model_key) return;
+                    const opts = classOptions(side.model_key);
+                    side.classes = opts.map(o => o.id);
+                }
+
+                function clearClasses(side) {
+                    if (!side) return;
+                    side.classes = [];
+                }
+
                 onMounted(() => {
                     const root = document.getElementById('sidebar-root');
                     if (root) renderSidebar(root, sidebar.value);
@@ -719,7 +816,7 @@
                     openDialog, saveType, deleteType, modelName, classOptions,
                     relationOps, globalOps, isRelationOp, isCountOp,
                     addModel, removeModel, addGroup, removeGroup, addCondition, removeCondition,
-                    hasSameLeftInGroup
+                    hasSameLeftInGroup, selectAllClasses, clearClasses
                 };
             }
         }).mount('#app');

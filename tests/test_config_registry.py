@@ -8,7 +8,7 @@ import pytest
 
 @pytest.fixture
 def setup_registry(tmp_path, monkeypatch):
-    """初始化测试注册表"""
+    """初始化测试注册表（播种 6 种内置算法）"""
     import backend.detection_registry as reg_mod
     import backend.model_registry as mreg_mod
     # Redirect all config paths to tmp_path so no real config files are read
@@ -18,6 +18,10 @@ def setup_registry(tmp_path, monkeypatch):
     monkeypatch.setattr(mreg_mod, "MODELS_FILE", tmp_path / "models.json")
     # Reset model registry state so migration starts clean
     mreg_mod.model_registry._models = {}
+    seeded = reg_mod._migrate_type_dicts(reg_mod.DEFAULT_DETECTION_TYPE_REGISTRY)
+    (tmp_path / "algorithms.json").write_text(
+        json.dumps(seeded, ensure_ascii=False), encoding="utf-8"
+    )
     reg_mod.registry.load()
     return reg_mod.registry
 

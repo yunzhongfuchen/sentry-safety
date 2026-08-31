@@ -32,17 +32,17 @@ echo "=========================================="
 echo " Sentry 服务启动"
 echo "=========================================="
 
-# 启动安全检测服务（端口 8000）
-if lsof -i :8000 >/dev/null 2>&1; then
-    echo "[WARN] 端口 8000 已被占用，跳过安全检测服务"
+# 启动安全检测服务（端口 8111）
+if lsof -i :8111 >/dev/null 2>&1; then
+    echo "[WARN] 端口 8111 已被占用，跳过安全检测服务"
 else
-    echo "[1/1] 启动安全检测服务 -> http://0.0.0.0:8000"
+    echo "[1/1] 启动安全检测服务 -> http://0.0.0.0:8111"
     nohup "$PYTHON_BIN" backend/main_multi.py > logs/main_multi.log 2>&1 &
     echo $! > /tmp/sentry_main.pid
 fi
 
 echo "=========================================="
-echo " 安全检测: http://localhost:8000"
+echo " 安全检测: http://localhost:8111"
 echo "=========================================="
 echo " 日志: logs/main_multi.log"
 echo "=========================================="

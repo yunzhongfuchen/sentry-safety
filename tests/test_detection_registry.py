@@ -32,7 +32,7 @@ def test_hex_to_bgr_black():
 class TestDetectionTypeRegistry:
     """注册表核心功能测试（models+rule 新结构）"""
 
-    def _make_registry(self, tmp_path, monkeypatch, data=None, models=None):
+    def _make_registry(self, tmp_path, monkeypatch, data=None, models=None, seed_defaults=True):
         import backend.model_registry as mmod
         import backend.detection_registry as dmod
         monkeypatch.setattr(mmod, "CONFIG_DIR", tmp_path)
@@ -50,15 +50,20 @@ class TestDetectionTypeRegistry:
             (tmp_path / "algorithms.json").write_text(
                 json.dumps(data, ensure_ascii=False), encoding="utf-8"
             )
+        elif seed_defaults:
+            # 模拟播种内置默认算法用于测试
+            seeded = dmod._migrate_type_dicts(dmod.DEFAULT_DETECTION_TYPE_REGISTRY)
+            (tmp_path / "algorithms.json").write_text(
+                json.dumps(seeded, ensure_ascii=False), encoding="utf-8"
+            )
         r = dmod.DetectionTypeRegistry()
         r.load()
         return r, mr
 
-    def test_load_generates_file_when_missing(self, tmp_path, monkeypatch):
-        r, _ = self._make_registry(tmp_path, monkeypatch)
+    def test_load_generates_empty_file_when_missing(self, tmp_path, monkeypatch):
+        r, _ = self._make_registry(tmp_path, monkeypatch, seed_defaults=False)
         assert (tmp_path / "algorithms.json").exists()
-        assert "fire" in r.all_types()
-        assert "sleep" in r.all_types()
+        assert r.all_types() == []
 
     def test_builtin_types_use_models_and_rule(self, tmp_path, monkeypatch):
         """内置类型新结构：models[] + rule.groups，post_process 为 yolo_relation/yolo_pose"""
@@ -271,18 +276,18 @@ class TestDetectionTypeRegistry:
         assert entry["defaults"]["interval"] == 1
         assert entry["defaults"]["threshold"] == 0.5
 
-    def test_load_malformed_json_regenerates_defaults(self, tmp_path, monkeypatch):
+    def test_load_malformed_json_initializes_empty(self, tmp_path, monkeypatch):
         (tmp_path / "algorithms.json").write_text("not json at all", encoding="utf-8")
         import backend.detection_registry as mod
         monkeypatch.setattr(mod, "CONFIG_DIR", tmp_path)
         monkeypatch.setattr(mod, "ALGORITHMS_FILE", tmp_path / "algorithms.json")
         r = mod.DetectionTypeRegistry()
         r.load()
-        assert set(r.all_types()) == {"fire", "smoke", "uniform", "mask", "cigarette", "sleep"}
-        # corrupted file overwritten
+        assert r.all_types() == []
+        # corrupted file overwritten with empty dict
         with open(tmp_path / "algorithms.json", "r", encoding="utf-8") as f:
             saved = json.load(f)
-        assert "fire" in saved
+        assert saved == {}
 
 
 def test_hex_to_bgr_invalid_hex_raises():
@@ -347,6 +352,8 @@ def test_add_type_unknown_op_in_rule_raises(tmp_path, monkeypatch):
 
 def test_add_type_duplicate_label_raises(tmp_path, monkeypatch):
     r, mr, mkey = _make_registry_with_model(tmp_path, monkeypatch)
+    r.add_type({"label": "明火", "color": "#ff0000",
+                "models": [{"model_key": mkey}], "rule": _exists_rule(mkey)})
     with pytest.raises(ValueError, match="already exists"):
         r.add_type({"label": "明火", "color": "#ff0000",
                     "models": [{"model_key": mkey}], "rule": _exists_rule(mkey)})
@@ -581,8 +588,8 @@ class TestLegacyMigration:
         assert not (tmp_path / "detection_types.json").exists()
         assert (tmp_path / "detection_types.json.bak").exists()
 
-    def test_fresh_install_migrates_builtin_defaults(self, tmp_path, monkeypatch):
-        """全新安装：无 detection_types.json 时从内置默认值迁移（不生成 .bak）"""
+    def test_no_legacy_file_does_not_migrate(self, tmp_path, monkeypatch):
+        """无 detection_types.json 时不执行迁移，返回 False"""
         import backend.model_registry as mmod
         import backend.detection_registry as dmod
         monkeypatch.setattr(mmod, "CONFIG_DIR", tmp_path)
@@ -593,24 +600,8 @@ class TestLegacyMigration:
         monkeypatch.setattr(dmod, "REGISTRY_FILE", tmp_path / "detection_types.json")
         mr = mmod.ModelRegistry()
         monkeypatch.setattr(dmod, "model_registry", mr)
-        assert dmod.migrate_legacy_registry() is True
-        # 内置 6 类型去重后 5 个模型（fire/smoke 共享 fire_smoke.pt）
-        assert len(mr.all_models()) == 5
-        saved = json.loads((tmp_path / "algorithms.json").read_text(encoding="utf-8"))
-        assert saved["fire"]["models"][0]["model_key"] == saved["smoke"]["models"][0]["model_key"]
-        # 占位 key 回写为实际注册 key，rule 条件同步替换
-        assert saved["fire"]["models"][0]["model_key"] == "fire_smoke"
-        cond = saved["fire"]["rule"]["groups"][0]["conditions"][0]
-        assert cond["left"]["model_key"] == "fire_smoke"
-        # 无旧文件 → 不生成 .bak
-        assert not (tmp_path / "detection_types.json.bak").exists()
-        # load() 后算法经 model_key 解析出 model_path
-        r = dmod.DetectionTypeRegistry()
-        r.load()
-        assert r.get("fire")["models"][0]["model_path"] == "fire_smoke.pt"
-        assert r.get("fire")["models"][0]["model_key"] == saved["fire"]["models"][0]["model_key"]
-        # 幂等：algorithms.json 已存在 → 不再迁移
         assert dmod.migrate_legacy_registry() is False
+        assert not (tmp_path / "algorithms.json").exists()
 
 
 class TestMigrateAlgorithmsV2:

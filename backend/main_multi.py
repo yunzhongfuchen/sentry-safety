@@ -364,7 +364,13 @@ def init_components():
     use_gpu_scheduler = _global_settings.get("use_gpu_scheduler", app_config.USE_GPU_SCHEDULER)
     if all_enabled_types:
         if use_gpu_scheduler and device == "gpu":
-            log_message(f"GPU scheduler mode: deferring model load to scheduler")
+            # GPU scheduler 只接管 yolo_pose 算法，relation 算法依然由 safety_detector 处理
+            pose_types = {dt for dt in all_enabled_types if (registry.get(dt) or {}).get("post_process") == "yolo_pose"}
+            relation_types = all_enabled_types - pose_types
+            if relation_types:
+                safety_detector.ensure_models_loaded(list(relation_types))
+                log_message(f"Models loaded for relation types: {list(relation_types)} on {device}")
+            log_message(f"GPU scheduler mode: pose types deferred to scheduler")
         else:
             safety_detector.ensure_models_loaded(list(all_enabled_types))
             log_message(f"Models loaded for types: {list(all_enabled_types)} on {device}")
@@ -430,6 +436,7 @@ def init_components():
     global selected_camera_display
     display_types = _global_settings.get("display_detection_types", app_config.DEFAULT_GLOBAL_SETTINGS["display_detection_types"])
     display_interval = _global_settings.get("display_detection_interval", app_config.DEFAULT_GLOBAL_SETTINGS["display_detection_interval"])
+    draw_ts = _global_settings.get("save_image_timestamp", app_config.DEFAULT_GLOBAL_SETTINGS.get("save_image_timestamp", True))
     selected_camera_display = SelectedCameraDisplay(
         camera_manager=camera_manager,
         stream_server=stream_server,
@@ -437,6 +444,7 @@ def init_components():
         device=device,
         display_types=display_types,
         display_interval=display_interval,
+        draw_timestamp=draw_ts,
     )
 
     # 注册摄像头到检测器（detection_types 已由 apply_camera_globals 填充全局默认值）
@@ -468,9 +476,13 @@ def init_components():
                     now = time.time()
                     if multi_detector.is_in_cooldown(cam_id, dtype, now):
                         return
-                    schedule.last_run = now
+                    schedule.last_sample_seq = (
+                        camera_manager.get_frame_seq(cam_id) if camera_manager else -1
+                    )
                     try:
-                        multi_detector._handle_standard_detection(cam_id, dtype, frame, res_dict, schedule)
+                        multi_detector._handle_standard_detection(
+                            cam_id, dtype, frame, res_dict, schedule, now=now
+                        )
                     except Exception as e:
                         logger.error(f"GPU scheduler result handling error [{cam_id}/{dtype}]: {e}")
 
@@ -509,6 +521,7 @@ def init_components():
                 on_result=_gpu_on_result,
                 half=_global_settings.get("gpu_scheduler_half", app_config.GPU_SCHEDULER_HALF),
                 cooldown_checker=multi_detector.is_in_cooldown,
+                due_checker=multi_detector.is_type_due,
             )
             log_message(f"GPU scheduler initialized: {len(model_configs)} models, {gpu_scheduler.num_queues} queues")
             app.state.gpu_scheduler = gpu_scheduler
@@ -1001,10 +1014,11 @@ async def update_settings(data: dict):
                 vlm_inspector.start()
             elif new_interval <= 0 and vlm_inspector._running:
                 vlm_inspector.stop()
-        if selected_camera_display and ("display_detection_types" in data or "display_detection_interval" in data):
+        if selected_camera_display and ("display_detection_types" in data or "display_detection_interval" in data or "save_image_timestamp" in data):
             selected_camera_display.set_display_config(
                 data.get("display_detection_types") if "display_detection_types" in data else None,
                 data.get("display_detection_interval") if "display_detection_interval" in data else None,
+                data.get("save_image_timestamp") if "save_image_timestamp" in data else None,
             )
         log_message("Global settings updated")
         return {"success": True, "settings": settings}
@@ -1576,6 +1590,7 @@ class SelectedCameraDisplay:
         device: str,
         display_types: Optional[Dict[str, bool]] = None,
         display_interval: float = 1.0,
+        draw_timestamp: bool = True,
     ):
         self.camera_manager = camera_manager
         self.stream_server = stream_server
@@ -1583,6 +1598,7 @@ class SelectedCameraDisplay:
         self._device = device
         self._display_types: Dict[str, bool] = dict(display_types) if display_types else {}
         self._display_interval: float = self._clamp_display_interval(display_interval)
+        self._draw_timestamp_enabled: bool = draw_timestamp
         self._lock = threading.RLock()
         self._running = False
         self._reader_thread: Optional[threading.Thread] = None
@@ -1639,8 +1655,9 @@ class SelectedCameraDisplay:
         self,
         display_types: Optional[Dict[str, bool]] = None,
         display_interval: Optional[float] = None,
+        draw_timestamp: Optional[bool] = None,
     ):
-        """更新显示类型开关和/或刷新频率。"""
+        """更新显示类型开关、刷新频率和/或时间戳绘制开关。"""
         with self._lock:
             if display_types is not None:
                 self._display_types = dict(display_types)
@@ -1649,6 +1666,8 @@ class SelectedCameraDisplay:
                     self._overlay_expires_at = 0.0
             if display_interval is not None:
                 self._display_interval = self._clamp_display_interval(display_interval)
+            if draw_timestamp is not None:
+                self._draw_timestamp_enabled = bool(draw_timestamp)
 
     def start(self):
         """启动显示线程和检测线程"""
@@ -1777,7 +1796,8 @@ class SelectedCameraDisplay:
                     )
 
                 display_frame = self._scale_for_display(frame_to_push, camera_id)
-                display_frame = self._draw_timestamp(display_frame, frame_timestamp)
+                if self._draw_timestamp_enabled:
+                    display_frame = self._draw_timestamp(display_frame, frame_timestamp)
                 self.stream_server.update_frame(camera_id, display_frame, raw=False)
 
                 frame_count += 1
@@ -1891,11 +1911,12 @@ async def startup():
             set_main_camera(main_id)
 
         # 启动检测器
+        if multi_detector:
+            multi_detector.start()
+            log_message("MultiDetector started")
         if gpu_scheduler:
             gpu_scheduler.start()
             log_message("GPU scheduler started")
-        elif multi_detector:
-            multi_detector.start()
 
         # 启动 VLM 队列
         if vlm_queue:
@@ -1929,7 +1950,7 @@ async def shutdown():
 
     if gpu_scheduler:
         gpu_scheduler.stop()
-    elif multi_detector:
+    if multi_detector:
         multi_detector.stop()
 
     if camera_manager:

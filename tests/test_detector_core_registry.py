@@ -269,7 +269,8 @@ def test_static_filter_rejects_static_target():
 
     s = TypeSchedule(
         dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=60,
-        consecutive_required=3, static_filter=True, static_diff_threshold=0.02,
+        consecutive_required=1, verification_frame_count=3,
+        static_filter=True, static_diff_threshold=0.02,
     )
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
     hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9], "max_confidence": 0.9}
@@ -300,7 +301,8 @@ def test_static_filter_passes_dynamic_target():
 
     s = TypeSchedule(
         dtype="fire", enabled=True, interval=1, threshold=0.5, cooldown=60,
-        consecutive_required=3, static_filter=True, static_diff_threshold=0.02,
+        consecutive_required=1, verification_frame_count=3,
+        static_filter=True, static_diff_threshold=0.02,
     )
     hit = {"detected": True, "boxes": [[20, 20, 80, 80]], "scores": [0.9], "max_confidence": 0.9}
 

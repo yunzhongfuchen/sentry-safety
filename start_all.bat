@@ -40,17 +40,17 @@ echo ==========================================
 echo  Sentry service startup
 echo ==========================================
 
-REM Check if port 8000 is in use
-netstat -ano | findstr ":8000" | findstr "LISTENING" >nul
+REM Check if port 8111 is in use
+netstat -ano | findstr ":8111" | findstr "LISTENING" >nul
 if %errorlevel% == 0 (
-    echo [WARN] Port 8000 is already in use, skipping safety detection service
+    echo [WARN] Port 8111 is already in use, skipping safety detection service
 ) else (
-    echo [1/1] Starting safety detection service -^> http://0.0.0.0:8000
+    echo [1/1] Starting safety detection service -^> http://0.0.0.0:8111
     python backend\main_multi.py > logs\main_multi.log 2>&1
 )
 
 echo ==========================================
-echo  Safety detection: http://localhost:8000
+echo  Safety detection: http://localhost:8111
 echo ==========================================
 echo  Logs: logs\main_multi.log
 echo ==========================================
