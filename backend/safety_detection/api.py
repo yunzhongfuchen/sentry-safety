@@ -21,7 +21,7 @@ def _validate_default_value(key: str, value):
             return f"{key} must be a boolean"
         return None
 
-    if key == "consecutive_required":
+    if key in ("consecutive_required", "verification_frame_count"):
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             return f"{key} must be an integer >= 1"
         return None
@@ -34,6 +34,9 @@ def _validate_default_value(key: str, value):
 
     if key == "interval" and value <= 0:
         return f"{key} must be a positive number"
+
+    if key == "verification_frame_interval" and value < 0:
+        return f"{key} must be a non-negative number"
 
     if key == "threshold" and not (0 <= value <= 1):
         return f"{key} must be a number between 0 and 1"
@@ -409,7 +412,9 @@ async def update_algorithm(key: str, data: dict, request: Request):
         return JSONResponse({"error": f"Unknown algorithm: {key}"}, status_code=404)
     structural_fields = {"label", "color", "models", "rule",
                          "vlm_prompt", "inspection_label", "alarm_description"}
-    allowed_defaults = {"enabled", "interval", "threshold", "consecutive_required",
+    allowed_defaults = {"enabled", "interval", "threshold",
+                        "verification_frame_count", "verification_frame_interval",
+                        "consecutive_required",
                         "cooldown", "use_vlm",
                         "static_filter", "static_diff_threshold"}
     structural_update = {k: v for k, v in data.items() if k in structural_fields}

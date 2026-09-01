@@ -913,13 +913,15 @@ class MultiDetector:
         """算法 defaults 变更后热同步所有启用该算法的摄像头（保留摄像头级 roi/roi_invert），返回同步的摄像头数"""
         synced = 0
         with self._lock:
-            for schedules in self._schedules.values():
+            for camera_id, schedules in self._schedules.items():
                 old = schedules.get(dtype)
                 if old is None:
                     continue
                 schedules[dtype] = self._build_schedule(
                     dtype, {"enabled": True, "roi": old.roi, "roi_invert": old.roi_invert}
                 )
+                if self.camera_manager is not None:
+                    self.camera_manager.clear_detection_frames(camera_id, dtype)
                 synced += 1
         if synced:
             logger.info(f"Type {dtype} schedule refreshed on {synced} cameras")

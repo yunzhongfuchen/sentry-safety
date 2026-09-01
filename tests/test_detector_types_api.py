@@ -109,6 +109,31 @@ class TestGetDetectionType:
 
 
 class TestUpdateDetectionType:
+    def test_update_defaults_supports_verification_frames(self, client):
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = {
+            "defaults": {
+                "enabled": False, "threshold": 0.5,
+                "verification_frame_count": 1, "verification_frame_interval": 1.0,
+            },
+            "label": "明火",
+        }
+        mock_registry.get_defaults.return_value = {
+            "verification_frame_count": 3, "verification_frame_interval": 2.5,
+        }
+
+        with patch("backend.safety_detection.api.registry", mock_registry):
+            resp = client.put(
+                "/algorithms/fire",
+                json={"verification_frame_count": 3, "verification_frame_interval": 2.5},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["success"] is True
+            mock_registry.update_defaults.assert_called_once_with(
+                "fire",
+                {"verification_frame_count": 3, "verification_frame_interval": 2.5},
+            )
+
     def test_update_defaults(self, client):
         mock_registry = MagicMock()
         mock_registry.get.return_value = {"defaults": {"enabled": False, "threshold": 0.5}, "label": "明火"}

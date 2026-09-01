@@ -8,6 +8,8 @@ from collections import defaultdict
 
 import pytest
 
+from unittest.mock import Mock
+
 from backend.safety_detection.detector_core import MultiDetector
 
 
@@ -51,7 +53,7 @@ def make_detector():
     md._schedules = {}
     md._alert_states = defaultdict(dict)
     md._cooldowns = defaultdict(dict)
-    md.camera_manager = None
+    md.camera_manager = Mock()
     return md
 
 
@@ -85,15 +87,25 @@ def test_refresh_type_schedule_hot_updates_defaults(fake_registry):
     md.register_camera("cam1", {"fire": {"enabled": True, "roi": ROI}})
     md.register_camera("cam2", {"fire": {"enabled": True}, "smoke": {"enabled": True}})
 
-    fake_registry.set_defaults(threshold=0.7, interval=2.0, use_vlm=False)
+    fake_registry.set_defaults(
+        threshold=0.7, interval=2.0, use_vlm=False,
+        verification_frame_count=3, verification_frame_interval=1.5,
+    )
+    camera_manager = md.camera_manager
     synced = md.refresh_type_schedule("fire")
 
     assert synced == 2
+    assert camera_manager.clear_detection_frames.call_count == 2
     for cam in ("cam1", "cam2"):
         s = md._schedules[cam]["fire"]
         assert s.threshold == 0.7
         assert s.interval == 2.0
         assert s.use_vlm is False
+        assert s.verification_frame_count == 3
+        assert s.verification_frame_interval == 1.5
+        assert s.consecutive_count == 0
+        assert s.sampling_active is False
+        assert s.sampled_frame_count == 0
     assert md._schedules["cam1"]["fire"].roi == ROI
     # 未刷新的类型保持原快照
     assert md._schedules["cam2"]["smoke"].threshold == 0.9
