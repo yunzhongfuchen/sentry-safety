@@ -160,13 +160,7 @@
                 </div>
 
                 <div class="settings-container">
-            <div class="glass-card" style="padding: 0; overflow: hidden;">
-                <div class="gc-tabs" style="padding: 0 24px; margin-bottom: 0; border-bottom: 1px solid var(--glass-edge);">
-                    <div :class="['gc-tab', { active: tab === 'cameras' }]" @click="tab = 'cameras'">摄像头</div>
-                    <div :class="['gc-tab', { active: tab === 'system' }]" @click="tab = 'system'">系统设置</div>
-                </div>
-
-                <div style="padding: 24px;">
+            <div class="glass-card" style="padding: 24px;">
                     <!-- Cameras Tab -->
                     <div v-if="tab === 'cameras'">
                         <div style="display: flex; gap: 10px; margin-bottom: 18px;">
@@ -224,7 +218,7 @@
                                 <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 14px;">GPU 动态调度器</div>
                                 <div class="gc-form-field">
                                     <label>调度方式</label>
-                                    <select class="clay-select" v-model="settings.detection_strategy">
+                                    <select class="clay-select" v-model="settings.detection_strategy" @change="saveSystemSettings">
                                         <option value="auto">自动（按核心数）</option>
                                         <option value="parallel">并行</option>
                                         <option value="serial">串行</option>
@@ -233,16 +227,16 @@
                                 </div>
                                 <div class="gc-form-field">
                                     <label>启用 GPU 调度器</label>
-                                    <select class="clay-select" v-model="settings.use_gpu_scheduler">
+                                    <select class="clay-select" v-model="settings.use_gpu_scheduler" @change="saveSystemSettings">
                                         <option :value="true">是</option>
                                         <option :value="false">否</option>
                                     </select>
                                 </div>
-                                <div class="gc-form-field"><label>并行队列数 (0=自动)</label><input type="number" class="clay-input" v-model.number="settings.gpu_scheduler_num_queues" min="0" /></div>
-                                <div class="gc-form-field"><label>调度周期 (s)</label><input type="number" class="clay-input" step="0.1" v-model.number="settings.gpu_scheduler_interval" min="0.1" /></div>
+                                <div class="gc-form-field"><label>并行队列数 (0=自动)</label><input type="number" class="clay-input" v-model.number="settings.gpu_scheduler_num_queues" min="0" @change="saveSystemSettings" /></div>
+                                <div class="gc-form-field"><label>调度周期 (s)</label><input type="number" class="clay-input" step="0.1" v-model.number="settings.gpu_scheduler_interval" min="0.1" @change="saveSystemSettings" /></div>
                                 <div class="gc-form-field">
                                     <label>FP16 半精度推理</label>
-                                    <select class="clay-select" v-model="settings.gpu_scheduler_half">
+                                    <select class="clay-select" v-model="settings.gpu_scheduler_half" @change="saveSystemSettings">
                                         <option :value="true">是</option>
                                         <option :value="false">否</option>
                                     </select>
@@ -251,39 +245,62 @@
 
                             <div class="glass-card">
                                 <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 14px;">存储与清理</div>
-                                <div class="gc-form-field"><label>最大记录数</label><input type="number" class="clay-input" v-model.number="settings.max_records" min="10" /></div>
-                                <div class="gc-form-field"><label>存储上限 (MB, 0=无限制)</label><input type="number" class="clay-input" v-model.number="settings.max_storage_mb" min="0" /></div>
-                                <div class="gc-form-field"><label>内存阈值 (%)</label><input type="number" class="clay-input" v-model.number="settings.memory_threshold_percent" min="1" max="100" /></div>
-                                <div class="gc-form-field"><label>紧急清理比例 (0-1)</label><input type="number" class="clay-input" step="0.1" v-model.number="settings.emergency_cleanup_ratio" min="0" max="1" /></div>
+                                <div class="gc-form-field"><label>最大记录数</label><input type="number" class="clay-input" v-model.number="settings.max_records" min="10" @change="saveSystemSettings" /></div>
+                                <div class="gc-form-field"><label>存储上限 (MB, 0=无限制)</label><input type="number" class="clay-input" v-model.number="settings.max_storage_mb" min="0" @change="saveSystemSettings" /></div>
+                                <div class="gc-form-field"><label>内存阈值 (%)</label><input type="number" class="clay-input" v-model.number="settings.memory_threshold_percent" min="1" max="100" @change="saveSystemSettings" /></div>
+                                <div class="gc-form-field"><label>紧急清理比例 (0-1)</label><input type="number" class="clay-input" step="0.1" v-model.number="settings.emergency_cleanup_ratio" min="0" max="1" @change="saveSystemSettings" /></div>
                             </div>
 
                             <div class="glass-card">
                                 <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 14px;">图像质量</div>
-                                <div class="gc-form-field"><label>快照质量 (1-100)</label><input type="number" class="clay-input" v-model.number="settings.snapshot_quality" min="1" max="100" /></div>
-                                <div class="gc-form-field"><label>帧质量 (1-100)</label><input type="number" class="clay-input" v-model.number="settings.frame_quality" min="1" max="100" /></div>
+                                <div class="gc-form-field"><label>快照质量 (1-100)</label><input type="number" class="clay-input" v-model.number="settings.snapshot_quality" min="1" max="100" @change="saveSystemSettings" /></div>
+                                <div class="gc-form-field"><label>帧质量 (1-100)</label><input type="number" class="clay-input" v-model.number="settings.frame_quality" min="1" max="100" @change="saveSystemSettings" /></div>
                                 <div class="gc-form-field">
                                     <label>时间戳</label>
-                                    <select class="clay-select" v-model="settings.save_image_timestamp">
+                                    <select class="clay-select" v-model="settings.save_image_timestamp" @change="saveSystemSettings">
                                         <option :value="true">是</option>
                                         <option :value="false">否</option>
                                     </select>
                                 </div>
                             </div>
                         </div>
-                        <button class="clay-button primary" @click="saveSystemSettings">保存系统设置</button>
-
-                        <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin: 28px 0 16px;">已加载模型</div>
-                        <div v-for="m in models" :key="m.type" class="glass-card model-card" style="margin-bottom: 10px;">
-                            <div>
-                                <div class="name">{{ m.type }}</div>
-                                <div class="meta">{{ m.backend }} / {{ m.device }}</div>
-                            </div>
-                            <span class="type-badge" :class="m.loaded ? 'uniform' : ''">{{ m.loaded ? '已加载' : '未加载' }}</span>
-                        </div>
+                        <p style="margin-bottom: 8px; font-size: 13px; color: var(--text-secondary);">修改后立即自动保存生效</p>
 
                         <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin: 28px 0 16px;">系统操作</div>
-                        <button class="clay-button primary" @click="restartSystem">重启检测服务</button>
-                        <p style="margin-top: 10px; font-size: 13px; color: var(--text-secondary);">重启将重新加载所有模型和摄像头配置</p>
+                        <div class="glass-card" style="padding: 8px 20px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid rgba(0,0,0,0.06);">
+                                <div>
+                                    <div style="font-weight: 600; margin-bottom: 4px;">重启检测服务</div>
+                                    <div style="font-size: 13px; color: var(--text-secondary);">重新加载所有模型和摄像头配置</div>
+                                </div>
+                                <button class="clay-button primary" @click="restartSystem">重启</button>
+                            </div>
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0;">
+                                <div>
+                                    <div style="font-weight: 600; margin-bottom: 4px;">开机自启</div>
+                                    <div style="font-size: 13px; color: var(--text-secondary);">电脑重启时自动拉起检测服务（Windows 计划任务）</div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="type-badge" :class="autostart.enabled ? 'uniform' : ''" v-if="autostart.supported">{{ autostart.enabled ? '已开启' : '已关闭' }}</span>
+                                    <span style="font-size: 13px; color: var(--text-secondary);" v-else>当前系统不支持</span>
+                                    <button class="clay-button" @click="toggleAutostart" :disabled="autostartLoading || !autostart.supported">
+                                        {{ autostartLoading ? '操作中…' : (autostart.enabled ? '关闭' : '开启') }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin: 28px 0 16px;">已加载模型</div>
+                        <div v-if="models.length" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;">
+                            <div v-for="m in models" :key="m.key" class="glass-card" style="padding: 12px 16px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
+                                    <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="m.name">{{ m.name }}</div>
+                                    <span class="type-badge" :class="m.loaded ? 'uniform' : ''" style="flex-shrink: 0;">{{ m.loaded ? '已加载' : '未加载' }}</span>
+                                </div>
+                                <div style="font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="m.file">{{ m.file }}</div>
+                            </div>
+                        </div>
+                        <div v-else style="color: var(--text-muted); padding: 8px 0;">暂无模型，请到模型管理页上传</div>
 
                         <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin: 28px 0 16px;">实时日志</div>
                         <div class="glass-card logs-panel">
@@ -294,7 +311,71 @@
                             <div v-if="!logs.length" style="color: var(--text-muted); padding: 8px 0;">暂无日志</div>
                         </div>
                     </div>
-                </div>
+
+                    <!-- Push Tab -->
+                    <div v-if="tab === 'push'">
+                        <div style="display: flex; gap: 10px; margin-bottom: 18px; align-items: center;">
+                            <select class="clay-select" v-model="newCardPlatform" style="width: 120px;">
+                                <option value="dingtalk">钉钉</option>
+                                <option value="feishu">飞书</option>
+                            </select>
+                            <button class="clay-button primary" @click="addPushCard">+ 添加推送卡片</button>
+                        </div>
+
+                        <div v-if="!pushCards.length" style="color: var(--text-muted); padding: 8px 0 16px;">
+                            暂无推送配置，选择平台后点击上方按钮添加群机器人
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px;">
+                        <div v-for="(card, idx) in pushCards" :key="idx" class="glass-card" style="display: flex; flex-direction: column;">
+                            <div style="margin-bottom: 14px; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">
+                                <span class="type-badge" :class="card.platform === 'feishu' ? 'mask' : 'uniform'" style="margin-right: 6px;">{{ card.platform === 'feishu' ? '飞书' : '钉钉' }}</span>
+                                {{ card.name || '群机器人 #' + (idx + 1) }}
+                            </div>
+                            <div class="gc-form-field">
+                                <label>卡片名称（备注用，可留空）</label>
+                                <input class="clay-input" v-model="card.name" placeholder="如：消防值班群" />
+                            </div>
+                            <div class="gc-form-field">
+                                <label>Webhook 地址（留空则此卡不推送）</label>
+                                <input class="clay-input" v-model="card.webhook_url" :placeholder="card.platform === 'feishu' ? 'https://open.feishu.cn/open-apis/bot/v2/hook/...' : 'https://oapi.dingtalk.com/robot/send?access_token=...'" />
+                            </div>
+                            <div class="gc-form-field">
+                                <label>加签密钥（留空不加签）</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input class="clay-input" :type="card._showSecret ? 'text' : 'password'" v-model="card.secret" placeholder="SEC..." style="flex: 1;" />
+                                    <button class="clay-button" @click="card._showSecret = !card._showSecret">{{ card._showSecret ? '隐藏' : '显示' }}</button>
+                                </div>
+                            </div>
+                            <div class="gc-form-field">
+                                <label>对外访问地址（留空不带快照）</label>
+                                <input class="clay-input" v-model="card.base_url" placeholder="http://192.168.x.x:8111" />
+                                <p style="margin-top: 4px; font-size: 12px; color: var(--text-muted);">{{ card.platform === 'feishu' ? '飞书卡片不支持外链图片，消息中将附快照查看链接' : '钉钉消息中将内嵌报警快照图片' }}</p>
+                            </div>
+                            <div class="gc-form-field">
+                                <label>推送类型</label>
+                                <label style="display: flex; align-items: center; gap: 6px; font-weight: 500; margin-bottom: 6px;">
+                                    <input type="checkbox" v-model="card.all_types" /> 全部类型（含以后新增）
+                                </label>
+                                <div v-if="!card.all_types" style="display: flex; flex-wrap: wrap; gap: 8px 16px;">
+                                    <label v-for="t in detectionTypes" :key="t.key" style="display: flex; align-items: center; gap: 4px; font-weight: 400;">
+                                        <input type="checkbox" :value="t.key" v-model="card.types" /> {{ t.label }}
+                                    </label>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 12px; flex-wrap: wrap;">
+                                <button class="clay-button" @click="testPushCard(card)" :disabled="card._testing">{{ card._testing ? '发送中…' : '发送测试消息' }}</button>
+                                <button class="clay-button" style="padding: 6px 14px; color: var(--danger);" @click="removePushCard(idx)">删除</button>
+                                <button class="clay-button primary" style="padding: 6px 14px;" @click="savePushCard(card)" :disabled="card._saving">{{ card._saving ? '保存中…' : '保存' }}</button>
+                                <span v-if="card._testResult" :style="{ color: card._testResult.ok ? 'var(--success)' : 'var(--danger)', fontSize: '13px' }">
+                                    {{ card._testResult.ok ? '✓ 推送成功，请到群里查看' : '✗ ' + card._testResult.error }}
+                                </span>
+                            </div>
+                        </div>
+                        </div>
+
+                        <p style="margin-top: 4px; font-size: 13px; color: var(--text-secondary);">每张卡片独立保存，保存后立即生效，无需重启服务</p>
+                    </div>
             </div>
                 </div>
         </main>
@@ -452,6 +533,10 @@
                 const logs = ref([]);
                 const systemMode = ref('');
                 const detectionTypes = ref([]);
+                const pushCards = ref([]);
+                const newCardPlatform = ref('dingtalk');
+                const autostart = ref({ supported: false, enabled: false });
+                const autostartLoading = ref(false);
                 let logTimer = null;
 
                 function toggleSettingsNav() {
@@ -499,18 +584,45 @@
                         if (settings.value.gpu_scheduler_interval === undefined) settings.value.gpu_scheduler_interval = 0.5;
                         if (settings.value.gpu_scheduler_half === undefined) settings.value.gpu_scheduler_half = false;
                         if (settings.value.emergency_cleanup_ratio === undefined) settings.value.emergency_cleanup_ratio = 0.5;
+                        pushCards.value = normalizePushCards(data);
                     } catch (e) { console.error('加载设置失败:', e); }
+                }
+
+                function normalizePushCards(data) {
+                    // 统一键 push_channels；兼容旧键 dingtalk_channels（视为钉钉卡）与更早的三字段配置
+                    let source = Array.isArray(data.push_channels) ? data.push_channels : null;
+                    if (source === null) {
+                        source = (Array.isArray(data.dingtalk_channels) ? data.dingtalk_channels : [])
+                            .map(c => ({ ...c, platform: 'dingtalk' }));
+                    }
+                    if (!source.length && data.dingtalk_webhook_url) {
+                        source = [{
+                            platform: 'dingtalk', name: '', webhook_url: data.dingtalk_webhook_url,
+                            secret: data.dingtalk_secret || '', base_url: data.dingtalk_base_url || '',
+                            all_types: true, types: []
+                        }];
+                    }
+                    return source.map(c => ({
+                        platform: c.platform === 'feishu' ? 'feishu' : 'dingtalk',
+                        name: c.name || '', webhook_url: c.webhook_url || '', secret: c.secret || '',
+                        base_url: c.base_url || '', all_types: c.all_types !== false, types: c.types || [],
+                        _showSecret: false, _testing: false, _saving: false, _testResult: null
+                    }));
                 }
 
                 async function loadModels() {
                     try {
-                        const data = await safeFetch('/detector/models');
-                        models.value = data.models || [];
+                        const data = await safeFetch('/models');
+                        let loadedPaths = new Set();
+                        try {
+                            const st = await safeFetch('/detector/status');
+                            if (!st.error) {
+                                loadedPaths = new Set(st.loaded_models || []);
+                                detectorInfo.value = { mode: st.mode || 'CPU', npu_cores: st.npu_cores || 0 };
+                            }
+                        } catch (e) {}
+                        models.value = (data.models || []).map(m => ({ ...m, loaded: loadedPaths.has(m.file) }));
                     } catch (e) { console.error('加载模型失败:', e); }
-                    try {
-                        const data = await safeFetch('/detector/status');
-                        if (!data.error) detectorInfo.value = { mode: data.mode || 'CPU', npu_cores: data.npu_cores || 0 };
-                    } catch (e) {}
                     try {
                         const data = await safeFetch('/status');
                         if (data.decoder_backends) {
@@ -577,13 +689,103 @@
                             body: JSON.stringify(payload)
                         });
                         if (res.ok) {
-                            const strategyChanged = settings.value.detection_strategy !== (settingsInitial?.detection_strategy ?? 'auto');
-                            showToast(strategyChanged ? '保存成功，调度方式需重启生效' : '保存成功',
+                            const strategyChanged = settings.value.detection_strategy !== (settingsInitial.value?.detection_strategy ?? 'auto');
+                            settingsInitial.value = JSON.parse(JSON.stringify(settings.value));
+                            showToast(strategyChanged ? '已保存，调度方式需重启生效' : '已自动保存',
                                       strategyChanged ? 'warning' : 'success');
                         } else {
                             showToast('保存失败', 'error');
                         }
                     } catch (e) { showToast('保存失败', 'error'); }
+                }
+
+                function serializePushCards() {
+                    return pushCards.value.map(c => ({
+                        platform: c.platform, name: c.name || '', webhook_url: c.webhook_url || '',
+                        secret: c.secret || '', base_url: c.base_url || '', all_types: !!c.all_types,
+                        types: c.all_types ? [] : (c.types || [])
+                    }));
+                }
+
+                async function persistPushCards() {
+                    const res = await fetch('/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ push_channels: serializePushCards() })
+                    });
+                    return res.ok;
+                }
+
+                async function savePushCard(card) {
+                    card._saving = true;
+                    try {
+                        const ok = await persistPushCards();
+                        showToast(ok ? `卡片「${card.name || '未命名'}」已保存并生效` : '保存失败', ok ? 'success' : 'error');
+                    } catch (e) { showToast('保存失败', 'error'); }
+                    finally { card._saving = false; }
+                }
+
+                function addPushCard() {
+                    pushCards.value.push({
+                        platform: newCardPlatform.value,
+                        name: '', webhook_url: '', secret: '', base_url: '',
+                        all_types: true, types: [],
+                        _showSecret: false, _testing: false, _saving: false, _testResult: null
+                    });
+                }
+
+                async function removePushCard(idx) {
+                    const name = pushCards.value[idx]?.name || `#${idx + 1}`;
+                    if (!confirm(`确定删除推送卡片「${name}」吗？删除后立即生效。`)) return;
+                    pushCards.value.splice(idx, 1);
+                    try {
+                        const ok = await persistPushCards();
+                        showToast(ok ? '卡片已删除' : '删除失败，请重试', ok ? 'success' : 'error');
+                    } catch (e) { showToast('删除失败，请重试', 'error'); }
+                }
+
+                async function testPushCard(card) {
+                    card._testing = true;
+                    card._testResult = null;
+                    try {
+                        const res = await fetch('/settings/dingtalk/test', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ webhook_url: card.webhook_url || '', secret: card.secret || '', platform: card.platform })
+                        });
+                        const data = await res.json();
+                        card._testResult = { ok: !!data.ok, error: data.error || '推送失败' };
+                    } catch (e) {
+                        card._testResult = { ok: false, error: '请求失败：' + e.message };
+                    } finally {
+                        card._testing = false;
+                    }
+                }
+
+                async function loadAutostart() {
+                    try {
+                        const data = await safeFetch('/autostart');
+                        autostart.value = { supported: !!data.supported, enabled: !!data.enabled };
+                    } catch (e) { /* 状态查询失败不影响页面 */ }
+                }
+
+                async function toggleAutostart() {
+                    autostartLoading.value = true;
+                    try {
+                        const res = await fetch('/autostart', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ enabled: !autostart.value.enabled })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.ok) {
+                            autostart.value.enabled = !!data.enabled;
+                            showToast(data.message || '操作成功', 'success');
+                        } else {
+                            showToast(data.error || '操作失败', 'error');
+                        }
+                    } catch (e) { showToast('操作失败', 'error'); }
+                    finally { autostartLoading.value = false; }
                 }
 
                 function closeCameraDialog() {
@@ -904,6 +1106,7 @@
                     loadCameras();
                     loadSettings();
                     loadModels();
+                    loadAutostart();
                     fetchSystemMode();
                     fetchLogs();
                     logTimer = setInterval(fetchLogs, 3000);
@@ -916,9 +1119,10 @@
                 return {
                     tab, sidebar, cameras, settings, models, detectorInfo, selectedCameras,
                     cameraDialog, roiDialog, roiCanvas, toast, settingsInitial, logs, systemMode, detectionTypes,
+                    pushCards, newCardPlatform, autostart, autostartLoading,
                     selectedAlgorithmKey, roiState, currentRegion, availableAlgorithms, addedAlgorithms, roiDialogLabel, roiFallbackStyle,
                     loadCameras, loadSettings, loadModels,
-                    saveVlmSettings, saveDefaultTypes, saveSystemSettings,
+                    saveVlmSettings, saveDefaultTypes, saveSystemSettings, savePushCard, addPushCard, removePushCard, testPushCard, loadAutostart, toggleAutostart,
                     openCameraDialog, closeCameraDialog, resetCameraTypes, saveCamera, deleteCamera,
                     addAlgorithm, removeAlgorithm,
                     openRoiDialog, onSnapshotLoad, onSnapshotError,

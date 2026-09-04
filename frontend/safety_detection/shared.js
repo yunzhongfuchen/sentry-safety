@@ -166,7 +166,7 @@ function defaultDetectionTypes() {
 }
 
 
-const SETTINGS_TABS = ['cameras', 'detection', 'system'];
+const SETTINGS_TABS = ['cameras', 'detection', 'system', 'push'];
 
 function normalizeSettingsTab(raw) {
     return SETTINGS_TABS.includes(raw) ? raw : 'cameras';
@@ -230,6 +230,9 @@ function renderSidebar(container, context) {
                     </a>
                     <a href="/algorithms.html" class="nav-item ${context.page === 'algorithms' ? 'active' : ''}">
                         <span class="nav-item-label">算法管理</span>
+                    </a>
+                    <a href="/settings.html?tab=push" class="nav-item ${context.page === 'settings' && context.tab === 'push' ? 'active' : ''}">
+                        <span class="nav-item-label">告警推送</span>
                     </a>
                     <a href="/settings.html?tab=system" class="nav-item ${context.page === 'settings' && context.tab === 'system' ? 'active' : ''}">
                         <span class="nav-item-label">系统设置</span>

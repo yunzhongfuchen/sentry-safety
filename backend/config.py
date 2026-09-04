@@ -152,6 +152,17 @@ def get_default_global_settings() -> dict:
         "save_image_timestamp": True,
         # 报警推送：webhook 接收地址，空字符串表示不推送
         "alarm_push_webhook_url": "",
+        # 群机器人推送卡片列表：[{platform, name, webhook_url, secret, base_url, all_types, types}]
+        # platform: dingtalk | feishu；all_types=True 推送全部检测类型（含以后新增）
+        "push_channels": [],
+        # 钉钉推送卡片列表（旧键，兼容用；与新键并存时以 push_channels 为准）
+        "dingtalk_channels": [],
+        # 钉钉群机器人推送（旧版单通道配置，兼容用；配置卡片列表后以此列表为准）
+        "dingtalk_webhook_url": "",
+        # 钉钉机器人"加签"安全设置的密钥（SEC 开头），空字符串表示不加签
+        "dingtalk_secret": "",
+        # 本系统对外可访问的基础地址（如 http://192.168.x.x:8111），用于钉钉消息中的快照图片链接，空则不带图
+        "dingtalk_base_url": "",
     }
 
 
@@ -178,6 +189,11 @@ except Exception:
         "display_detection_interval": 1.0,
         "save_image_timestamp": True,
         "alarm_push_webhook_url": "",
+        "push_channels": [],
+        "dingtalk_channels": [],
+        "dingtalk_webhook_url": "",
+        "dingtalk_secret": "",
+        "dingtalk_base_url": "",
     }
 
 # ==================== 默认摄像头参数（全局模板） ====================

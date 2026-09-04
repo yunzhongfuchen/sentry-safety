@@ -24,6 +24,8 @@ class IntegrationManager:
 
     def push_created(self, record: dict, snapshot_b64: Optional[str], frames_b64: list) -> None:
         for ch in self.channels:
+            if not ch.accepts(record):
+                continue
             try:
                 ch.send_created(record, snapshot_b64, frames_b64)
             except Exception as e:
@@ -31,6 +33,8 @@ class IntegrationManager:
 
     def push_reviewed(self, record: dict) -> None:
         for ch in self.channels:
+            if not ch.accepts(record):
+                continue
             try:
                 ch.send_reviewed(record)
             except Exception as e:

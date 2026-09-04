@@ -1000,7 +1000,7 @@ async def update_settings(data: dict):
         settings = app_config.load_global_settings()
         settings.update(data)
         app_config.save_global_settings(settings)
-        global _global_settings
+        global _global_settings, push_manager
         _global_settings = settings
 
         # 动态更新运行中组件的参数
@@ -1021,9 +1021,66 @@ async def update_settings(data: dict):
                 data.get("save_image_timestamp") if "save_image_timestamp" in data else None,
             )
         log_message("Global settings updated")
+
+        # 推送通道配置变更：热重建推送管理器，免重启生效
+        if any(k.startswith("dingtalk_") or k == "push_channels" for k in data):
+            push_manager = init_integration_manager(settings, log=log_message)
+            log_message("Integration push channels hot-reloaded")
+
         return {"success": True, "settings": settings}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post("/settings/dingtalk/test")
+async def test_dingtalk_push(data: dict):
+    """用表单值临时构建群机器人通道，发送一条测试消息（不落盘、不影响运行中通道）"""
+    from backend.integrations.dingtalk.channel import DingTalkChannel
+    from backend.integrations.feishu.channel import FeishuChannel
+
+    webhook_url = (data.get("webhook_url") or "").strip()
+    if not webhook_url:
+        return JSONResponse({"ok": False, "error": "Webhook 地址不能为空"}, status_code=400)
+
+    platform = data.get("platform", "dingtalk")
+    channel_cls = {"dingtalk": DingTalkChannel, "feishu": FeishuChannel}.get(platform)
+    if channel_cls is None:
+        return JSONResponse({"ok": False, "error": f"不支持的平台类型：{platform}"}, status_code=400)
+
+    logs = []
+    channel = channel_cls(
+        webhook_url,
+        secret=(data.get("secret") or "").strip(),
+        timeout=10.0,
+        log=lambda msg, level="info": logs.append((level, msg)),
+    )
+    if platform == "feishu":
+        payload = {
+            "msg_type": "interactive",
+            "card": {
+                "header": {"title": {"tag": "plain_text", "content": "【测试消息】视频诊断系统"}, "template": "green"},
+                "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": (
+                    f"**时间**：{time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    "**说明**：收到此消息说明飞书机器人配置正确，报警推送通道可用"
+                )}}],
+            },
+        }
+        payload.update(channel._sign_fields())
+    else:
+        payload = {
+            "msgtype": "markdown",
+            "markdown": {
+                "title": "【测试消息】视频诊断系统",
+                "text": (
+                    "### 【测试消息】视频诊断系统\n\n"
+                    f"**时间**：{time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    "**说明**：收到此消息说明钉钉机器人配置正确，报警推送通道可用"
+                ),
+            },
+        }
+    ok = channel._post(payload)
+    err = next((m for lv, m in reversed(logs) if lv == "error"), None)
+    return {"ok": ok, "error": None if ok else (err or "推送失败")}
 
 
 @app.get("/display-types")
@@ -1519,6 +1576,26 @@ async def get_system_mode():
     mode = os.environ.get("SENTRY_MODE", "multi")
     device, npu_cores = detect_best_device()
     return {"mode": mode, "device": device, "npu_cores": npu_cores}
+
+
+@app.get("/autostart")
+async def get_autostart():
+    """查询开机自启状态"""
+    from backend import autostart
+    return {"supported": autostart.supported(), "enabled": autostart.is_enabled()}
+
+
+@app.post("/autostart")
+async def set_autostart(data: dict):
+    """开启/关闭开机自启（Windows 计划任务）"""
+    from backend import autostart
+    if not autostart.supported():
+        return JSONResponse({"ok": False, "error": "当前系统不支持开机自启（仅支持 Windows）"}, status_code=400)
+    ok, msg = autostart.enable() if data.get("enabled") else autostart.disable()
+    if not ok:
+        return JSONResponse({"ok": False, "error": msg}, status_code=400)
+    log_message(f"Autostart {'enabled' if data.get('enabled') else 'disabled'}: {msg}")
+    return {"ok": True, "message": msg, "enabled": autostart.is_enabled()}
 
 
 @app.post("/system/restart")

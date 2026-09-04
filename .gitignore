@@ -60,6 +60,10 @@ uploads/
 # Runtime PID files
 *.pid
 
+# 开机自启生成的启动器脚本
+autostart_run.bat
+autostart_register.bat
+
 # Build output
 dist/
 
