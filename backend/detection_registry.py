@@ -47,6 +47,8 @@ UNIVERSAL_DEFAULTS: dict[str, Any] = {
     "use_vlm": False,
     "static_filter": False,
     "static_diff_threshold": 0.02,
+    "overlap_filter": False,
+    "overlap_iou_threshold": 0.2,
 }
 
 

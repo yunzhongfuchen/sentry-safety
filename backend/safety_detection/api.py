@@ -16,7 +16,7 @@ router = APIRouter(tags=["safety"])
 
 def _validate_default_value(key: str, value):
     """校验 defaults 字段类型和范围，非法时返回错误信息，合法时返回 None"""
-    if key in ("enabled", "use_vlm", "static_filter"):
+    if key in ("enabled", "use_vlm", "static_filter", "overlap_filter"):
         if not isinstance(value, bool):
             return f"{key} must be a boolean"
         return None
@@ -39,6 +39,9 @@ def _validate_default_value(key: str, value):
         return f"{key} must be a non-negative number"
 
     if key == "threshold" and not (0 <= value <= 1):
+        return f"{key} must be a number between 0 and 1"
+
+    if key == "overlap_iou_threshold" and not (0 <= value <= 1):
         return f"{key} must be a number between 0 and 1"
 
     if key == "cooldown" and value < 0:
@@ -416,7 +419,8 @@ async def update_algorithm(key: str, data: dict, request: Request):
                         "verification_frame_count", "verification_frame_interval",
                         "consecutive_required",
                         "cooldown", "use_vlm",
-                        "static_filter", "static_diff_threshold"}
+                        "static_filter", "static_diff_threshold",
+                        "overlap_filter", "overlap_iou_threshold"}
     structural_update = {k: v for k, v in data.items() if k in structural_fields}
     defaults_update = {k: v for k, v in data.items() if k not in structural_fields and k in allowed_defaults}
     if not structural_update and not defaults_update:

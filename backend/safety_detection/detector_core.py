@@ -89,12 +89,16 @@ class TypeSchedule:
     # 静态目标过滤：同一检测轮内的采样帧区域几乎无变化时判为误判
     static_filter: bool = False
     static_diff_threshold: float = 0.02
+    # 空间重叠过滤：连续采样帧的检测框 IoU 低于阈值时判为瞬移误检
+    overlap_filter: bool = False
+    overlap_iou_threshold: float = 0.2
     # 当前检测轮的采样状态；成功完成一轮后才增加 consecutive_count
     sampling_active: bool = False
     sampled_frame_count: int = 0
     last_sample_time: float = 0.0
     last_sample_seq: int = -1
     task_regions: List[np.ndarray] = None
+    sample_boxes: List[list] = None
 
     def is_due(self, now: float) -> bool:
         if self.sampling_active:
@@ -194,6 +198,45 @@ def check_static_filter(regions: List[np.ndarray], diff_threshold: float) -> boo
         if changed_ratio >= diff_threshold:
             return False
     return True
+
+
+def _boxes_iou(a: list, b: list) -> float:
+    """计算两个 [x1,y1,x2,y2] 框的 IoU"""
+    if len(a) < 4 or len(b) < 4:
+        return 0.0
+    x1, y1 = max(a[0], b[0]), max(a[1], b[1])
+    x2, y2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    if inter <= 0:
+        return 0.0
+    area_a = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    area_b = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+    u = area_a + area_b - inter
+    return inter / u if u > 0 else 0.0
+
+
+def check_overlap_filter(boxes_per_frame: List[List[list]], iou_threshold: float) -> bool:
+    """连续采样帧的检测框是否空间重叠（IoU 过低视为瞬移误检）。
+
+    相邻帧框列表任意两两组合，取最大 IoU；若所有相邻帧对的最大 IoU 均低于
+    iou_threshold，返回 True（不重叠，视为误检）。
+    """
+    if len(boxes_per_frame) < 2:
+        return False
+    for i in range(1, len(boxes_per_frame)):
+        prev_boxes = [b for b in boxes_per_frame[i - 1] if len(b) >= 4]
+        curr_boxes = [b for b in boxes_per_frame[i] if len(b) >= 4]
+        if not prev_boxes or not curr_boxes:
+            continue
+        best = 0.0
+        for a in prev_boxes:
+            for b in curr_boxes:
+                iou = _boxes_iou(a, b)
+                if iou > best:
+                    best = iou
+        if best < iou_threshold:
+            return True
+    return False
 
 
 # ----------------------------------------------------------------------
@@ -420,6 +463,8 @@ class MultiDetector:
             roi_invert=merged.get("roi_invert", False),
             static_filter=merged.get("static_filter", False),
             static_diff_threshold=merged.get("static_diff_threshold", 0.02),
+            overlap_filter=merged.get("overlap_filter", False),
+            overlap_iou_threshold=merged.get("overlap_iou_threshold", 0.2),
         )
 
     def register_camera(self, camera_id: str, detection_types: Dict[str, dict]) -> None:
@@ -657,6 +702,7 @@ class MultiDetector:
         schedule.sampled_frame_count = 0
         schedule.last_sample_time = 0.0
         schedule.task_regions = []
+        schedule.sample_boxes = []
         if self.camera_manager is not None:
             self.camera_manager.clear_detection_frames(camera_id, dtype)
 
@@ -686,6 +732,7 @@ class MultiDetector:
             schedule.sampling_active = True
             schedule.sampled_frame_count = 0
             schedule.task_regions = []
+            schedule.sample_boxes = []
 
         schedule.sampled_frame_count += 1
         schedule.last_sample_time = now
@@ -701,6 +748,12 @@ class MultiDetector:
             region = _extract_box_region(frame, result["boxes"][best_idx])
             if region is not None:
                 schedule.task_regions.append(region)
+
+        # 重叠过滤：收集每帧命中框，采样结束后比对相邻帧 IoU
+        if schedule.overlap_filter and result.get("boxes"):
+            if schedule.sample_boxes is None:
+                schedule.sample_boxes = []
+            schedule.sample_boxes.append(list(result.get("boxes", [])))
 
         # 命中采样帧先进入证据缓存；本轮或后续轮失败时统一清空
         if self.camera_manager is not None:
@@ -731,10 +784,23 @@ class MultiDetector:
             schedule.last_run = now
             return
 
+        # 同一轮的全部采样帧都命中后执行空间重叠一致性过滤
+        if schedule.overlap_filter and check_overlap_filter(
+            schedule.sample_boxes or [], schedule.overlap_iou_threshold
+        ):
+            logger.info(
+                f"{camera_id} {dtype} overlap filter: no box overlap across "
+                f"{len(schedule.sample_boxes or [])} samples (IoU < {schedule.overlap_iou_threshold}), resetting progress"
+            )
+            self._reset_detection_progress(camera_id, dtype, schedule)
+            schedule.last_run = now
+            return
+
         schedule.sampling_active = False
         schedule.sampled_frame_count = 0
         schedule.last_sample_time = 0.0
         schedule.task_regions = []
+        schedule.sample_boxes = []
         schedule.last_run = now
         schedule.consecutive_count += 1
         logger.info(
